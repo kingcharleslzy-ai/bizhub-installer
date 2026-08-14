@@ -55,12 +55,16 @@ class BizHubMcpTests(unittest.TestCase):
                 1,
                 "initialize",
                 {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2099-01-01",
                     "capabilities": {},
                     "clientInfo": {"name": "test", "version": "1"},
                 },
             )
             self.assertEqual(initialized["result"]["serverInfo"]["name"], "bizhub-mcp")
+            self.assertEqual(
+                initialized["result"]["protocolVersion"],
+                "2024-11-05",
+            )
 
             listed = session.request(2, "tools/list")
             names = [tool["name"] for tool in listed["result"]["tools"]]

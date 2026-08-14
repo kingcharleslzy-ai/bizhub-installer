@@ -19,6 +19,8 @@ to the customer's Agent after handoff.
 3. Call `bizhub_bootstrap_questions` with `stage: deployment`.
 4. Ask no more than three returned questions at a time. Do not ask the user to
    paste passwords, keys, cookies, private keys, or database files.
+   Use synthetic labels and role names instead of legal company names, personal
+   identities, or internal system identifiers during this preview.
 5. Continue through the returned `next_stage` only after the user answers.
 6. Summarize the proposed topology and access method. Stop before any host,
    server, DNS, firewall, data, or credential mutation.
@@ -34,7 +36,7 @@ to the customer's Agent after handoff.
   active; ask the user to choose one version.
 - Do not generate or install more generic BizHub Skills. If a repeated
   customer-specific workflow later needs one, point the customer's Agent to
-  `docs/customer-skill-extension.md`.
+  `https://github.com/kingcharleslzy-ai/bizhub-installer/blob/v0.1.0-preview.1/docs/customer-skill-extension.md`.
 
 ## Expected result
 

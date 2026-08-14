@@ -9,7 +9,7 @@ Agent-first bootstrap for setting up a private BizHub instance.
 
 ## Give this repository to an Agent
 
-Send the Agent this pinned release URL:
+Send the Agent this tagged preview release URL:
 
 `https://github.com/kingcharleslzy-ai/bizhub-installer/tree/v0.1.0-preview.1`
 
@@ -35,16 +35,32 @@ chat. The preview does not need them.
 
 ## Preview installation
 
-Use a trusted host-native plugin installer with the pinned release above and
+Use a trusted host-native plugin installer with the tagged release above and
 select `plugins/bizhub-core`. If the host does not support plugins, it may
-register the single server described in
-`plugins/bizhub-core/.mcp.json` from a pinned local checkout.
+register the single server described in `plugins/bizhub-core/.mcp.json` from a
+tagged local checkout. For direct registration, resolve both `cwd` and the
+script argument to absolute paths under that checkout; do not assume another
+host will interpret `.` as the plugin directory.
 
 Installation changes the local Agent environment, so the Agent must first show
 the target path, command, and rollback action and receive explicit approval.
 Never run from a moving branch or a `latest` dependency.
 
-## Local verification
+After registration, call `bizhub_bootstrap_status` and verify that the
+repository and release match this project and that all production/data
+capabilities remain `false`. If that readback fails, remove the registration
+and stop.
+
+To uninstall this preview, remove the `bizhub-core` plugin entry or the direct
+`bizhub-mcp` registration created during installation, restart/reload the
+Agent host, and verify that the three `bizhub_*` tools are no longer listed.
+The preview creates no backend service or customer database.
+
+## Maintainer verification
+
+These commands execute repository code. Run them only from a reviewed tagged
+checkout, in an isolated development environment, with explicit code-execution
+approval. They are not part of the customer's setup interview.
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -53,6 +69,9 @@ python3 /path/to/skill-creator/scripts/quick_validate.py \
 python3 /path/to/plugin-creator/scripts/validate_plugin.py \
   plugins/bizhub-core
 ```
+
+The release's reviewed file digests are recorded in
+`install/CHECKSUMS.sha256`.
 
 ## Product boundary
 

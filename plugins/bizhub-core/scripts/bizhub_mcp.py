@@ -8,8 +8,9 @@ import sys
 from typing import Any
 
 
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.1.0"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.1.0-preview.1"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
+PROTOCOL_VERSION = "2024-11-05"
 
 STATUS = {
     "maturity": "preview_read_only",
@@ -48,7 +49,7 @@ QUESTION_STAGES: dict[str, dict[str, Any]] = {
             },
             {
                 "id": "change_owner",
-                "question": "Who can approve server, DNS, firewall, and host configuration changes?",
+                "question": "Which role can approve server, DNS, firewall, and host configuration changes? Use a role label, not a person's identity.",
             },
         ],
         "next_stage": "company",
@@ -57,11 +58,11 @@ QUESTION_STAGES: dict[str, dict[str, Any]] = {
         "questions": [
             {
                 "id": "company_profile",
-                "question": "What company display name, timezone, and base currency should the system use?",
+                "question": "Choose a synthetic company label, timezone, and base currency for this preview; do not provide a legal company name.",
             },
             {
                 "id": "initial_admin",
-                "question": "Who will own the initial administrator account and access reviews?",
+                "question": "Which role will own the initial administrator account and access reviews? Do not provide a person's identity.",
             },
         ],
         "next_stage": "data",
@@ -70,11 +71,11 @@ QUESTION_STAGES: dict[str, dict[str, Any]] = {
         "questions": [
             {
                 "id": "data_sources",
-                "question": "Which systems or files may later provide company data?",
+                "question": "Which source categories may later provide data (API, database, file, or browser)? Do not name internal systems or files yet.",
             },
             {
                 "id": "data_owner",
-                "question": "Who can approve each data source and its retention policy?",
+                "question": "Which role can approve each data source and its retention policy?",
             },
         ],
         "next_stage": "review",
@@ -161,7 +162,7 @@ def handle_tool_call(params: dict[str, Any]) -> dict[str, Any]:
         return tool_result(
             {
                 "repository": REPOSITORY_URL,
-                "pinned_release": "v0.1.0-preview.1",
+                "release_tag": "v0.1.0-preview.1",
                 "plugin_path": "plugins/bizhub-core",
             }
         )
@@ -195,12 +196,11 @@ def dispatch(message: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     if method == "initialize":
-        requested = (message.get("params") or {}).get("protocolVersion")
         return {
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "protocolVersion": requested or "2024-11-05",
+                "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": SERVER_INFO,
             },

@@ -1,6 +1,6 @@
 {
   "name": "bizhub-core",
-  "version": "0.1.0",
+  "version": "0.1.0-preview.1",
   "description": "Read-only Agent bootstrap for a private BizHub setup.",
   "author": {
     "name": "kingcharleslzy-ai"

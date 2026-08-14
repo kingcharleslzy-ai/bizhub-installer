@@ -4,7 +4,7 @@ status: preview_read_only
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  pinned_release: v0.1.0-preview.1
+  release_tag: v0.1.0-preview.1
 
 delivery:
   plugin_path: plugins/bizhub-core
@@ -13,6 +13,7 @@ delivery:
   bootstrap_skill_id: bizhub-bootstrap
   bootstrap_skill_path: plugins/bizhub-core/skills/bizhub-bootstrap
   customer_extension_guide: docs/customer-skill-extension.md
+  checksums_path: install/CHECKSUMS.sha256
 
 capabilities:
   production_backend_install: false
