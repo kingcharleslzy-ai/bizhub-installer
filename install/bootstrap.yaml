@@ -4,7 +4,7 @@ status: preview_read_only
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.1.0-preview.1
+  release_tag: v0.2.0-preview.1
 
 delivery:
   plugin_path: plugins/bizhub-core
@@ -16,6 +16,8 @@ delivery:
   checksums_path: install/CHECKSUMS.sha256
 
 capabilities:
+  local_host_discovery: true
+  draft_plan_generation: true
   production_backend_install: false
   production_frontend_deploy: false
   real_customer_data: false

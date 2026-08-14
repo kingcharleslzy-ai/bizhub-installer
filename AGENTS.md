@@ -16,8 +16,8 @@ When a user gives you this repository URL:
    MCP server, or writing host configuration.
 6. Ensure there is exactly one active `bizhub-mcp` server and exactly one
    BizHub-managed `bizhub-bootstrap` Skill. Stop on duplicates.
-7. Invoke `bizhub-bootstrap` and ask no more than three short questions at a
-   time.
+7. Invoke `bizhub-bootstrap`, inspect only the Agent host, ask the three
+   deployment questions, and produce a non-executable draft plan.
 
 Do not request secret values in chat. Do not run arbitrary shell, open arbitrary
 URLs, access customer files, or infer production readiness from this document.

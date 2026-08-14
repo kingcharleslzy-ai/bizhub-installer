@@ -47,6 +47,13 @@ class McpSession:
         self.process.stdin.flush()
         return json.loads(self.process.stdout.readline())
 
+    def send_raw(self, payload):
+        assert self.process.stdin is not None
+        assert self.process.stdout is not None
+        self.process.stdin.write(json.dumps(payload) + "\n")
+        self.process.stdin.flush()
+        return json.loads(self.process.stdout.readline())
+
 
 class BizHubMcpTests(unittest.TestCase):
     def test_initialize_and_list_tools(self) -> None:
@@ -73,6 +80,8 @@ class BizHubMcpTests(unittest.TestCase):
                 [
                     "bizhub_bootstrap_status",
                     "bizhub_bootstrap_questions",
+                    "bizhub_discover_local_host",
+                    "bizhub_build_draft_plan",
                     "bizhub_repository_info",
                 ],
             )
@@ -94,6 +103,8 @@ class BizHubMcpTests(unittest.TestCase):
             self.assertFalse(payload["production_backend_install"])
             self.assertFalse(payload["production_frontend_deploy"])
             self.assertFalse(payload["real_customer_data_allowed"])
+            self.assertTrue(payload["local_host_discovery"])
+            self.assertTrue(payload["draft_plan_generation"])
 
     def test_questions_are_bounded_and_stateless(self) -> None:
         with McpSession() as session:
@@ -108,6 +119,144 @@ class BizHubMcpTests(unittest.TestCase):
             payload = response["result"]["structuredContent"]
             self.assertLessEqual(len(payload["questions"]), 3)
             self.assertEqual(payload["next_stage"], "access")
+
+            access = session.request(
+                2,
+                "tools/call",
+                {
+                    "name": "bizhub_bootstrap_questions",
+                    "arguments": {"stage": "access"},
+                },
+            )["result"]["structuredContent"]
+            self.assertEqual(len(access["questions"]), 1)
+            self.assertIsNone(access["next_stage"])
+            self.assertEqual(access["next_action"], "build_draft_plan")
+
+    def test_local_discovery_excludes_identifiers_and_secrets(self) -> None:
+        with McpSession() as session:
+            response = session.request(
+                1,
+                "tools/call",
+                {"name": "bizhub_discover_local_host", "arguments": {}},
+            )
+            payload = response["result"]["structuredContent"]
+            self.assertEqual(payload["scope"], "agent_host_only")
+            self.assertFalse(payload["target_host_verified"])
+            self.assertGreaterEqual(payload["disk_free_bytes"], 0)
+            self.assertGreaterEqual(payload["cpu_count"], 0)
+            self.assertEqual(
+                set(payload["excluded"]),
+                {
+                    "hostname",
+                    "username",
+                    "home_directory",
+                    "ip_addresses",
+                    "environment_variables",
+                    "files",
+                    "secrets",
+                },
+            )
+            for forbidden in payload["excluded"]:
+                self.assertNotIn(forbidden, payload)
+
+    def test_draft_plan_is_deterministic_and_non_executable(self) -> None:
+        arguments = {
+            "installation_goal": "new_trial",
+            "topology": "cloud",
+            "access_mode": "domain",
+        }
+        with McpSession() as session:
+            first = session.request(
+                1,
+                "tools/call",
+                {"name": "bizhub_build_draft_plan", "arguments": arguments},
+            )["result"]["structuredContent"]
+            second = session.request(
+                2,
+                "tools/call",
+                {"name": "bizhub_build_draft_plan", "arguments": arguments},
+            )["result"]["structuredContent"]
+
+            self.assertEqual(first["plan_fingerprint"], second["plan_fingerprint"])
+            self.assertEqual(first["selection"], arguments)
+            self.assertFalse(first["ready_for_apply"])
+            self.assertFalse(first["real_customer_data_allowed"])
+            self.assertFalse(first["secret_values_accepted"])
+            self.assertEqual(first["mutations"], [])
+            self.assertIn(
+                "run_read_only_remote_target_preflight",
+                first["required_followups"],
+            )
+            self.assertEqual(
+                first["steps"][-1]["status"],
+                "unavailable_in_preview",
+            )
+
+    def test_draft_plan_rejects_incomplete_invalid_or_extra_inputs(self) -> None:
+        cases = [
+            {
+                "installation_goal": "new_trial",
+                "topology": "cloud",
+            },
+            {
+                "installation_goal": "new_trial",
+                "topology": "unsupported",
+                "access_mode": "domain",
+            },
+            {
+                "installation_goal": "new_trial",
+                "topology": "cloud",
+                "access_mode": "domain",
+                "hostname": "not-accepted",
+            },
+        ]
+        with McpSession() as session:
+            for request_id, arguments in enumerate(cases, start=1):
+                with self.subTest(arguments=arguments):
+                    response = session.request(
+                        request_id,
+                        "tools/call",
+                        {
+                            "name": "bizhub_build_draft_plan",
+                            "arguments": arguments,
+                        },
+                    )
+                    self.assertTrue(response["result"]["isError"])
+
+    def test_draft_plan_followups_match_each_topology(self) -> None:
+        cases = {
+            "cloud": {"run_read_only_remote_target_preflight"},
+            "local_24x7": {"confirm_24x7_power_sleep_backup_and_network"},
+            "hybrid": {
+                "run_read_only_remote_target_preflight",
+                "confirm_24x7_power_sleep_backup_and_network",
+            },
+        }
+        with McpSession() as session:
+            for request_id, (topology, expected) in enumerate(cases.items(), start=1):
+                response = session.request(
+                    request_id,
+                    "tools/call",
+                    {
+                        "name": "bizhub_build_draft_plan",
+                        "arguments": {
+                            "installation_goal": "new_trial",
+                            "topology": topology,
+                            "access_mode": "private_network",
+                        },
+                    },
+                )
+                followups = set(
+                    response["result"]["structuredContent"]["required_followups"]
+                )
+                self.assertTrue(expected.issubset(followups))
+
+    def test_malformed_request_does_not_stop_server(self) -> None:
+        with McpSession() as session:
+            invalid = session.send_raw([])
+            self.assertEqual(invalid["error"]["code"], -32600)
+            ping = session.request(2, "ping")
+            self.assertEqual(ping["result"], {})
 
 
 if __name__ == "__main__":

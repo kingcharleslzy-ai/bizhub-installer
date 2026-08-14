@@ -1,6 +1,6 @@
 interface:
   display_name: "BizHub Bootstrap"
-  short_description: "Safely start BizHub setup from the public repository."
-  default_prompt: "Use $bizhub-bootstrap to inspect this BizHub installer repository and guide me through the preview setup questions."
+  short_description: "Build a safe, read-only BizHub setup plan."
+  default_prompt: "Use $bizhub-bootstrap to inspect my Agent host and build a read-only BizHub setup plan."
 policy:
   allow_implicit_invocation: false
