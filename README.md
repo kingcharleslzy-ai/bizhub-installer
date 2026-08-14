@@ -5,13 +5,13 @@ Agent-first bootstrap for setting up a private BizHub instance.
 > **Current status: preview / read-only.** This repository does not yet install
 > a production backend, deploy a production frontend, or ingest real customer
 > data. It provides one small MCP server and one bootstrap Skill so an Agent can
-> identify the project, explain the boundary, and ask the first setup questions.
+> inspect non-sensitive facts about its own host and build a draft plan.
 
 ## Give this repository to an Agent
 
 Send the Agent this tagged preview release URL:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/tree/v0.1.0-preview.1`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/tree/v0.2.0-preview.1`
 
 Ask it to:
 
@@ -19,7 +19,8 @@ Ask it to:
 2. show you the preview limitations and the host changes it proposes;
 3. get your approval before installing the plugin or registering the MCP server;
 4. load exactly one `bizhub-bootstrap` Skill and one `bizhub-mcp` server;
-5. begin with the deployment questions.
+5. inspect only the Agent host, ask the three deployment questions, and return
+   a non-executable draft plan.
 
 Do not paste passwords, API keys, cookies, private keys, or database files into
 chat. The preview does not need them.
@@ -27,7 +28,8 @@ chat. The preview does not need them.
 ## Included
 
 - `plugins/bizhub-core`: a Codex-compatible plugin package.
-- `bizhub-mcp`: a dependency-free, read-only stdio MCP server.
+- `bizhub-mcp`: a dependency-free, read-only stdio MCP server with local
+  host discovery and deterministic draft planning.
 - `bizhub-bootstrap`: the only BizHub-managed Skill in this repository.
 - `docs/customer-skill-extension.md`: guidance for a customer's own Agent to
   add a small project-specific Skill later, only when a repeated workflow
@@ -51,9 +53,14 @@ repository and release match this project and that all production/data
 capabilities remain `false`. If that readback fails, remove the registration
 and stop.
 
+`bizhub_discover_local_host` reports only OS family, architecture, Python
+version, CPU count, and free disk space. It does not return hostname, username,
+home path, IP addresses, environment variables, files, or secrets. It never
+claims that the Agent host is the deployment target.
+
 To uninstall this preview, remove the `bizhub-core` plugin entry or the direct
 `bizhub-mcp` registration created during installation, restart/reload the
-Agent host, and verify that the three `bizhub_*` tools are no longer listed.
+Agent host, and verify that the five `bizhub_*` tools are no longer listed.
 The preview creates no backend service or customer database.
 
 ## Maintainer verification
