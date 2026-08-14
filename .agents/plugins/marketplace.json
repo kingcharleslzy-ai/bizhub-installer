@@ -1,0 +1,20 @@
+{
+  "name": "bizhub-public",
+  "interface": {
+    "displayName": "BizHub Public"
+  },
+  "plugins": [
+    {
+      "name": "bizhub-core",
+      "source": {
+        "source": "local",
+        "path": "./plugins/bizhub-core"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

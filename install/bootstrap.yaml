@@ -1,0 +1,26 @@
+schema_version: bizhub.public_bootstrap.v0
+status: preview_read_only
+
+repository:
+  id: github://kingcharleslzy-ai/bizhub-installer
+  url: https://github.com/kingcharleslzy-ai/bizhub-installer
+  pinned_release: v0.1.0-preview.1
+
+delivery:
+  plugin_path: plugins/bizhub-core
+  mcp_server_id: bizhub-mcp
+  mcp_config_path: plugins/bizhub-core/.mcp.json
+  bootstrap_skill_id: bizhub-bootstrap
+  bootstrap_skill_path: plugins/bizhub-core/skills/bizhub-bootstrap
+  customer_extension_guide: docs/customer-skill-extension.md
+
+capabilities:
+  production_backend_install: false
+  production_frontend_deploy: false
+  real_customer_data: false
+  host_mutation_without_approval: false
+  arbitrary_shell: false
+  network_access: false
+  secret_access: false
+
+first_question_stage: deployment

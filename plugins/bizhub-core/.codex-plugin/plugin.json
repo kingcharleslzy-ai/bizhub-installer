@@ -1,0 +1,26 @@
+{
+  "name": "bizhub-core",
+  "version": "0.1.0",
+  "description": "Read-only Agent bootstrap for a private BizHub setup.",
+  "author": {
+    "name": "kingcharleslzy-ai"
+  },
+  "homepage": "https://github.com/kingcharleslzy-ai/bizhub-installer",
+  "repository": "https://github.com/kingcharleslzy-ai/bizhub-installer",
+  "license": "MIT",
+  "keywords": ["bizhub", "bootstrap", "mcp", "agent"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "BizHub Bootstrap",
+    "shortDescription": "Start a safe, read-only BizHub setup interview.",
+    "longDescription": "Adds one read-only BizHub MCP server and one bootstrap Skill. The preview explains its limits and guides the first deployment questions; it does not deploy production systems or ingest customer data.",
+    "developerName": "kingcharleslzy-ai",
+    "category": "Productivity",
+    "capabilities": ["Read-only status", "Guided setup questions"],
+    "websiteURL": "https://github.com/kingcharleslzy-ai/bizhub-installer",
+    "defaultPrompt": [
+      "Start the BizHub preview setup interview."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

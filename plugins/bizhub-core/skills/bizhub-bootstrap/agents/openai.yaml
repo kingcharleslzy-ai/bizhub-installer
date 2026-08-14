@@ -1,0 +1,6 @@
+interface:
+  display_name: "BizHub Bootstrap"
+  short_description: "Safely start BizHub setup from the public repository."
+  default_prompt: "Use $bizhub-bootstrap to inspect this BizHub installer repository and guide me through the preview setup questions."
+policy:
+  allow_implicit_invocation: false

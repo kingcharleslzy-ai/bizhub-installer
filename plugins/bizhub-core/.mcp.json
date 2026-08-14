@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "bizhub-mcp": {
+      "command": "python3",
+      "args": ["./scripts/bizhub_mcp.py"],
+      "cwd": "."
+    }
+  }
+}
