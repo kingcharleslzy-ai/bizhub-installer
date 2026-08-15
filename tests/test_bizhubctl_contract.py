@@ -47,6 +47,44 @@ def test_plan_hash_detects_any_change():
     assert cli.plan_hash(plan) != first
 
 
+@pytest.mark.parametrize("remote", [
+    "https://github.com/kingcharleslzy-ai/bizhub-installer",
+    "https://github.com/kingcharleslzy-ai/bizhub-installer.git",
+    "git@github.com:kingcharleslzy-ai/bizhub-installer",
+    "git@github.com:kingcharleslzy-ai/bizhub-installer.git",
+])
+def test_source_identity_accepts_only_canonical_equivalent_remotes(monkeypatch, remote):
+    cli = load_cli()
+
+    def value(*args):
+        if args == ("rev-parse", "HEAD"):
+            return "a" * 40
+        if args == ("status", "--porcelain"):
+            return ""
+        if args == ("tag", "--points-at", "HEAD"):
+            return f"v{cli.VERSION}"
+        if args == ("remote", "get-url", "origin"):
+            return remote
+        if args == ("rev-parse", "HEAD^{tree}"):
+            return "b" * 40
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cli, "git_value", value)
+    assert cli.source_identity()["repository"] == remote
+
+
+def test_source_identity_rejects_lookalike_repository(monkeypatch):
+    cli = load_cli()
+    monkeypatch.setattr(cli, "git_value", lambda *args: {
+        ("rev-parse", "HEAD"): "a" * 40,
+        ("status", "--porcelain"): "",
+        ("tag", "--points-at", "HEAD"): f"v{cli.VERSION}",
+        ("remote", "get-url", "origin"): "https://github.com/attacker/bizhub-installer.git",
+    }[args])
+    with pytest.raises(RuntimeError):
+        cli.source_identity()
+
+
 def test_fixed_paths_match_contract():
     cli = load_cli()
     assert str(cli.ETC).endswith("/etc/bizhub")

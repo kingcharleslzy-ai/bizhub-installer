@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.3.0-preview.2"
+VERSION = "0.3.0-preview.3"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"
@@ -69,7 +69,9 @@ def source_identity() -> dict[str, str]:
         raise RuntimeError(f"HEAD must be the fixed v{VERSION} release tag")
     remote = git_value("remote", "get-url", "origin")
     accepted = {
+        "https://github.com/kingcharleslzy-ai/bizhub-installer",
         "https://github.com/kingcharleslzy-ai/bizhub-installer.git",
+        "git@github.com:kingcharleslzy-ai/bizhub-installer",
         "git@github.com:kingcharleslzy-ai/bizhub-installer.git",
     }
     if remote not in accepted:

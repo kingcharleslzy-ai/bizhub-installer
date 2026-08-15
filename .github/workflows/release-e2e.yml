@@ -6,7 +6,7 @@ on:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.3.0-preview.2
+        default: v0.3.0-preview.3
 
 permissions:
   contents: read

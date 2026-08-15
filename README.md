@@ -5,7 +5,7 @@ from one fixed public GitHub release. Each company receives one independent
 instance, one administrator account, one application container, and one SQLite
 database.
 
-> **Release state: `v0.3.0-preview.2` implementation preview.** The application
+> **Release state: `v0.3.0-preview.3` implementation preview.** The application
 > and installer are implemented, but this exact release must not be described
 > as stable until its Ubuntu clean-host install, Docker end-to-end flow,
 > backup/restore rehearsal, sensitive-information scan, and fresh-Agent forward
@@ -15,7 +15,7 @@ database.
 
 Use the immutable release URL once the tag is published:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.2`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.3`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.

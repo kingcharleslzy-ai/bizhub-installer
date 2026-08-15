@@ -62,7 +62,7 @@ class FakeBizHub(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            return self._json(200, {"status": "ok", "version": "0.3.0-preview.2"})
+            return self._json(200, {"status": "ok", "version": "0.3.0-preview.3"})
         if self.headers.get("Cookie") != "bizhub_session=test":
             return self._json(401, {"detail": "authentication required"})
         endpoints = {
