@@ -47,7 +47,7 @@ e20271aa92f4c2d12030c0e61246898a3aa3a99987f945c12ae13d65245d947d  deploy/cloudfl
 3d5e8d73cfa7fd02d69b4d5bb40e0ead9f0517f7230ab15eca8e148438880518  docs/read-only-extension.md
 738b9625500d12ff009e8b18c6e87146ff1191491fb69e8e4b879e7392c04396  docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md
 ff9f364a1d0bdff77eae63dd3f676fd7bdc52a0455f3ae3606c6cc5e9f67097b  docs/verification/read-only-extension-ubuntu-e2e-2026-08-15.md
-25749d90955839302b0f916a30f2d8fefab28d0dda2f35a6d87e22d041268be9  docs/verification/v040-preview1-release-e2e-2026-08-16.md
+2510eb1993878b3fe2d3df644c64f7f6be50568e45ab1d839002ad68be0eb0d8  docs/verification/v040-preview1-release-e2e-2026-08-16.md
 1207db766d7bab41f182296ba33cf789eeba7774f295686de4cd03adab8d0878  examples/customer-quality-module.example.json
 a502ef564903af455e60bf582e8099a9660a0f1d1702ef8d34f3716705044f7e  install/bootstrap.yaml
 920c59f16850a0e7fe7edd1efeb91d5625517956016df841ba8033eb350a1eb9  plugins/bizhub-core/.codex-plugin/plugin.json

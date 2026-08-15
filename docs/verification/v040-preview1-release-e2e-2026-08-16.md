@@ -68,13 +68,40 @@ The task made no mutation and requested no secret. Its temporary authentication
 copy was overwritten, unlinked, and the entire temporary configuration and
 plugin cache were removed after readback.
 
+## Release-linked private derived-image follow-up
+
+The private reference candidate was then rebuilt from the exact published
+release commit rather than the earlier development commit:
+
+- public release commit: `604535ec3d4ab1b8b4bad9a876ef2850f564166a`;
+- private source commit: `f7d047b67f855ee02db99525a57cd2ac8a5c9071`;
+- deterministic private bundle SHA-256:
+  `47ba7ea34293620bb9f4516e978bb60a42b5c301bcc0b40bd1e26ec48d83a7f8`;
+- core image id:
+  `sha256:363657f160f259c03dede2d1120b1e165f601f0c5310d1ef5fbca1bfe7c66da7`;
+- derived image id:
+  `sha256:a36dd9d39e779a1e5672c5ebb3e16881313922efc37225514b676092d3aad6fe`.
+
+The private builder returned `release_candidate`. On the isolated Ubuntu 24.04
+VPS, the unmodified release `bizhubctl` verified the real tag, commit and
+checksum, inspected both immutable images, and generated plan hash
+`5895e8ab14b32da9a367e444467dbc9ac72ea6e518e8c8da09b00201c3afc4eb`.
+That exact plan passed TTY install, six-module and dual-commit readback, the full
+synthetic purchase/sales/inventory flow, online backup and restore to inventory
+6, install/update no-op, final verify, and retain-data uninstall. The extension
+continued to report `formal_business_write_capability=none`.
+
+After the retained database and two `0600` backups were verified, the exact
+synthetic directory, containers and images were removed. Docker remained active
+with zero containers, images and volumes; no production host or data was used.
+
 ## Gates deliberately still open
 
 - This preview does not authorize production deployment or customer-data
   access. No Tencent Cloud service or production SQLite database was touched.
 - The disposable runner tested the public single-instance system. The private
-  `dazheng_reference` derived image has separate synthetic VPS evidence; it was
-  not imported into the public runner or repository.
+  `dazheng_reference` release-derived image passed separately on the existing
+  synthetic VPS; it was not imported into the public runner or repository.
 - No real customer domain, TLS reverse proxy, Cloudflare Tunnel, migration, or
   production dual-read was exercised.
 - Stable promotion requires a separately reviewed decision after a bounded
