@@ -17,6 +17,7 @@ const purchases = ref<Json[]>([]);
 const inventory = ref<Json>({ balances: [], movements: [] });
 const audit = ref<Json[]>([]);
 const health = ref<Json>({});
+const systemMap = ref<Json>({ modules: [] });
 
 const partyForm = ref({ canonical_name: "", legal_name: "", roles: ["customer"] });
 const productForm = ref({ canonical_name: "", sku: "", unit_id: "" });
@@ -59,12 +60,12 @@ async function logout() {
 }
 
 async function refresh() {
-  const [newProfile, newCatalog, newSales, newPurchases, newInventory, newAudit, newHealth] = await Promise.all([
+  const [newProfile, newCatalog, newSales, newPurchases, newInventory, newAudit, newHealth, newSystemMap] = await Promise.all([
     api("/api/profile"), api("/api/resources/catalog"), api("/api/orders/sale"), api("/api/orders/purchase"),
-    api("/api/inventory"), api("/api/audit?limit=100"), api("/api/health"),
+    api("/api/inventory"), api("/api/audit?limit=100"), api("/api/health"), api("/api/system/modules"),
   ]);
   profile.value = newProfile; catalog.value = newCatalog; sales.value = newSales; purchases.value = newPurchases;
-  inventory.value = newInventory; audit.value = newAudit; health.value = newHealth;
+  inventory.value = newInventory; audit.value = newAudit; health.value = newHealth; systemMap.value = newSystemMap;
 }
 
 async function action(name: string, data: Json, note: string) {
@@ -178,7 +179,7 @@ onMounted(async () => {
 
       <section v-if="page === 'import'" class="panel"><h2>CSV 导入</h2><div class="inline"><select v-model="importForm.resource" @change="loadTemplate"><option v-for="v in ['party','product','unit','location','opening_inventory','sales_order','purchase_order']" :value="v">{{ v }}</option></select><input v-model="importForm.source_id" placeholder="source_id" /><button class="secondary" @click="loadTemplate">载入模板</button></div><textarea v-model="importForm.text" rows="15" spellcheck="false"></textarea><div class="inline"><button @click="previewImport">校验并预览</button><button :disabled="!importForm.token" @click="applyImport">确认导入</button></div></section>
       <section v-if="page === 'audit'" class="panel"><pre>{{ JSON.stringify(audit, null, 2) }}</pre></section>
-      <section v-if="page === 'system'" class="panel"><h2>实例健康</h2><pre>{{ JSON.stringify(health, null, 2) }}</pre><h2>公司绑定</h2><pre>{{ JSON.stringify(profile, null, 2) }}</pre></section>
+      <section v-if="page === 'system'" class="panel"><h2>实例健康</h2><pre>{{ JSON.stringify(health, null, 2) }}</pre><h2>公司绑定</h2><pre>{{ JSON.stringify(profile, null, 2) }}</pre><h2>有效模块</h2><pre>{{ JSON.stringify(systemMap, null, 2) }}</pre></section>
     </main>
   </div>
 </template>

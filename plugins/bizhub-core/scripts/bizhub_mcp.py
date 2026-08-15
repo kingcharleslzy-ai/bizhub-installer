@@ -73,7 +73,7 @@ TOOLS = [
     {"name": "bizhub_bootstrap_questions", "description": "Return one short stage of the BizHub setup interview.", "inputSchema": {"type": "object", "properties": {"stage": {"type": "string", "enum": list(QUESTION_STAGES)}}, "required": ["stage"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_target_preflight", "description": "Return non-sensitive facts about this host before running bizhubctl preflight on the deployment target.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_instance_health", "description": "Read health from the one BizHub instance configured in the MCP environment.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit"]}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection or the effective module map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit", "system_map"]}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_action_preview", "description": "Validate and preview one supported business action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed action to the configured instance, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
 ]
@@ -201,7 +201,7 @@ def handle_tool_call(params: Any) -> dict[str, Any]:
             error = validate_arguments(arguments, {"resource"}, {"resource"})
             if error:
                 return error
-            endpoints = {"catalog": "/api/resources/catalog", "sales": "/api/orders/sale", "purchases": "/api/orders/purchase", "inventory": "/api/inventory", "audit": "/api/audit?limit=200"}
+            endpoints = {"catalog": "/api/resources/catalog", "sales": "/api/orders/sale", "purchases": "/api/orders/purchase", "inventory": "/api/inventory", "audit": "/api/audit?limit=200", "system_map": "/api/system/modules"}
             endpoint = endpoints.get(arguments["resource"])
             return tool_result(instance_client().request(endpoint)) if endpoint else error_result("unknown_resource")
         if name in {"bizhub_action_preview", "bizhub_action_apply"}:

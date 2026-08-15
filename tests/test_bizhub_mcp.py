@@ -71,6 +71,7 @@ class FakeBizHub(BaseHTTPRequestHandler):
             "/api/orders/purchase": [],
             "/api/inventory": {"balances": []},
             "/api/audit?limit=200": [],
+            "/api/system/modules": {"schema_version": "bizhub.system-map.v1", "modules": []},
         }
         return self._json(200, endpoints.get(self.path, {}))
 
@@ -131,11 +132,13 @@ class BizHubMcpTests(unittest.TestCase):
             with McpSession(env) as session:
                 health = session.tool(1, "bizhub_instance_health")["structuredContent"]
                 catalog = session.tool(2, "bizhub_resource_query", {"resource": "catalog"})["structuredContent"]
-                preview = session.tool(3, "bizhub_action_preview", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}})["structuredContent"]
-                applied = session.tool(4, "bizhub_action_apply", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}, "preview_token": preview["preview_token"], "review_note": "confirmed in test"})["structuredContent"]
+                system_map = session.tool(3, "bizhub_resource_query", {"resource": "system_map"})["structuredContent"]
+                preview = session.tool(4, "bizhub_action_preview", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}})["structuredContent"]
+                applied = session.tool(5, "bizhub_action_apply", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}, "preview_token": preview["preview_token"], "review_note": "confirmed in test"})["structuredContent"]
         server.shutdown(); server.server_close(); thread.join(timeout=2)
         self.assertEqual(health["status"], "ok")
         self.assertEqual(catalog, {"products": []})
+        self.assertEqual(system_map["schema_version"], "bizhub.system-map.v1")
         self.assertEqual(applied["status"], "applied")
         self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply"])
         self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied]))

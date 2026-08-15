@@ -72,6 +72,20 @@ Customer-specific mapping remains in the customer's private environment. The
 documentation-only [extension guide](docs/customer-skill-extension.md) explains
 when a customer's Agent may add one narrow Skill later.
 
+## Modular development direction
+
+The long-term deployment shape is one stable public kernel plus build-time
+customer-private modules. The private reference deployment must eventually run
+the same pinned public core artifact, so its daily business use continuously
+tests the generic product. Similar copied code does not count as adoption.
+
+The unreleased modular contract keeps authentication, SQLite transactions,
+audit, migrations, action approval and readback in the kernel. Customer modules
+may add business entities and owners but cannot replace those boundaries or
+self-install in production. See [modular architecture](docs/modular-architecture.md),
+[Agent evolution](docs/agent-evolution.md), and the machine-readable
+[module manifest schema](schemas/module-manifest.v1.schema.json).
+
 ## Supported deployment
 
 The first supported target is Ubuntu 24.04 with Docker Engine. Run the CLI on

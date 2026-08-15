@@ -1,0 +1,29 @@
+{
+  "schema_version": "bizhub.module-manifest.v1",
+  "module_id": "customer.example.quality",
+  "display_name": "Quality inspection",
+  "module_version": "0.1.0",
+  "source": "customer_private",
+  "kind": "business",
+  "dependencies": ["master_data", "inventory"],
+  "provides_capabilities": ["quality_inspection"],
+  "requires_capabilities": ["product_catalog", "inventory_movement"],
+  "owns_entities": ["quality_inspection", "quality_inspection_result"],
+  "ui_sections": ["quality"],
+  "read_apis": ["/api/extensions/quality/inspections"],
+  "actions": [
+    {
+      "action_id": "record_quality_inspection",
+      "scope": "quality_inspection",
+      "mode": "owner_write"
+    }
+  ],
+  "import_resources": ["quality_inspection"],
+  "governance": {
+    "formal_writer": "module_owner",
+    "preview_required": true,
+    "readback_required": true,
+    "direct_sql_via_mcp": false,
+    "runtime_activation": "build_time"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kingcharleslzy-ai/bizhub-installer/schemas/module-manifest.v1.schema.json",
+  "title": "BizHub module manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "module_id",
+    "display_name",
+    "module_version",
+    "source",
+    "kind",
+    "dependencies",
+    "provides_capabilities",
+    "requires_capabilities",
+    "owns_entities",
+    "ui_sections",
+    "read_apis",
+    "actions",
+    "import_resources",
+    "governance"
+  ],
+  "properties": {
+    "schema_version": {"const": "bizhub.module-manifest.v1"},
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "maxLength": 100
+    },
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 80},
+    "module_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+    },
+    "source": {"enum": ["builtin", "customer_private"]},
+    "kind": {"enum": ["business", "integration", "experience"]},
+    "dependencies": {"$ref": "#/$defs/stringSet"},
+    "provides_capabilities": {"$ref": "#/$defs/stringSet"},
+    "requires_capabilities": {"$ref": "#/$defs/stringSet"},
+    "owns_entities": {"$ref": "#/$defs/stringSet"},
+    "ui_sections": {"$ref": "#/$defs/stringSet"},
+    "read_apis": {"$ref": "#/$defs/stringSet"},
+    "import_resources": {"$ref": "#/$defs/stringSet"},
+    "actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action_id", "scope", "mode"],
+        "properties": {
+          "action_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "scope": {"type": "string", "minLength": 1, "maxLength": 80},
+          "mode": {"const": "owner_write"}
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formal_writer",
+        "preview_required",
+        "readback_required",
+        "direct_sql_via_mcp",
+        "runtime_activation"
+      ],
+      "properties": {
+        "formal_writer": {"enum": ["module_owner", "delegated_owner"]},
+        "preview_required": {"const": true},
+        "readback_required": {"const": true},
+        "direct_sql_via_mcp": {"const": false},
+        "runtime_activation": {"const": "build_time"}
+      }
+    }
+  },
+  "$defs": {
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 160}
+    }
+  }
+}

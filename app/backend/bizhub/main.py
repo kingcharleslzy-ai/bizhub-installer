@@ -22,6 +22,7 @@ from .contracts import (
 )
 from .db import database, initialize_database, state_version
 from .imports import apply_import, csv_records, csv_template, preview_import
+from .modules import system_map
 from .security import (
     authenticated_user,
     clear_login_failures,
@@ -149,6 +150,11 @@ def version() -> dict[str, str]:
 @app.get("/api/profile")
 def profile(_: User) -> dict[str, object]:
     return company_profile().public_payload()
+
+
+@app.get("/api/system/modules")
+def modules(_: User) -> dict[str, object]:
+    return system_map()
 
 
 @app.post("/api/auth/login")
