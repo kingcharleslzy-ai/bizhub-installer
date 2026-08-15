@@ -43,6 +43,30 @@ sudo ./bizhubctl update --plan next-plan.json --approve EXACT_PLAN_HASH
 If health fails, the CLI restores the previous database backup and previous
 image. Never delete the prior image or backup before verification.
 
+## Prebuilt customer-private image
+
+The first extension stage separates build authority from deployment authority.
+A customer-owned tool may create a reviewed derived image, but `bizhubctl` does
+not accept its source directory, Dockerfile path, registry tag, or arbitrary
+build command. `plan` accepts only a local public-core image plus its local
+derived image:
+
+```bash
+sudo ./bizhubctl plan \
+  ... \
+  --candidate-core-image sha256:<CORE_IMAGE_ID> \
+  --candidate-image sha256:<DERIVED_IMAGE_ID> \
+  --output private-plan.json
+```
+
+The plan binds both immutable image IDs, the public and private full commits,
+extension mode and fixed import names. It also proves that the derived root
+filesystem starts with every public-core layer and adds at least one private
+layer, while preserving the core entrypoint, command, healthcheck, user and
+exposed ports. Install and update repeat the same inspection immediately before
+apply. Supplying only one image, pruning either image between plan and apply,
+or retagging a different image fails closed.
+
 ## Uninstall
 
 `uninstall` prints a confirmation derived from the installed plan. It stops

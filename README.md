@@ -128,6 +128,24 @@ sudo ./bizhubctl verify
 sudo ./bizhubctl backup --label initial-restore-test
 ```
 
+For a reviewed customer-private read-only image, the Agent first builds both
+images on the target and supplies their local references while planning:
+
+```bash
+sudo ./bizhubctl plan \
+  ...same company and access arguments... \
+  --candidate-core-image sha256:<PUBLIC_CORE_IMAGE_ID> \
+  --candidate-image sha256:<PRIVATE_DERIVED_IMAGE_ID> \
+  --output /tmp/bizhub-private-plan.json
+```
+
+Both references are resolved immediately to immutable image IDs. Planning and
+apply reject a false/missing full commit, layer ancestry drift, changed core
+command/health/user/port metadata, invalid extension import name, or a private
+runtime identity that differs from its image label. The two local images must
+remain available until install/update finishes; a tag alone is never stored as
+deployment authority.
+
 For `domain` and `cloudflare` access, the application binds only to loopback;
 the approved Agent configures HTTPS using the examples in `deploy/`. For
 `private` access, the plan requires an explicit private IP. Plain HTTP is

@@ -52,9 +52,105 @@ def test_build_image_binds_the_planned_core_commit(monkeypatch):
     commands = []
     monkeypatch.setattr(cli, "run", lambda command, **_: commands.append(command))
     commit = "a" * 40
-    assert cli.build_image({"source": {"commit": commit}}) == f"bizhub:{commit[:12]}"
+    assert cli.build_image(
+        {
+            "source": {"commit": commit},
+            "deployment_image": {"mode": "build_public_source", "core_revision": commit},
+        }
+    ) == f"bizhub:{commit[:12]}"
     build_arg = commands[0].index("--build-arg")
     assert commands[0][build_arg + 1] == f"BIZHUB_CORE_COMMIT={commit}"
+
+
+def image_fixture(*, derived=False):
+    core_revision = "a" * 40
+    private_revision = "b" * 40
+    labels = {"org.opencontainers.image.revision": core_revision}
+    environment = [f"BIZHUB_CORE_COMMIT={core_revision}"]
+    layers = ["sha256:" + "1" * 64, "sha256:" + "2" * 64]
+    if derived:
+        labels = {
+            "org.opencontainers.image.base.revision": core_revision,
+            "org.opencontainers.image.revision": private_revision,
+            "com.bizhub.extension.mode": "read-only-reference",
+        }
+        environment.extend(
+            [
+                f"BIZHUB_EXPECTED_CORE_COMMIT={core_revision}",
+                f"BIZHUB_PRIVATE_EXTENSION_COMMIT={private_revision}",
+                "BIZHUB_EXTENSION_MODULES=customer_reference",
+            ]
+        )
+        layers.append("sha256:" + "3" * 64)
+    return {
+        "Id": "sha256:" + ("d" if derived else "c") * 64,
+        "Config": {
+            "Labels": labels,
+            "Env": environment,
+            "Entrypoint": None,
+            "Cmd": ["uvicorn", "bizhub.main:app"],
+            "Healthcheck": {"Test": ["CMD", "python", "health.py"]},
+            "User": "10001:10001",
+            "ExposedPorts": {"8080/tcp": {}},
+        },
+        "RootFS": {"Layers": layers},
+    }
+
+
+def test_derived_image_plan_binds_immutable_ids_layers_and_revisions(monkeypatch):
+    cli = load_cli()
+    core = image_fixture()
+    derived = image_fixture(derived=True)
+    monkeypatch.setattr(cli, "inspect_docker_image", lambda reference: {"core": core, "derived": derived}[reference])
+    result = cli.deployment_image_plan(
+        candidate_core_image="core",
+        candidate_image="derived",
+        core_revision="a" * 40,
+    )
+    assert result == {
+        "mode": "prebuilt_customer_private",
+        "core_image_id": core["Id"],
+        "candidate_image_id": derived["Id"],
+        "core_revision": "a" * 40,
+        "private_revision": "b" * 40,
+        "extension_mode": "read-only-reference",
+        "extension_modules": ["customer_reference"],
+    }
+
+
+def test_derived_image_plan_requires_a_pair_and_real_ancestry(monkeypatch):
+    cli = load_cli()
+    with pytest.raises(ValueError, match="supplied together"):
+        cli.deployment_image_plan(candidate_core_image="core", candidate_image=None, core_revision="a" * 40)
+
+    core = image_fixture()
+    derived = image_fixture(derived=True)
+    derived["RootFS"]["Layers"][0] = "sha256:" + "9" * 64
+    monkeypatch.setattr(cli, "inspect_docker_image", lambda reference: {"core": core, "derived": derived}[reference])
+    with pytest.raises(ValueError, match="does not extend"):
+        cli.deployment_image_plan(
+            candidate_core_image="core",
+            candidate_image="derived",
+            core_revision="a" * 40,
+        )
+
+
+def test_build_image_uses_only_the_approved_derived_image_id(monkeypatch):
+    cli = load_cli()
+    deployment = {
+        "mode": "prebuilt_customer_private",
+        "core_image_id": "sha256:" + "c" * 64,
+        "candidate_image_id": "sha256:" + "d" * 64,
+        "core_revision": "a" * 40,
+        "private_revision": "b" * 40,
+        "extension_mode": "read-only-reference",
+        "extension_modules": ["customer_reference"],
+    }
+    monkeypatch.setattr(cli, "deployment_image_plan", lambda **_: deployment)
+    monkeypatch.setattr(cli, "run", lambda *_args, **_kwargs: pytest.fail("derived apply must not build an image"))
+    assert cli.build_image({"source": {"commit": "a" * 40}, "deployment_image": deployment}) == deployment[
+        "candidate_image_id"
+    ]
 
 
 @pytest.mark.parametrize("remote", [

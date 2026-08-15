@@ -33,6 +33,10 @@ APP_DATA = DATA / "data"
 BACKUPS = ROOT / "var/backups/bizhub"
 STATE = DATA / "install-state.json"
 PLAN_CONTRACT = "bizhub.install-plan.v1"
+DERIVED_EXTENSION_MODE = "read-only-reference"
+COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+IMPORT_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
 def now() -> str:
@@ -170,6 +174,96 @@ def validate_bind(access: str, bind_address: str, hostname: str) -> None:
         raise ValueError("domain and Cloudflare access require a hostname")
 
 
+def inspect_docker_image(reference: str) -> dict[str, Any]:
+    result = run(["docker", "image", "inspect", reference], check=False)
+    if result.returncode != 0:
+        raise ValueError(f"Docker image is unavailable: {reference}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Docker returned invalid image metadata for {reference}") from exc
+    if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
+        raise ValueError(f"Docker image reference must resolve to exactly one image: {reference}")
+    image = payload[0]
+    if not IMAGE_ID_PATTERN.fullmatch(str(image.get("Id", ""))):
+        raise ValueError(f"Docker image has an invalid immutable id: {reference}")
+    return image
+
+
+def image_environment(image: dict[str, Any]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    config = image.get("Config") or {}
+    for item in config.get("Env") or []:
+        key, marker, value = str(item).partition("=")
+        if marker:
+            values[key] = value
+    return values
+
+
+def deployment_image_plan(
+    *, candidate_core_image: str | None, candidate_image: str | None, core_revision: str
+) -> dict[str, Any]:
+    if bool(candidate_core_image) != bool(candidate_image):
+        raise ValueError("candidate core and derived image references must be supplied together")
+    if not candidate_image:
+        return {"mode": "build_public_source", "core_revision": core_revision}
+    if not COMMIT_PATTERN.fullmatch(core_revision):
+        raise ValueError("core revision must be a full Git commit")
+
+    core = inspect_docker_image(candidate_core_image or "")
+    derived = inspect_docker_image(candidate_image)
+    core_config = core.get("Config") or {}
+    derived_config = derived.get("Config") or {}
+    core_labels = core_config.get("Labels") or {}
+    derived_labels = derived_config.get("Labels") or {}
+    core_environment = image_environment(core)
+    derived_environment = image_environment(derived)
+    private_revision = str(derived_labels.get("org.opencontainers.image.revision", ""))
+
+    if core_labels.get("org.opencontainers.image.revision") != core_revision:
+        raise ValueError("candidate core image revision does not match the planned public source")
+    if core_environment.get("BIZHUB_CORE_COMMIT") != core_revision:
+        raise ValueError("candidate core image runtime identity does not match the planned public source")
+    if derived_labels.get("org.opencontainers.image.base.revision") != core_revision:
+        raise ValueError("derived image base revision does not match the planned public source")
+    if not COMMIT_PATTERN.fullmatch(private_revision):
+        raise ValueError("derived image must declare a full private revision")
+    if derived_labels.get("com.bizhub.extension.mode") != DERIVED_EXTENSION_MODE:
+        raise ValueError(f"derived image must use extension mode {DERIVED_EXTENSION_MODE}")
+    if derived_environment.get("BIZHUB_CORE_COMMIT") != core_revision:
+        raise ValueError("derived image inherited core identity does not match the planned public source")
+    if derived_environment.get("BIZHUB_EXPECTED_CORE_COMMIT") != core_revision:
+        raise ValueError("derived image expected core identity does not match the planned public source")
+    if derived_environment.get("BIZHUB_PRIVATE_EXTENSION_COMMIT") != private_revision:
+        raise ValueError("derived image private runtime identity does not match its revision label")
+
+    extension_modules = tuple(
+        item.strip() for item in derived_environment.get("BIZHUB_EXTENSION_MODULES", "").split(",") if item.strip()
+    )
+    if not extension_modules or len(extension_modules) != len(set(extension_modules)):
+        raise ValueError("derived image must declare unique extension modules")
+    if any(not IMPORT_NAME_PATTERN.fullmatch(item) for item in extension_modules):
+        raise ValueError("derived image extension modules must be fixed Python import names")
+
+    core_layers = ((core.get("RootFS") or {}).get("Layers") or [])
+    derived_layers = ((derived.get("RootFS") or {}).get("Layers") or [])
+    if not core_layers or len(derived_layers) <= len(core_layers) or derived_layers[: len(core_layers)] != core_layers:
+        raise ValueError("derived image filesystem does not extend the selected core image")
+    for key in ("Entrypoint", "Cmd", "Healthcheck", "User", "ExposedPorts"):
+        if derived_config.get(key) != core_config.get(key):
+            raise ValueError(f"derived image may not replace core runtime field {key}")
+
+    return {
+        "mode": "prebuilt_customer_private",
+        "core_image_id": core["Id"],
+        "candidate_image_id": derived["Id"],
+        "core_revision": core_revision,
+        "private_revision": private_revision,
+        "extension_mode": DERIVED_EXTENSION_MODE,
+        "extension_modules": list(extension_modules),
+    }
+
+
 def make_plan(args: argparse.Namespace) -> dict[str, Any]:
     preflight = preflight_result()
     if preflight["status"] != "passed":
@@ -192,6 +286,11 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
     if args.hostname and not re.fullmatch(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", args.hostname):
         raise ValueError("hostname is invalid")
     source = source_identity()
+    deployment_image = deployment_image_plan(
+        candidate_core_image=args.candidate_core_image,
+        candidate_image=args.candidate_image,
+        core_revision=source["commit"],
+    )
     profile = {
         "schema_version": 1,
         "profile_id": args.profile_id,
@@ -211,6 +310,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
         "created_at": now(),
         "operation": "install",
         "source": {**source, "application_sha256": application_digest()},
+        "deployment_image": deployment_image,
         "target": {
             "fingerprint": target_fingerprint(),
             "platform": "ubuntu-24.04",
@@ -228,7 +328,11 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
         "administrator": {"username": args.admin_username.strip(), "password_source": "interactive_tty"},
         "expected_changes": [
             "create protected BizHub config, data, backup, and install-state paths",
-            "build one application image from the pinned repository commit",
+            (
+                "use the approved immutable customer-private derived image"
+                if deployment_image["mode"] == "prebuilt_customer_private"
+                else "build one application image from the pinned repository commit"
+            ),
             "create the single administrator using a TTY-only password",
             "start one loopback/private-bound BizHub container",
         ],
@@ -258,6 +362,19 @@ def require_apply_environment(plan: dict[str, Any]) -> None:
             raise RuntimeError(f"plan source {key} does not match this checkout")
     if plan["source"]["application_sha256"] != application_digest():
         raise RuntimeError("application files do not match the planned checksum")
+    deployment_image = plan.get("deployment_image")
+    if not isinstance(deployment_image, dict):
+        raise RuntimeError("plan deployment image contract is missing")
+    if deployment_image.get("mode") == "prebuilt_customer_private":
+        observed = deployment_image_plan(
+            candidate_core_image=str(deployment_image.get("core_image_id", "")),
+            candidate_image=str(deployment_image.get("candidate_image_id", "")),
+            core_revision=source["commit"],
+        )
+        if observed != deployment_image:
+            raise RuntimeError("approved derived image identity has changed")
+    elif deployment_image != {"mode": "build_public_source", "core_revision": source["commit"]}:
+        raise RuntimeError("plan deployment image contract is invalid")
 
 
 def require_confirmation(plan: dict[str, Any], supplied: str | None) -> None:
@@ -296,6 +413,16 @@ def docker_mounts(plan: dict[str, Any]) -> list[str]:
 
 
 def build_image(plan: dict[str, Any]) -> str:
+    deployment_image = plan["deployment_image"]
+    if deployment_image["mode"] == "prebuilt_customer_private":
+        observed = deployment_image_plan(
+            candidate_core_image=deployment_image["core_image_id"],
+            candidate_image=deployment_image["candidate_image_id"],
+            core_revision=plan["source"]["commit"],
+        )
+        if observed != deployment_image:
+            raise RuntimeError("approved derived image identity has changed before apply")
+        return deployment_image["candidate_image_id"]
     image = image_name(plan["source"]["commit"])
     run([
         "docker", "build", "--pull",
@@ -523,6 +650,14 @@ def parser() -> argparse.ArgumentParser:
     plan.add_argument("--timezone", required=True)
     plan.add_argument("--currency", default="CNY")
     plan.add_argument("--admin-username", required=True)
+    plan.add_argument(
+        "--candidate-core-image",
+        help="local public core image reference used to prove derived filesystem ancestry",
+    )
+    plan.add_argument(
+        "--candidate-image",
+        help="local prebuilt customer-private image reference; requires --candidate-core-image",
+    )
     for name in ("install", "update"):
         action = commands.add_parser(name)
         action.add_argument("--plan", type=Path, required=True)

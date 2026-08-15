@@ -64,14 +64,16 @@ must not copy the public core source into the private build context.
    image; copy only the private extension package.
 4. Set the fixed import name and expected core/private commit environment
    values in the derived image.
-5. Show image, environment, network and file changes to the user and obtain
+5. Ask `bizhubctl plan` to inspect the local core and derived images using
+   `--candidate-core-image` and `--candidate-image`; retain both immutable IDs.
+6. Show image, environment, network and file changes to the user and obtain
    exact-plan approval.
-6. Start with synthetic configuration and an empty/synthetic database.
-7. Authenticate, read `/api/system/modules`, call every declared extension
+7. Start with synthetic configuration and an empty/synthetic database.
+8. Authenticate, read `/api/system/modules`, call every declared extension
    route, and verify the core and private identities.
-8. Confirm unauthenticated access is denied and all mutation methods return
+9. Confirm unauthenticated access is denied and all mutation methods return
    method-not-allowed or are absent.
-9. Only after an independent production migration plan may the reference
+10. Only after an independent production migration plan may the reference
    deployment begin dual-read comparison. This extension milestone itself does
    not authorize real data access or deployment.
 
