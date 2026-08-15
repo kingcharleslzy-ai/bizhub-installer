@@ -1,30 +1,28 @@
 name: release-e2e
 
 on:
+  push:
+    tags:
+      - "v*-preview.*"
   workflow_dispatch:
     inputs:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.3.0-preview.3
+        default: v0.4.0-preview.1
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   ubuntu-release:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out verification harness
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          path: harness
-
       - name: Check out fixed public release
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ inputs.release_tag || github.ref_name }}
           fetch-depth: 0
           path: release
 
@@ -42,14 +40,43 @@ jobs:
 
       - name: Verify release provenance and static gates
         run: |
-          test "$(git -C release describe --exact-match --tags HEAD)" = "${{ inputs.release_tag }}"
+          release_tag="${{ inputs.release_tag || github.ref_name }}"
+          test "$(git -C release describe --exact-match --tags HEAD)" = "$release_tag"
           python release/scripts/verify_checksums.py
           python -m venv release/.venv
-          release/.venv/bin/pip install --disable-pip-version-check --require-hashes -r harness/app/backend/requirements-dev.lock
+          release/.venv/bin/pip install --disable-pip-version-check --require-hashes -r release/app/backend/requirements-dev.lock
           PYTHONPATH="$PWD/release/app/backend" release/.venv/bin/pytest -q release/app/backend/tests release/tests
           npm --prefix release/app/frontend ci --ignore-scripts
           npm --prefix release/app/frontend run build
           npm --prefix release/app/frontend audit --audit-level=high
+
+      - name: Install the one plugin from the fixed commit
+        shell: bash
+        run: |
+          npm install --global @openai/codex@0.147.0
+          release_commit="$(git -C release rev-parse HEAD)"
+          marketplace="$(codex plugin marketplace add kingcharleslzy-ai/bizhub-installer --ref "$release_commit" --json)"
+          marketplace_root="$(jq -r .installedRoot <<<"$marketplace")"
+          test "$(git -C "$marketplace_root" rev-parse HEAD)" = "$release_commit"
+          installed="$(codex plugin add bizhub-core@bizhub-public --json)"
+          plugin_path="$(jq -r .installedPath <<<"$installed")"
+          test "$(jq -r .version <<<"$installed")" = "0.4.0-preview.1"
+          test "$(find "$plugin_path/skills" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
+          test -f "$plugin_path/skills/bizhub-bootstrap/SKILL.md"
+          test "$(jq -r '.mcpServers | keys | join(",")' "$plugin_path/.mcp.json")" = bizhub-mcp
+          plugin_list="$(codex plugin list --json)"
+          test "$(jq '[.installed[] | select(.name == "bizhub-core" and .enabled == true)] | length' <<<"$plugin_list")" = 1
+          mcp_output="$(
+            cd "$plugin_path"
+            printf '%s\n' \
+              '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{}}}' \
+              '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+              '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"bizhub_bootstrap_status","arguments":{}}}' \
+              | python3 scripts/bizhub_mcp.py
+          )"
+          test "$(jq -sr '.[0].result.serverInfo.version' <<<"$mcp_output")" = "0.4.0-preview.1"
+          test "$(jq -sr '.[1].result.tools | length' <<<"$mcp_output")" = 7
+          test "$(jq -sr '.[2].result.structuredContent.maturity' <<<"$mcp_output")" = implementation_preview
 
       - name: Run target preflight and produce approved-plan candidate
         id: plan
@@ -77,8 +104,26 @@ jobs:
 
       - name: Install, exercise, back up, restore, and uninstall
         run: |
-          sudo python harness/tests/ubuntu_release_e2e.py \
+          sudo python release/tests/ubuntu_release_e2e.py \
             --repo "$PWD/release" \
             --plan /tmp/bizhub-install-plan.json \
             --plan-hash "${{ steps.plan.outputs.plan_hash }}" \
             --instance-url "http://${{ steps.plan.outputs.runner_ip }}:8080"
+
+      - name: Publish the verified preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          release_tag="${{ inputs.release_tag || github.ref_name }}"
+          test "$release_tag" = v0.4.0-preview.1
+          if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --prerelease \
+              --title "BizHub $release_tag" \
+              --notes "Implementation preview for the bounded customer-private read-only derived-image chain. Ubuntu 24.04 install, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
+          fi
+          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease,tagName,url \
+            --jq 'select(.isPrerelease == true and .tagName == "v0.4.0-preview.1") | .url'

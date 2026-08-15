@@ -11,11 +11,20 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
+> **Current development preview: `v0.4.0-preview.1`.** It adds the bounded
+> customer-private read-only derived-image chain. It is intentionally not the
+> stable default and must pass its tag-triggered clean Ubuntu workflow before
+> its release evidence is accepted.
+
 ## Give the release to an Agent
 
 Use the immutable release URL once the tag is published:
 
 `https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
+
+For the derived-image preview verification only, use:
+
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.1`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -87,12 +96,12 @@ self-install in production. See [modular architecture](docs/modular-architecture
 [read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
 
-The development branch now implements the first deliberately narrow adoption
+The `v0.4.0-preview.1` candidate implements the first deliberately narrow adoption
 step: an immutable derived image may load reviewed customer-private **read-only**
 routers by fixed Python import name. The core rejects mutation routes, lifecycle
 handlers, undeclared paths, missing dependencies, duplicate capabilities and
-extension-owned durable entities. This is unreleased and does not change the
-supported `v0.3.0` production path.
+extension-owned durable entities. This remains a preview and does not change
+the supported `v0.3.0` production path.
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import unittest
 from pathlib import Path
@@ -70,6 +71,24 @@ class DistributionShapeTests(unittest.TestCase):
             if path.is_file() and path.stat().st_mode & stat.S_IXUSR
         }
         self.assertEqual(executable_files, {PLUGIN / "scripts" / "bizhub_mcp.py"})
+
+    def test_preview_version_is_consistent_across_delivery_surfaces(self) -> None:
+        version = "0.4.0-preview.1"
+        plugin = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        frontend = json.loads((ROOT / "app/frontend/package.json").read_text(encoding="utf-8"))
+        bootstrap = (ROOT / "install/bootstrap.yaml").read_text(encoding="utf-8")
+        installer = (ROOT / "bizhubctl").read_text(encoding="utf-8")
+        backend = (ROOT / "app/backend/bizhub/__init__.py").read_text(encoding="utf-8")
+        mcp = (PLUGIN / "scripts/bizhub_mcp.py").read_text(encoding="utf-8")
+
+        self.assertEqual(plugin["version"], version)
+        self.assertEqual(frontend["version"], version)
+        self.assertRegex(bootstrap, rf"(?m)^status: implementation_preview$")
+        self.assertRegex(bootstrap, rf"(?m)^  release_tag: v{re.escape(version)}$")
+        self.assertIn(f'VERSION = "{version}"', installer)
+        self.assertIn(f'__version__ = "{version}"', backend)
+        self.assertIn(f'RELEASE_TAG = "v{version}"', mcp)
+        self.assertIn('"maturity": "implementation_preview"', mcp)
 
 
 if __name__ == "__main__":

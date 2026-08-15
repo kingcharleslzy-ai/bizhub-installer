@@ -62,7 +62,7 @@ class FakeBizHub(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            return self._json(200, {"status": "ok", "version": "0.3.0"})
+            return self._json(200, {"status": "ok", "version": "0.4.0-preview.1"})
         if self.headers.get("Cookie") != "bizhub_session=test":
             return self._json(401, {"detail": "authentication required"})
         endpoints = {
@@ -111,7 +111,7 @@ class BizHubMcpTests(unittest.TestCase):
             questions = session.tool(2, "bizhub_bootstrap_questions", {"stage": "deployment"})["structuredContent"]
             preflight = session.tool(3, "bizhub_target_preflight")["structuredContent"]
         self.assertEqual(status["deployment_model"], "one_company_one_instance")
-        self.assertEqual(status["maturity"], "stable")
+        self.assertEqual(status["maturity"], "implementation_preview")
         self.assertLessEqual(len(questions["questions"]), 2)
         self.assertFalse(preflight["target_verified"])
         self.assertEqual(preflight["scope"], "mcp_host_only")
