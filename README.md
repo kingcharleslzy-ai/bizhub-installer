@@ -12,9 +12,9 @@ database.
 > Tunnel access path before real customer data enters.
 
 > **Current development preview: `v0.4.0-preview.1`.** It adds the bounded
-> customer-private read-only derived-image chain. It is intentionally not the
-> stable default and must pass its tag-triggered clean Ubuntu workflow before
-> its release evidence is accepted.
+> customer-private read-only derived-image chain. Its tag-triggered clean Ubuntu
+> workflow and fresh-Agent read-only forward test passed, but it intentionally
+> remains a preview and does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -112,8 +112,12 @@ clean-host installer/release gate. See the
 A later development candidate also passed the narrowed private Git-whitelist
 bundle and immutable-image plan lifecycle: install, repeated install no-op,
 backup/restore, update, repeated update no-op, verify, and retain-data uninstall.
-The stable release gate deliberately remained closed. See the
-[derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md).
+The preview then passed its clean Ubuntu release workflow and fresh-Agent
+bootstrap forward test; the stable promotion gate deliberately remains closed.
+See the
+[derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md)
+and the
+[preview release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
 
 ## Supported deployment
 
