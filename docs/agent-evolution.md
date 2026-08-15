@@ -20,6 +20,12 @@ Do not create a Skill for a single form, a module for a field mapping, or a new
 MCP server for a customer workflow. Reuse the one BizHub MCP and its stable
 server-side permissions.
 
+The current executable extension seam supports only a subset of level 3:
+authenticated, read-only projections in a derived image. If a request needs a
+new writer, migration, scheduled job or UI bundle, the Agent produces a design
+and tests in the private repository but must not activate it through the current
+loader.
+
 ## Discovery questions
 
 Before generating anything, the Agent asks only the questions needed for the
@@ -103,6 +109,11 @@ A generated private module is incomplete unless it has:
 
 Runtime hot-install, hot-unload, generated SQL, and production code mutation are
 out of scope. A module update is an ordinary reviewed software release.
+
+For the currently implemented read-only subset, follow the smaller executable
+contract in [read-only-extension.md](read-only-extension.md). Do not claim that
+the larger checklist is runtime-supported merely because the manifest schema
+can describe future module forms.
 
 ## Generic promotion test
 

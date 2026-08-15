@@ -11,6 +11,7 @@
     "module_version",
     "source",
     "kind",
+    "api_prefix",
     "dependencies",
     "provides_capabilities",
     "requires_capabilities",
@@ -35,6 +36,7 @@
     },
     "source": {"enum": ["builtin", "customer_private"]},
     "kind": {"enum": ["business", "integration", "experience"]},
+    "api_prefix": {"type": "string", "maxLength": 160},
     "dependencies": {"$ref": "#/$defs/stringSet"},
     "provides_capabilities": {"$ref": "#/$defs/stringSet"},
     "requires_capabilities": {"$ref": "#/$defs/stringSet"},
@@ -67,14 +69,50 @@
         "runtime_activation"
       ],
       "properties": {
-        "formal_writer": {"enum": ["module_owner", "delegated_owner"]},
-        "preview_required": {"const": true},
+        "formal_writer": {"enum": ["none", "module_owner", "delegated_owner"]},
+        "preview_required": {"type": "boolean"},
         "readback_required": {"const": true},
         "direct_sql_via_mcp": {"const": false},
         "runtime_activation": {"const": "build_time"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"formal_writer": {"const": "none"}}},
+          "then": {"properties": {"preview_required": {"const": false}}},
+          "else": {"properties": {"preview_required": {"const": true}}}
+        }
+      ]
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"source": {"const": "customer_private"}}},
+      "then": {
+        "properties": {
+          "module_id": {"pattern": "^customer\\.[a-z0-9]+(?:[._-][a-z0-9]+)+$"},
+          "api_prefix": {"pattern": "^/api/extensions/[a-z][a-z0-9-]*(?:/[a-z0-9-]+)*$"}
+        }
+      },
+      "else": {"properties": {"api_prefix": {"const": ""}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "governance": {
+            "properties": {"formal_writer": {"const": "none"}},
+            "required": ["formal_writer"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "owns_entities": {"maxItems": 0},
+          "actions": {"maxItems": 0},
+          "import_resources": {"maxItems": 0}
+        }
+      }
+    }
+  ],
   "$defs": {
     "stringSet": {
       "type": "array",

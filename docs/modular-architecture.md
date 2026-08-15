@@ -165,8 +165,15 @@ not count.
 
 ## Current implementation status
 
-The built-in system map and manifest schema are implemented on the development
-branch. External executable module loading and reference-deployment migration
-are not yet implemented. Until those later gates pass, the stable release
-remains the self-contained single-company application described in the root
-README.
+The built-in system map, manifest schema, core source identity and first
+external loading boundary are implemented on the development branch. The
+loader accepts only reviewed customer-private read-only routers already present
+in an immutable derived image. It rejects writes, lifecycle hooks, undeclared
+routes, arbitrary file paths and dependency/capability drift; every route is
+protected by core administrator authentication. See
+[read-only extension boundary](read-only-extension.md).
+
+This is an adoption seam, not a general plugin runtime. Customer business
+writers, migrations, pages, jobs, hot installation and production migration are
+not yet enabled. Until later gates pass, the stable release remains the
+self-contained single-company application described in the root README.

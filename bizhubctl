@@ -297,7 +297,12 @@ def docker_mounts(plan: dict[str, Any]) -> list[str]:
 
 def build_image(plan: dict[str, Any]) -> str:
     image = image_name(plan["source"]["commit"])
-    run(["docker", "build", "--pull", "--label", f"org.opencontainers.image.revision={plan['source']['commit']}", "-t", image, "-f", str(repository_root() / "app/Dockerfile"), str(repository_root() / "app")])
+    run([
+        "docker", "build", "--pull",
+        "--build-arg", f"BIZHUB_CORE_COMMIT={plan['source']['commit']}",
+        "--label", f"org.opencontainers.image.revision={plan['source']['commit']}",
+        "-t", image, "-f", str(repository_root() / "app/Dockerfile"), str(repository_root() / "app"),
+    ])
     return image
 
 

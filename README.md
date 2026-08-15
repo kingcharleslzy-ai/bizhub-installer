@@ -83,8 +83,16 @@ The unreleased modular contract keeps authentication, SQLite transactions,
 audit, migrations, action approval and readback in the kernel. Customer modules
 may add business entities and owners but cannot replace those boundaries or
 self-install in production. See [modular architecture](docs/modular-architecture.md),
-[Agent evolution](docs/agent-evolution.md), and the machine-readable
+[Agent evolution](docs/agent-evolution.md), the implemented
+[read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
+
+The development branch now implements the first deliberately narrow adoption
+step: an immutable derived image may load reviewed customer-private **read-only**
+routers by fixed Python import name. The core rejects mutation routes, lifecycle
+handlers, undeclared paths, missing dependencies, duplicate capabilities and
+extension-owned durable entities. This is unreleased and does not change the
+supported `v0.3.0` production path.
 
 ## Supported deployment
 

@@ -21,8 +21,9 @@ from .contracts import (
     ImportPreviewRequest,
 )
 from .db import database, initialize_database, state_version
+from .extensions import load_extension_modules
 from .imports import apply_import, csv_records, csv_template, preview_import
-from .modules import system_map
+from .modules import register_extension_manifests, reset_runtime_modules, system_map
 from .security import (
     authenticated_user,
     clear_login_failures,
@@ -37,6 +38,10 @@ from .service import apply_action, audit_events, catalog, inventory_projection, 
 
 
 SESSION_COOKIE = "bizhub_session"
+
+reset_runtime_modules()
+LOADED_EXTENSIONS = load_extension_modules()
+register_extension_manifests(tuple(extension.manifest for extension in LOADED_EXTENSIONS))
 
 
 class StrictModel(BaseModel):
@@ -266,6 +271,10 @@ def import_apply(payload: ImportApplyRequest, conn: Db, _: Mutation, user: User)
         actor=user["username"],
         review_note=payload.review_note,
     )
+
+
+for extension in LOADED_EXTENSIONS:
+    app.include_router(extension.router, dependencies=[Depends(current_user)])
 
 
 assets = static_dir()

@@ -32,6 +32,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BIZHUB_DATABASE_PATH", str(tmp_path / "bizhub.db"))
     monkeypatch.setenv("BIZHUB_COOKIE_SECURE", "0")
     monkeypatch.setenv("BIZHUB_STATIC_DIR", str(tmp_path / "missing-static"))
+    monkeypatch.delenv("BIZHUB_EXTENSION_MODULES", raising=False)
+    monkeypatch.setenv("BIZHUB_CORE_COMMIT", "development")
 
     from bizhub import config as config_module
 

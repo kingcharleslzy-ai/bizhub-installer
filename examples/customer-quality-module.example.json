@@ -4,24 +4,19 @@
   "display_name": "Quality inspection",
   "module_version": "0.1.0",
   "source": "customer_private",
-  "kind": "business",
+  "kind": "experience",
+  "api_prefix": "/api/extensions/quality",
   "dependencies": ["master_data", "inventory"],
-  "provides_capabilities": ["quality_inspection"],
-  "requires_capabilities": ["product_catalog", "inventory_movement"],
-  "owns_entities": ["quality_inspection", "quality_inspection_result"],
+  "provides_capabilities": ["quality_status_projection"],
+  "requires_capabilities": ["product_catalog", "inventory_balance"],
+  "owns_entities": [],
   "ui_sections": ["quality"],
   "read_apis": ["/api/extensions/quality/inspections"],
-  "actions": [
-    {
-      "action_id": "record_quality_inspection",
-      "scope": "quality_inspection",
-      "mode": "owner_write"
-    }
-  ],
-  "import_resources": ["quality_inspection"],
+  "actions": [],
+  "import_resources": [],
   "governance": {
-    "formal_writer": "module_owner",
-    "preview_required": true,
+    "formal_writer": "none",
+    "preview_required": false,
     "readback_required": true,
     "direct_sql_via_mcp": false,
     "runtime_activation": "build_time"

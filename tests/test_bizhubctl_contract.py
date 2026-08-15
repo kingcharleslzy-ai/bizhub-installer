@@ -47,6 +47,16 @@ def test_plan_hash_detects_any_change():
     assert cli.plan_hash(plan) != first
 
 
+def test_build_image_binds_the_planned_core_commit(monkeypatch):
+    cli = load_cli()
+    commands = []
+    monkeypatch.setattr(cli, "run", lambda command, **_: commands.append(command))
+    commit = "a" * 40
+    assert cli.build_image({"source": {"commit": commit}}) == f"bizhub:{commit[:12]}"
+    build_arg = commands[0].index("--build-arg")
+    assert commands[0][build_arg + 1] == f"BIZHUB_CORE_COMMIT={commit}"
+
+
 @pytest.mark.parametrize("remote", [
     "https://github.com/kingcharleslzy-ai/bizhub-installer",
     "https://github.com/kingcharleslzy-ai/bizhub-installer.git",

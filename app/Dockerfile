@@ -6,12 +6,15 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS runtime
+ARG BIZHUB_CORE_COMMIT=development
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     BIZHUB_DATABASE_PATH=/data/bizhub.db \
     BIZHUB_COMPANY_CONFIG=/config/company.json \
     BIZHUB_SECRET_KEY_FILE=/config/secret-key \
-    BIZHUB_STATIC_DIR=/opt/bizhub/bizhub/static
+    BIZHUB_STATIC_DIR=/opt/bizhub/bizhub/static \
+    BIZHUB_CORE_COMMIT=${BIZHUB_CORE_COMMIT}
+LABEL org.opencontainers.image.revision=${BIZHUB_CORE_COMMIT}
 WORKDIR /opt/bizhub
 RUN groupadd --gid 10001 bizhub && useradd --uid 10001 --gid bizhub --no-create-home --shell /usr/sbin/nologin bizhub
 COPY backend/requirements.lock ./requirements.lock
