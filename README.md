@@ -94,6 +94,12 @@ handlers, undeclared paths, missing dependencies, duplicate capabilities and
 extension-owned durable entities. This is unreleased and does not change the
 supported `v0.3.0` production path.
 
+The exact development commit passed an isolated base-image plus derived-image
+E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
+readback, business flow, backup/restore, restart and MCP path; it is not yet the
+clean-host installer/release gate. See the
+[verification record](docs/verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
+
 ## Supported deployment
 
 The first supported target is Ubuntu 24.04 with Docker Engine. Run the CLI on

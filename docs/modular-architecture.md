@@ -177,3 +177,8 @@ This is an adoption seam, not a general plugin runtime. Customer business
 writers, migrations, pages, jobs, hot installation and production migration are
 not yet enabled. Until later gates pass, the stable release remains the
 self-contained single-company application described in the root README.
+
+The first derived-image runtime proof is recorded in
+[read-only extension Ubuntu E2E](verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
+It ran on an existing shared VPS, so it closes the runtime seam but not the
+independent clean-host installer or stable-release gates.
