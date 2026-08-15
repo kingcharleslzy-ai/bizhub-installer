@@ -1,10 +1,10 @@
 schema_version: bizhub.public_bootstrap.v1
-status: implementation_preview
+status: stable
 
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.3.0-preview.4
+  release_tag: v0.3.0
   checksums_path: install/CHECKSUMS.sha256
 
 delivery:

@@ -5,17 +5,17 @@ from one fixed public GitHub release. Each company receives one independent
 instance, one administrator account, one application container, and one SQLite
 database.
 
-> **Release state: `v0.3.0-preview.4` implementation preview.** The application
-> and installer are implemented, but this exact release must not be described
-> as stable until its Ubuntu clean-host install, Docker end-to-end flow,
-> backup/restore rehearsal, sensitive-information scan, and fresh-Agent forward
-> test are recorded as passed.
+> **Current stable release: `v0.3.0`.** This exact release passed its Ubuntu
+> 24.04 clean-host install, Docker business-flow test, backup/restore rehearsal,
+> sensitive-information scan, and fresh-Agent plugin forward test. Each customer
+> deployment must still verify its final private TLS, domain, or Cloudflare
+> Tunnel access path before real customer data enters.
 
 ## Give the release to an Agent
 
 Use the immutable release URL once the tag is published:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.4`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -145,5 +145,5 @@ The bootstrap, Agent integration, documentation, and plugin paths listed in
 [LICENSE](LICENSE) use MIT. The application core, deployment templates, and
 `bizhubctl` use the source-available BizHub Core Private Deployment License,
 which permits internal deployment and modification but not redistribution,
-resale, or hosted/managed service. License text must receive owner/legal review
-before a stable release.
+resale, or hosted/managed service. The repository owner confirmed this license
+text for the `v0.3.0` stable release on 2026-08-15.
