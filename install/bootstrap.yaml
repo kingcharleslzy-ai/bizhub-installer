@@ -1,29 +1,45 @@
-schema_version: bizhub.public_bootstrap.v0
-status: preview_read_only
+schema_version: bizhub.public_bootstrap.v1
+status: implementation_preview
 
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.2.0-preview.1
+  release_tag: v0.3.0-preview.1
+  checksums_path: install/CHECKSUMS.sha256
 
 delivery:
+  installer_path: bizhubctl
+  application_path: app
   plugin_path: plugins/bizhub-core
   mcp_server_id: bizhub-mcp
   mcp_config_path: plugins/bizhub-core/.mcp.json
   bootstrap_skill_id: bizhub-bootstrap
   bootstrap_skill_path: plugins/bizhub-core/skills/bizhub-bootstrap
   customer_extension_guide: docs/customer-skill-extension.md
-  checksums_path: install/CHECKSUMS.sha256
+
+supported_target:
+  os: Ubuntu 24.04
+  runtime: Docker Engine
+  database: SQLite
+  tenancy: one_company_one_instance
+  administrator_accounts: 1
 
 capabilities:
-  local_host_discovery: true
-  draft_plan_generation: true
-  production_backend_install: false
-  production_frontend_deploy: false
-  real_customer_data: false
-  host_mutation_without_approval: false
-  arbitrary_shell: false
-  network_access: false
-  secret_access: false
+  production_backend: true
+  production_frontend: true
+  preview_apply_readback: true
+  csv_json_import: true
+  backup_restore: true
+  arbitrary_shell_via_mcp: false
+  arbitrary_url_via_mcp: false
+  database_direct_write: false
+  host_mutation_without_plan_approval: false
+
+release_gates:
+  - verify_repository_tag_commit_and_checksums
+  - run_target_preflight
+  - approve_exact_plan_hash
+  - verify_install_and_final_access
+  - verify_backup_and_restore_before_customer_data
 
 first_question_stage: deployment

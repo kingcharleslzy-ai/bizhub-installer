@@ -3,7 +3,8 @@
     "bizhub-mcp": {
       "command": "python3",
       "args": ["./scripts/bizhub_mcp.py"],
-      "cwd": "."
+      "cwd": ".",
+      "env_vars": ["BIZHUB_INSTANCE_URL", "BIZHUB_ADMIN_USERNAME", "BIZHUB_ADMIN_PASSWORD_FILE"]
     }
   }
 }

@@ -1,0 +1,21 @@
+BizHub Core Private Deployment License, Version 0.1
+
+Copyright (c) 2026 kingcharleslzy-ai. All rights reserved.
+
+Permission is granted to a company or other legal entity that obtains a copy
+of BizHub Core to install, run, and modify it solely for that entity's own
+internal business operations on systems controlled by that entity.
+
+This permission does not allow the entity or any other person to redistribute,
+sublicense, sell, rent, lease, offer as a hosted or managed service, or operate
+BizHub Core for the benefit of an unrelated third party. Copyright, license,
+and attribution notices must be preserved in every permitted copy.
+
+No trademark rights are granted. BizHub Core is provided "AS IS", without
+warranty of any kind, express or implied, including merchantability, fitness
+for a particular purpose, and non-infringement. To the maximum extent allowed
+by law, the copyright holder is not liable for any claim, damages, or other
+liability arising from the software or its use.
+
+Use outside this license requires a separate written agreement from the
+copyright holder.

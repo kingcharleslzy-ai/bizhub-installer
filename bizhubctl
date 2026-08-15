@@ -1,0 +1,569 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import getpass
+import hashlib
+import ipaddress
+import json
+import os
+import platform
+import re
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from urllib.error import URLError
+from urllib.request import urlopen
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+VERSION = "0.3.0-preview.1"
+CONTAINER = "bizhub"
+ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
+ETC = ROOT / "etc/bizhub"
+DATA = ROOT / "var/lib/bizhub"
+APP_DATA = DATA / "data"
+BACKUPS = ROOT / "var/backups/bizhub"
+STATE = DATA / "install-state.json"
+PLAN_CONTRACT = "bizhub.install-plan.v1"
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def emit(value: Any) -> None:
+    print(json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def run(command: list[str], *, check: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, check=check, text=True, input=input_text, capture_output=True)
+
+
+def repository_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def git_value(*args: str) -> str:
+    result = run(["git", "-C", str(repository_root()), *args])
+    return result.stdout.strip()
+
+
+def source_identity() -> dict[str, str]:
+    commit = git_value("rev-parse", "HEAD")
+    if len(commit) != 40:
+        raise RuntimeError("repository HEAD is not a full commit")
+    if git_value("status", "--porcelain"):
+        raise RuntimeError("repository worktree must be clean before planning or installing")
+    tags = git_value("tag", "--points-at", "HEAD").splitlines()
+    tag = next((item for item in tags if item == f"v{VERSION}"), "")
+    if not tag:
+        raise RuntimeError(f"HEAD must be the fixed v{VERSION} release tag")
+    remote = git_value("remote", "get-url", "origin")
+    accepted = {
+        "https://github.com/kingcharleslzy-ai/bizhub-installer.git",
+        "git@github.com:kingcharleslzy-ai/bizhub-installer.git",
+    }
+    if remote not in accepted:
+        raise RuntimeError("origin is not the canonical BizHub public repository")
+    return {"repository": remote, "release_tag": tag, "commit": commit, "tree": git_value("rev-parse", "HEAD^{tree}")}
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def application_digest() -> str:
+    root = repository_root()
+    files = [root / "bizhubctl"]
+    files.extend(sorted((root / "app").rglob("*")))
+    digest = hashlib.sha256()
+    for path in files:
+        if not path.is_file() or any(part in {"node_modules", "static", "__pycache__"} for part in path.parts):
+            continue
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        digest.update(bytes.fromhex(file_digest(path)))
+    return digest.hexdigest()
+
+
+def os_release() -> dict[str, str]:
+    path = Path("/etc/os-release")
+    values: dict[str, str] = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, marker, value = line.partition("=")
+            if marker:
+                values[key] = value.strip().strip('"')
+    return values
+
+
+def target_fingerprint() -> str:
+    machine_id = Path("/etc/machine-id")
+    stable_id = machine_id.read_text(encoding="utf-8").strip() if machine_id.exists() else socket.gethostname()
+    payload = f"{stable_id}|{platform.machine()}|{platform.system()}"
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def docker_available() -> tuple[bool, str]:
+    executable = shutil.which("docker")
+    if not executable:
+        return False, "docker executable is unavailable"
+    result = run([executable, "version", "--format", "{{.Server.Version}}"], check=False)
+    return (result.returncode == 0, result.stdout.strip() or result.stderr.strip())
+
+
+def preflight_result() -> dict[str, Any]:
+    release = os_release()
+    docker_ok, docker_detail = docker_available()
+    disk = shutil.disk_usage(DATA.parent if DATA.parent.exists() else ROOT)
+    checks = {
+        "ubuntu_24_04": release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "24.04",
+        "architecture": platform.machine() in {"x86_64", "aarch64", "arm64"},
+        "docker_engine": docker_ok,
+        "disk_free_gib_at_least_10": disk.free >= 10 * 1024**3,
+        "root_or_test_prefix": os.geteuid() == 0 or ROOT != Path("/"),
+    }
+    return {
+        "status": "passed" if all(checks.values()) else "failed",
+        "checks": checks,
+        "details": {"os_release": release, "docker": docker_detail, "disk_free_bytes": disk.free},
+        "target_fingerprint": target_fingerprint(),
+    }
+
+
+def canonical(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+
+
+def plan_hash(plan: dict[str, Any]) -> str:
+    payload = {key: value for key, value in plan.items() if key != "plan_hash"}
+    return hashlib.sha256(canonical(payload)).hexdigest()
+
+
+def validate_bind(access: str, bind_address: str, hostname: str) -> None:
+    if access == "private":
+        try:
+            address = ipaddress.ip_address(bind_address)
+        except ValueError as exc:
+            raise ValueError("private access requires an explicit private IPv4 address") from exc
+        if address.version != 4 or not address.is_private or address.is_loopback or address.is_unspecified:
+            raise ValueError("private access requires an explicit non-loopback private IPv4 address")
+    if access in {"domain", "cloudflare"} and bind_address != "127.0.0.1":
+        raise ValueError("domain and Cloudflare access must bind the application to loopback")
+    if access in {"domain", "cloudflare"} and not hostname:
+        raise ValueError("domain and Cloudflare access require a hostname")
+
+
+def make_plan(args: argparse.Namespace) -> dict[str, Any]:
+    preflight = preflight_result()
+    if preflight["status"] != "passed":
+        raise RuntimeError(f"target preflight failed: {json.dumps(preflight['checks'], sort_keys=True)}")
+    validate_bind(args.access, args.bind_address, args.hostname)
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", args.profile_id) or len(args.profile_id) > 64:
+        raise ValueError("profile id must be a lowercase hyphenated identifier")
+    if not (1 <= len(args.legal_name.strip()) <= 160 and 1 <= len(args.display_name.strip()) <= 80):
+        raise ValueError("company legal and display names are required")
+    if not 1 <= len(args.brand_mark.strip()) <= 6:
+        raise ValueError("brand mark must contain 1 to 6 characters")
+    if not re.fullmatch(r"[A-Z]{3}", args.currency):
+        raise ValueError("currency must be a three-letter uppercase code")
+    if not 3 <= len(args.admin_username.strip()) <= 80:
+        raise ValueError("administrator username must contain 3 to 80 characters")
+    try:
+        ZoneInfo(args.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError("timezone must be a valid IANA timezone") from exc
+    if args.hostname and not re.fullmatch(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", args.hostname):
+        raise ValueError("hostname is invalid")
+    source = source_identity()
+    profile = {
+        "schema_version": 1,
+        "profile_id": args.profile_id,
+        "legal_name": args.legal_name.strip(),
+        "display_name": args.display_name.strip(),
+        "brand_mark": args.brand_mark.strip(),
+        "timezone": args.timezone,
+        "currency": args.currency,
+    }
+    external_steps = []
+    if args.access == "domain":
+        external_steps.append({"owner": "agent", "action": "configure TLS reverse proxy", "template": "deploy/Caddyfile.example"})
+    elif args.access == "cloudflare":
+        external_steps.append({"owner": "agent", "action": "configure authenticated Cloudflare Tunnel", "template": "deploy/cloudflared-config.example.yaml"})
+    plan = {
+        "contract": PLAN_CONTRACT,
+        "created_at": now(),
+        "operation": "install",
+        "source": {**source, "application_sha256": application_digest()},
+        "target": {
+            "fingerprint": target_fingerprint(),
+            "platform": "ubuntu-24.04",
+            "paths": {"config": str(ETC), "data": str(APP_DATA), "backups": str(BACKUPS), "state": str(STATE)},
+        },
+        "instance": {
+            "container": CONTAINER,
+            "bind_address": args.bind_address,
+            "port": args.port,
+            "access": args.access,
+            "hostname": args.hostname,
+            "cookie_secure": args.access != "private" or not args.allow_http_private,
+        },
+        "company_profile": profile,
+        "administrator": {"username": args.admin_username.strip(), "password_source": "interactive_tty"},
+        "expected_changes": [
+            "create protected BizHub config, data, backup, and install-state paths",
+            "build one application image from the pinned repository commit",
+            "create the single administrator using a TTY-only password",
+            "start one loopback/private-bound BizHub container",
+        ],
+        "external_steps": external_steps,
+        "rollback": "retain data and backups; restore the previous image and verified SQLite backup",
+    }
+    plan["plan_hash"] = plan_hash(plan)
+    return plan
+
+
+def load_plan(path: Path) -> dict[str, Any]:
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    if plan.get("contract") != PLAN_CONTRACT or plan.get("plan_hash") != plan_hash(plan):
+        raise ValueError("install plan is invalid or has been modified")
+    return plan
+
+
+def require_apply_environment(plan: dict[str, Any]) -> None:
+    result = preflight_result()
+    if result["status"] != "passed":
+        raise RuntimeError(f"preflight failed: {json.dumps(result['checks'], sort_keys=True)}")
+    if plan["target"]["fingerprint"] != target_fingerprint():
+        raise RuntimeError("plan target fingerprint does not match this host")
+    source = source_identity()
+    for key in ("repository", "commit", "tree"):
+        if plan["source"][key] != source[key]:
+            raise RuntimeError(f"plan source {key} does not match this checkout")
+    if plan["source"]["application_sha256"] != application_digest():
+        raise RuntimeError("application files do not match the planned checksum")
+
+
+def require_confirmation(plan: dict[str, Any], supplied: str | None) -> None:
+    approved = supplied or input(f"Type plan hash {plan['plan_hash']} to approve: ").strip()
+    if not secrets.compare_digest(approved, plan["plan_hash"]):
+        raise RuntimeError("plan approval did not match")
+
+
+def ensure_directories() -> None:
+    for path in (ETC, DATA, APP_DATA, BACKUPS):
+        path.mkdir(parents=True, exist_ok=True)
+        os.chmod(path, 0o750)
+    for path in (ETC, DATA, APP_DATA, BACKUPS):
+        os.chown(path, 10001, 10001)
+
+
+def write_secure(path: Path, content: bytes) -> None:
+    temporary = path.with_suffix(path.suffix + ".new")
+    temporary.write_bytes(content)
+    os.chmod(temporary, 0o600)
+    os.chown(temporary, 10001, 10001)
+    temporary.replace(path)
+
+
+def image_name(commit: str) -> str:
+    return f"bizhub:{commit[:12]}"
+
+
+def docker_mounts(plan: dict[str, Any]) -> list[str]:
+    return [
+        "-v", f"{ETC}:/config:ro",
+        "-v", f"{APP_DATA}:/data",
+        "-v", f"{BACKUPS}:/backups",
+        "-e", f"BIZHUB_COOKIE_SECURE={'1' if plan['instance']['cookie_secure'] else '0'}",
+    ]
+
+
+def build_image(plan: dict[str, Any]) -> str:
+    image = image_name(plan["source"]["commit"])
+    run(["docker", "build", "--pull", "--label", f"org.opencontainers.image.revision={plan['source']['commit']}", "-t", image, "-f", str(repository_root() / "app/Dockerfile"), str(repository_root() / "app")])
+    return image
+
+
+def container_exists() -> bool:
+    return run(["docker", "inspect", CONTAINER], check=False).returncode == 0
+
+
+def container_running() -> bool:
+    result = run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], check=False)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def start_container(plan: dict[str, Any], image: str) -> None:
+    if container_exists():
+        run(["docker", "rm", "-f", CONTAINER])
+    bind = plan["instance"]["bind_address"]
+    port = str(plan["instance"]["port"])
+    run([
+        "docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
+        "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges:true", "-p", f"{bind}:{port}:8080",
+        *docker_mounts(plan), image,
+    ])
+
+
+def wait_healthy(plan: dict[str, Any], seconds: int = 60) -> dict[str, Any]:
+    url = f"http://{plan['instance']['bind_address']}:{plan['instance']['port']}/api/health"
+    if plan["instance"]["bind_address"] in {"0.0.0.0", "::"}:
+        url = f"http://127.0.0.1:{plan['instance']['port']}/api/health"
+    deadline = time.monotonic() + seconds
+    error = "not checked"
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(url, timeout=3) as response:
+                body = json.loads(response.read())
+                if body.get("status") == "ok":
+                    return body
+        except (OSError, URLError, ValueError) as exc:
+            error = str(exc)
+        time.sleep(2)
+    logs = run(["docker", "logs", "--tail", "80", CONTAINER], check=False)
+    raise RuntimeError(f"health verification timed out: {error}\n{logs.stderr}{logs.stdout}")
+
+
+def current_state() -> dict[str, Any] | None:
+    if not STATE.exists():
+        return None
+    return json.loads(STATE.read_text(encoding="utf-8"))
+
+
+def write_state(value: dict[str, Any]) -> None:
+    temporary = STATE.with_suffix(".json.new")
+    temporary.write_bytes(canonical(value) + b"\n")
+    os.chmod(temporary, 0o600)
+    if os.geteuid() == 0:
+        os.chown(temporary, 0, 0)
+    temporary.replace(STATE)
+
+
+def install(args: argparse.Namespace) -> dict[str, Any]:
+    plan = load_plan(args.plan)
+    require_apply_environment(plan)
+    require_confirmation(plan, args.approve)
+    state = current_state()
+    if state and state.get("plan_hash") == plan["plan_hash"] and state.get("status") == "installed" and container_running():
+        return {"status": "no_op", "plan_hash": plan["plan_hash"], "health": wait_healthy(plan)}
+    ensure_directories()
+    if not (ETC / "company.json").exists():
+        write_secure(ETC / "company.json", canonical(plan["company_profile"]) + b"\n")
+    elif json.loads((ETC / "company.json").read_text()) != plan["company_profile"]:
+        raise RuntimeError("existing company profile differs from the approved plan")
+    if not (ETC / "secret-key").exists():
+        write_secure(ETC / "secret-key", secrets.token_urlsafe(48).encode() + b"\n")
+    image = build_image(plan)
+    if not (APP_DATA / "bizhub.db").exists():
+        if not sys.stdin.isatty():
+            raise RuntimeError("initial administrator password requires an interactive TTY")
+        first = getpass.getpass("Administrator password: ")
+        second = getpass.getpass("Repeat administrator password: ")
+        if first != second:
+            raise RuntimeError("administrator passwords did not match")
+        run([
+            "docker", "run", "--rm", "-i", *docker_mounts(plan), image,
+            "python", "-m", "bizhub.manage", "init", "--username", plan["administrator"]["username"], "--password-stdin",
+        ], input_text=first + "\n")
+    start_container(plan, image)
+    health = wait_healthy(plan)
+    state = {
+        "schema_version": 1, "status": "installed", "installed_at": now(), "updated_at": now(),
+        "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"],
+        "image": image, "health": health,
+    }
+    write_state(state)
+    return {"status": "installed", "plan_hash": plan["plan_hash"], "health": health, "external_steps": plan["external_steps"]}
+
+
+def backup_instance(label: str = "manual") -> dict[str, Any]:
+    state = current_state()
+    if not state or not container_running():
+        raise RuntimeError("BizHub container is not running")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    name = f"bizhub-{stamp}-{label}.sqlite"
+    result = run(["docker", "exec", CONTAINER, "python", "-m", "bizhub.manage", "backup", "--output", f"/backups/{name}"])
+    payload = json.loads(result.stdout)
+    host = BACKUPS / name
+    payload.update({"sha256": file_digest(host), "host_path": str(host)})
+    return payload
+
+
+def verify_instance() -> dict[str, Any]:
+    state = current_state()
+    if not state:
+        raise RuntimeError("install state does not exist")
+    result = run(["docker", "exec", CONTAINER, "python", "-m", "bizhub.manage", "verify"])
+    health = wait_healthy({"instance": state["instance"]})
+    return {"status": "ok", "database": json.loads(result.stdout), "health": health, "state": state}
+
+
+def restore_instance(path: Path) -> dict[str, Any]:
+    state = current_state()
+    if not state:
+        raise RuntimeError("install state does not exist")
+    source = path.resolve()
+    if source.parent != BACKUPS.resolve() or not source.is_file():
+        raise ValueError("restore source must be a regular file directly inside the BizHub backup directory")
+    safety = backup_instance("before-restore")
+    run(["docker", "stop", CONTAINER])
+    destination = APP_DATA / "bizhub.db"
+    for sidecar in (APP_DATA / "bizhub.db-wal", APP_DATA / "bizhub.db-shm"):
+        if sidecar.exists():
+            sidecar.unlink()
+    temporary = APP_DATA / "bizhub.db.restore"
+    shutil.copy2(source, temporary)
+    os.chown(temporary, 10001, 10001)
+    os.chmod(temporary, 0o600)
+    temporary.replace(destination)
+    run(["docker", "start", CONTAINER])
+    try:
+        health = wait_healthy({"instance": state["instance"]})
+    except Exception as exc:
+        run(["docker", "stop", CONTAINER], check=False)
+        shutil.copy2(Path(safety["host_path"]), destination)
+        os.chown(destination, 10001, 10001)
+        os.chmod(destination, 0o600)
+        run(["docker", "start", CONTAINER])
+        wait_healthy({"instance": state["instance"]})
+        raise RuntimeError(f"restore candidate failed verification; current database was recovered: {exc}") from exc
+    return {"status": "restored", "source": str(source), "safety_backup": safety, "health": health}
+
+
+def update_instance(args: argparse.Namespace) -> dict[str, Any]:
+    plan = load_plan(args.plan)
+    require_apply_environment(plan)
+    require_confirmation(plan, args.approve)
+    previous = current_state()
+    if not previous:
+        raise RuntimeError("install BizHub before updating")
+    if previous.get("plan_hash") == plan["plan_hash"] and container_running():
+        return {"status": "no_op", "health": wait_healthy(plan)}
+    if json.loads((ETC / "company.json").read_text(encoding="utf-8")) != plan["company_profile"]:
+        raise RuntimeError("company profile changes are not supported by update")
+    backup = backup_instance("before-update")
+    old_image = previous["image"]
+    image = build_image(plan)
+    try:
+        start_container(plan, image)
+        health = wait_healthy(plan)
+    except Exception:
+        if container_exists():
+            run(["docker", "rm", "-f", CONTAINER])
+        source = Path(backup["host_path"])
+        destination = APP_DATA / "bizhub.db"
+        for sidecar in (APP_DATA / "bizhub.db-wal", APP_DATA / "bizhub.db-shm"):
+            if sidecar.exists():
+                sidecar.unlink()
+        shutil.copy2(source, destination)
+        os.chown(destination, 10001, 10001)
+        os.chmod(destination, 0o600)
+        start_container({"instance": previous["instance"]}, old_image)
+        wait_healthy({"instance": previous["instance"]})
+        raise
+    updated = {**previous, "status": "installed", "updated_at": now(), "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"], "image": image, "health": health}
+    write_state(updated)
+    return {"status": "updated", "backup": backup, "health": health}
+
+
+def uninstall(args: argparse.Namespace) -> dict[str, Any]:
+    state = current_state()
+    if not state:
+        return {"status": "no_op", "retained": [str(DATA), str(BACKUPS)]}
+    expected = f"retain-data:{state['plan_hash']}"
+    supplied = args.approve or input(f"Type {expected} to stop and remove the application container: ").strip()
+    if not secrets.compare_digest(expected, supplied):
+        raise RuntimeError("uninstall confirmation did not match")
+    if container_exists():
+        run(["docker", "rm", "-f", CONTAINER])
+    state.update({"status": "uninstalled_data_retained", "updated_at": now()})
+    write_state(state)
+    return {"status": "uninstalled_data_retained", "retained": [str(ETC), str(DATA), str(BACKUPS)]}
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="bizhubctl", description="BizHub single-instance installer")
+    root.add_argument("--version", action="version", version=VERSION)
+    commands = root.add_subparsers(dest="command", required=True)
+    commands.add_parser("preflight")
+    plan = commands.add_parser("plan")
+    plan.add_argument("--output", type=Path, default=Path("/tmp/bizhub-install-plan.json"))
+    plan.add_argument("--access", choices=["private", "domain", "cloudflare"], required=True)
+    plan.add_argument("--bind-address", required=True)
+    plan.add_argument("--port", type=int, default=8080, choices=range(1024, 65536), metavar="PORT")
+    plan.add_argument("--hostname", default="")
+    plan.add_argument("--allow-http-private", action="store_true")
+    plan.add_argument("--profile-id", required=True)
+    plan.add_argument("--legal-name", required=True)
+    plan.add_argument("--display-name", required=True)
+    plan.add_argument("--brand-mark", required=True)
+    plan.add_argument("--timezone", required=True)
+    plan.add_argument("--currency", default="CNY")
+    plan.add_argument("--admin-username", required=True)
+    for name in ("install", "update"):
+        action = commands.add_parser(name)
+        action.add_argument("--plan", type=Path, required=True)
+        action.add_argument("--approve")
+    commands.add_parser("verify")
+    commands.add_parser("status")
+    backup = commands.add_parser("backup")
+    backup.add_argument("--label", default="manual")
+    restore = commands.add_parser("restore")
+    restore.add_argument("--backup", type=Path, required=True)
+    uninstall_parser = commands.add_parser("uninstall")
+    uninstall_parser.add_argument("--approve")
+    return root
+
+
+def main() -> None:
+    args = parser().parse_args()
+    try:
+        if args.command == "preflight":
+            result = preflight_result()
+        elif args.command == "plan":
+            result = make_plan(args)
+            args.output.write_bytes(canonical(result) + b"\n")
+            result = {"status": "planned", "path": str(args.output.resolve()), "plan": result}
+        elif args.command == "install":
+            result = install(args)
+        elif args.command == "verify":
+            result = verify_instance()
+        elif args.command == "status":
+            state = current_state()
+            result = {"status": "absent"} if state is None else {"status": state["status"], "container_running": container_running(), "state": state}
+        elif args.command == "backup":
+            result = backup_instance(args.label)
+        elif args.command == "restore":
+            result = restore_instance(args.backup)
+        elif args.command == "update":
+            result = update_instance(args)
+        else:
+            result = uninstall(args)
+        emit(result)
+        if result.get("status") == "failed":
+            raise SystemExit(2)
+    except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
+        detail = str(exc)
+        if isinstance(exc, subprocess.CalledProcessError):
+            detail = (exc.stderr or exc.stdout or detail).strip()
+        emit({"status": "failed", "error": detail})
+        raise SystemExit(2) from None
+
+
+if __name__ == "__main__":
+    main()

@@ -1,358 +1,232 @@
 #!/usr/bin/env python3
-"""Dependency-free, read-only MCP server for the BizHub bootstrap preview."""
+"""Small stdio MCP bridge for one configured BizHub instance."""
 
 from __future__ import annotations
 
-import hashlib
+import http.cookiejar
+import ipaddress
 import json
 import os
 import platform
 import shutil
 import sys
+from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.2.0-preview.1"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.3.0-preview.1"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
+RELEASE_TAG = "v0.3.0-preview.1"
 PROTOCOL_VERSION = "2024-11-05"
-RELEASE_TAG = "v0.2.0-preview.1"
-
-INSTALLATION_GOALS = ["new_trial", "migration", "upgrade"]
-TOPOLOGIES = ["cloud", "local_24x7", "hybrid"]
-ACCESS_MODES = ["domain", "private_network", "managed_tunnel"]
-
+ACTION_NAMES = [
+    "create_party", "create_product", "create_unit", "create_location",
+    "create_sales_order", "create_purchase_order", "receive_purchase", "ship_sale",
+    "post_inventory_adjustment", "reverse_movement", "cancel_order",
+]
 STATUS = {
-    "maturity": "preview_read_only",
+    "maturity": "implementation_preview",
     "repository": REPOSITORY_URL,
     "release": RELEASE_TAG,
-    "local_host_discovery": True,
-    "draft_plan_generation": True,
-    "production_backend_install": False,
-    "production_frontend_deploy": False,
-    "real_customer_data_allowed": False,
-    "network_access": False,
-    "secret_access": False,
-    "next_action": "Discover the Agent host, then ask the deployment questions.",
+    "deployment_model": "one_company_one_instance",
+    "supported_target": "Ubuntu 24.04 with Docker Engine",
+    "production_install_requires": [
+        "pinned_release_verification", "target_preflight", "approved_plan_hash",
+        "successful_install_verify", "verified_backup_and_restore",
+    ],
+    "arbitrary_shell": False,
+    "arbitrary_url": False,
+    "database_direct_write": False,
+    "secret_values_in_tool_arguments": False,
 }
-
 QUESTION_STAGES: dict[str, dict[str, Any]] = {
     "deployment": {
         "questions": [
-            {
-                "id": "installation_goal",
-                "question": "Is this a new trial, a migration, or an upgrade?",
-                "choices": INSTALLATION_GOALS,
-            },
-            {
-                "id": "topology",
-                "question": "Should BizHub run on a cloud server, a 24/7 local computer, or a hybrid setup?",
-                "choices": TOPOLOGIES,
-            },
+            {"id": "installation_goal", "question": "Is this a new installation or a migration?", "choices": ["new_install", "migration"]},
+            {"id": "target", "question": "Will the Ubuntu 24.04 host be a cloud server or a 24/7 local Linux host?", "choices": ["cloud", "local_24x7"]},
         ],
         "next_stage": "access",
-        "next_action": "ask_access_questions",
     },
     "access": {
         "questions": [
-            {
-                "id": "access_mode",
-                "question": "Should the site use an existing domain, a private network, or a managed tunnel?",
-                "choices": ACCESS_MODES,
-            },
+            {"id": "access", "question": "Use a private address, an HTTPS domain, or Cloudflare Tunnel?", "choices": ["private", "domain", "cloudflare"]},
+        ],
+        "next_stage": "company",
+    },
+    "company": {
+        "questions": [
+            {"id": "company", "question": "Provide legal/display name, timezone, currency, brand mark, and administrator username. Do not provide the password in chat."},
+            {"id": "first_data", "question": "Which CSV, JSON, ERP, or API source should be mapped first after verification?"},
         ],
         "next_stage": None,
-        "next_action": "build_draft_plan",
     },
 }
 
+
+def annotations(read_only: bool) -> dict[str, bool]:
+    return {"readOnlyHint": read_only, "destructiveHint": False, "idempotentHint": read_only, "openWorldHint": False}
+
+
 TOOLS = [
-    {
-        "name": "bizhub_bootstrap_status",
-        "description": "Return the public BizHub bootstrap maturity and safety boundary.",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-        "annotations": {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    },
-    {
-        "name": "bizhub_bootstrap_questions",
-        "description": "Return one small stage of the read-only BizHub setup interview.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "stage": {
-                    "type": "string",
-                    "enum": list(QUESTION_STAGES),
-                    "default": "deployment",
-                }
-            },
-            "additionalProperties": False,
-        },
-        "annotations": {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    },
-    {
-        "name": "bizhub_discover_local_host",
-        "description": "Return a small, non-sensitive profile of the Agent host only.",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-        "annotations": {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    },
-    {
-        "name": "bizhub_build_draft_plan",
-        "description": "Build a deterministic, non-executable BizHub installation plan preview.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "installation_goal": {
-                    "type": "string",
-                    "enum": INSTALLATION_GOALS,
-                },
-                "topology": {
-                    "type": "string",
-                    "enum": TOPOLOGIES,
-                },
-                "access_mode": {
-                    "type": "string",
-                    "enum": ACCESS_MODES,
-                },
-            },
-            "required": ["installation_goal", "topology", "access_mode"],
-            "additionalProperties": False,
-        },
-        "annotations": {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    },
-    {
-        "name": "bizhub_repository_info",
-        "description": "Return the canonical public repository and tagged preview release.",
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-        "annotations": {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    },
+    {"name": "bizhub_bootstrap_status", "description": "Return the fixed release boundary and required deployment gates.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_bootstrap_questions", "description": "Return one short stage of the BizHub setup interview.", "inputSchema": {"type": "object", "properties": {"stage": {"type": "string", "enum": list(QUESTION_STAGES)}}, "required": ["stage"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_target_preflight", "description": "Return non-sensitive facts about this host before running bizhubctl preflight on the deployment target.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_instance_health", "description": "Read health from the one BizHub instance configured in the MCP environment.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit"]}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_action_preview", "description": "Validate and preview one supported business action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed action to the configured instance, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
 ]
 
 
-def tool_result(payload: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
-    return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps(payload, ensure_ascii=False, sort_keys=True),
-            }
-        ],
-        "structuredContent": payload,
-        "isError": is_error,
-    }
+def tool_result(payload: Any, *, is_error: bool = False) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, sort_keys=True)}], "structuredContent": payload, "isError": is_error}
 
 
 def error_result(code: str, **details: Any) -> dict[str, Any]:
     return tool_result({"error": code, **details}, is_error=True)
 
 
-def discover_local_host() -> dict[str, Any]:
-    os_family = {
-        "darwin": "macos",
-        "linux": "linux",
-        "windows": "windows",
-    }.get(platform.system().lower(), "unknown")
-    disk = shutil.disk_usage(".")
-    return {
-        "schema_version": "bizhub.local_host_discovery.v0",
-        "scope": "agent_host_only",
-        "os_family": os_family,
-        "architecture": platform.machine().strip().lower() or "unknown",
-        "python_version": (
-            f"{sys.version_info.major}.{sys.version_info.minor}."
-            f"{sys.version_info.micro}"
-        ),
-        "cpu_count": os.cpu_count() or 0,
-        "disk_free_bytes": disk.free,
-        "disk_scope": "mcp_working_directory_volume",
-        "excluded": [
-            "hostname",
-            "username",
-            "home_directory",
-            "ip_addresses",
-            "environment_variables",
-            "files",
-            "secrets",
-        ],
-        "target_host_verified": False,
-        "note": "This describes only the computer running the MCP server.",
-    }
-
-
-def build_draft_plan(arguments: dict[str, Any]) -> dict[str, Any]:
-    allowed = {
-        "installation_goal": INSTALLATION_GOALS,
-        "topology": TOPOLOGIES,
-        "access_mode": ACCESS_MODES,
-    }
-    unexpected = sorted(set(arguments) - set(allowed))
+def validate_arguments(arguments: dict[str, Any], allowed: set[str], required: set[str] | None = None) -> dict[str, Any] | None:
+    unexpected = sorted(set(arguments) - allowed)
     if unexpected:
         return error_result("unexpected_arguments", fields=unexpected)
-
-    missing = [field for field in allowed if field not in arguments]
+    missing = sorted((required or set()) - set(arguments))
     if missing:
         return error_result("missing_arguments", fields=missing)
+    return None
 
-    for field, choices in allowed.items():
-        if arguments[field] not in choices:
-            return error_result(
-                "invalid_choice",
-                field=field,
-                value=arguments[field],
-                allowed=choices,
-            )
 
-    selection = {field: arguments[field] for field in allowed}
-    canonical = json.dumps(
-        selection,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+def target_preflight() -> dict[str, Any]:
+    release: dict[str, str] = {}
+    path = Path("/etc/os-release")
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, marker, value = line.partition("=")
+            if marker:
+                release[key] = value.strip().strip('"')
+    return {
+        "scope": "mcp_host_only",
+        "os_family": platform.system().lower(),
+        "os_release": {key: release.get(key, "") for key in ("ID", "VERSION_ID")},
+        "architecture": platform.machine().lower(),
+        "python_version": platform.python_version(),
+        "disk_free_bytes": shutil.disk_usage(".").free,
+        "docker_executable_present": shutil.which("docker") is not None,
+        "target_verified": False,
+        "next_action": "Run the pinned ./bizhubctl preflight on the actual Ubuntu target over the user's approved SSH session.",
+    }
 
-    followups: list[str] = []
-    topology = selection["topology"]
-    if topology in {"cloud", "hybrid"}:
-        followups.append("run_read_only_remote_target_preflight")
-    if topology in {"local_24x7", "hybrid"}:
-        followups.append("confirm_24x7_power_sleep_backup_and_network")
 
-    followups.append(
-        {
-            "domain": "confirm_dns_control_and_https_plan",
-            "private_network": "confirm_private_network_users_and_owner",
-            "managed_tunnel": "select_tunnel_and_access_policy",
-        }[selection["access_mode"]]
-    )
+class InstanceClient:
+    def __init__(self) -> None:
+        raw = os.getenv("BIZHUB_INSTANCE_URL", "").strip().rstrip("/")
+        parsed = urlparse(raw)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            raise ValueError("BIZHUB_INSTANCE_URL must be a fixed origin without credentials or path")
+        if parsed.scheme == "http":
+            try:
+                address = ipaddress.ip_address(parsed.hostname)
+            except ValueError as exc:
+                raise ValueError("plain HTTP is allowed only for an explicit private or loopback IP") from exc
+            if not (address.is_private or address.is_loopback):
+                raise ValueError("plain HTTP is forbidden for public instance addresses")
+        self.base = raw + "/"
+        self.username = os.getenv("BIZHUB_ADMIN_USERNAME", "").strip()
+        self.password_file = Path(os.getenv("BIZHUB_ADMIN_PASSWORD_FILE", ""))
+        self.opener = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.authenticated = False
 
-    return tool_result(
-        {
-            "schema_version": "bizhub.install_plan_preview.v0",
-            "plan_fingerprint": hashlib.sha256(canonical).hexdigest(),
-            "selection": selection,
-            "steps": [
-                {
-                    "id": "target_preflight",
-                    "kind": "read_only",
-                    "status": "required",
-                },
-                {
-                    "id": "review_installation_plan",
-                    "kind": "human_review",
-                    "status": "required",
-                },
-                {
-                    "id": "apply_installation",
-                    "kind": "mutation",
-                    "status": "unavailable_in_preview",
-                },
-            ],
-            "required_followups": followups,
-            "blockers": ["production_apply_not_implemented"],
-            "mutations": [],
-            "ready_for_apply": False,
-            "real_customer_data_allowed": False,
-            "secret_values_accepted": False,
-        }
-    )
+    def request(self, path: str, payload: dict[str, Any] | None = None, *, authenticate: bool = True) -> Any:
+        if not path.startswith("/api/") or "://" in path:
+            raise ValueError("MCP endpoint is outside the fixed BizHub API")
+        if authenticate and not self.authenticated:
+            if not self.username or not self.password_file.is_file() or self.password_file.is_symlink():
+                raise ValueError("instance username and password file must be configured outside tool arguments")
+            if os.name == "posix" and self.password_file.stat().st_mode & 0o077:
+                raise ValueError("instance password file must not be readable by group or other users")
+            password = self.password_file.read_text(encoding="utf-8").rstrip("\r\n")
+            self.request("/api/auth/login", {"username": self.username, "password": password}, authenticate=False)
+            self.authenticated = True
+        body = json.dumps(payload).encode() if payload is not None else None
+        request = Request(urljoin(self.base, path.lstrip("/")), data=body, method="POST" if body is not None else "GET")
+        request.add_header("Accept", "application/json")
+        if body is not None:
+            request.add_header("Content-Type", "application/json")
+            request.add_header("X-BizHub-Request", "1")
+        try:
+            with self.opener.open(request, timeout=15) as response:
+                return json.loads(response.read())
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:4000]
+            raise ValueError(f"BizHub API rejected the request ({exc.code}): {detail}") from exc
+        except (URLError, OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"BizHub instance request failed: {exc}") from exc
+
+
+_CLIENT: InstanceClient | None = None
+
+
+def instance_client() -> InstanceClient:
+    global _CLIENT
+    if _CLIENT is None:
+        _CLIENT = InstanceClient()
+    return _CLIENT
 
 
 def handle_tool_call(params: Any) -> dict[str, Any]:
     if not isinstance(params, dict):
         return error_result("params_must_be_object")
-
     name = params.get("name")
     arguments = params.get("arguments") or {}
-
     if not isinstance(arguments, dict):
         return error_result("arguments_must_be_object")
-
-    if name == "bizhub_bootstrap_status":
-        if arguments:
-            return error_result("unexpected_arguments", fields=sorted(arguments))
-        return tool_result(STATUS)
-    if name == "bizhub_discover_local_host":
-        if arguments:
-            return error_result("unexpected_arguments", fields=sorted(arguments))
-        return tool_result(discover_local_host())
-    if name == "bizhub_build_draft_plan":
-        return build_draft_plan(arguments)
-    if name == "bizhub_repository_info":
-        if arguments:
-            return error_result("unexpected_arguments", fields=sorted(arguments))
-        return tool_result(
-            {
-                "repository": REPOSITORY_URL,
-                "release_tag": RELEASE_TAG,
-                "plugin_path": "plugins/bizhub-core",
-            }
-        )
-    if name == "bizhub_bootstrap_questions":
-        unexpected = sorted(set(arguments) - {"stage"})
-        if unexpected:
-            return error_result("unexpected_arguments", fields=unexpected)
-        stage = arguments.get("stage", "deployment")
-        if not isinstance(stage, str) or stage not in QUESTION_STAGES:
-            return error_result(
-                "unknown_stage",
-                allowed_stages=list(QUESTION_STAGES),
-            )
-        return tool_result({"stage": stage, **QUESTION_STAGES[stage]})
-
-    return error_result(
-        "unknown_tool",
-        requested_tool=name,
-        allowed_tools=[tool["name"] for tool in TOOLS],
-    )
+    try:
+        if name == "bizhub_bootstrap_status":
+            error = validate_arguments(arguments, set())
+            return error or tool_result(STATUS)
+        if name == "bizhub_bootstrap_questions":
+            error = validate_arguments(arguments, {"stage"}, {"stage"})
+            if error:
+                return error
+            stage = arguments["stage"]
+            return tool_result({"stage": stage, **QUESTION_STAGES[stage]}) if stage in QUESTION_STAGES else error_result("unknown_stage")
+        if name == "bizhub_target_preflight":
+            error = validate_arguments(arguments, set())
+            return error or tool_result(target_preflight())
+        if name == "bizhub_instance_health":
+            error = validate_arguments(arguments, set())
+            return error or tool_result(instance_client().request("/api/health", authenticate=False))
+        if name == "bizhub_resource_query":
+            error = validate_arguments(arguments, {"resource"}, {"resource"})
+            if error:
+                return error
+            endpoints = {"catalog": "/api/resources/catalog", "sales": "/api/orders/sale", "purchases": "/api/orders/purchase", "inventory": "/api/inventory", "audit": "/api/audit?limit=200"}
+            endpoint = endpoints.get(arguments["resource"])
+            return tool_result(instance_client().request(endpoint)) if endpoint else error_result("unknown_resource")
+        if name in {"bizhub_action_preview", "bizhub_action_apply"}:
+            required = {"action", "data"} if name.endswith("preview") else {"action", "data", "preview_token", "review_note"}
+            error = validate_arguments(arguments, required, required)
+            if error:
+                return error
+            if arguments["action"] not in ACTION_NAMES or not isinstance(arguments["data"], dict):
+                return error_result("invalid_action_input")
+            path = "/api/actions/preview" if name.endswith("preview") else "/api/actions/apply"
+            return tool_result(instance_client().request(path, arguments))
+        return error_result("unknown_tool", requested_tool=name, allowed_tools=[tool["name"] for tool in TOOLS])
+    except (KeyError, TypeError, ValueError) as exc:
+        return error_result("operation_failed", detail=str(exc))
 
 
 def dispatch(message: Any) -> dict[str, Any] | None:
     if not isinstance(message, dict):
-        return {
-            "jsonrpc": "2.0",
-            "id": None,
-            "error": {"code": -32600, "message": "Invalid Request"},
-        }
-
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     method = message.get("method")
     request_id = message.get("id")
-
     if request_id is None:
         return None
-
     if method == "initialize":
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": SERVER_INFO,
-            },
-        }
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {"tools": {"listChanged": False}}, "serverInfo": SERVER_INFO}}
     if method == "ping":
         result: dict[str, Any] = {}
     elif method == "tools/list":
@@ -360,12 +234,7 @@ def dispatch(message: Any) -> dict[str, Any] | None:
     elif method == "tools/call":
         result = handle_tool_call(message.get("params") or {})
     else:
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": -32601, "message": f"Method not found: {method}"},
-        }
-
+        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": f"Method not found: {method}"}}
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
@@ -375,15 +244,9 @@ def main() -> int:
         if not line:
             continue
         try:
-            message = json.loads(line)
-            response = dispatch(message)
+            response = dispatch(json.loads(line))
         except (TypeError, ValueError) as exc:
-            response = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": f"Invalid JSON-RPC message: {exc}"},
-            }
-
+            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Invalid JSON-RPC message: {exc}"}}
         if response is not None:
             sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
             sys.stdout.flush()

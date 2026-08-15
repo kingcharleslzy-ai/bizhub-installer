@@ -1,7 +1,7 @@
 {
   "name": "bizhub-core",
-  "version": "0.2.0-preview.1",
-  "description": "Read-only Agent host discovery and draft planning for BizHub.",
+  "version": "0.3.0-preview.1",
+  "description": "Install and operate one private BizHub business instance through a bounded MCP bridge.",
   "author": {
     "name": "kingcharleslzy-ai"
   },
@@ -12,14 +12,14 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "BizHub Bootstrap",
-    "shortDescription": "Inspect the Agent host and draft a BizHub setup plan.",
-    "longDescription": "Adds one read-only BizHub MCP server and one bootstrap Skill. The preview inspects only non-sensitive Agent-host facts and builds a deterministic draft plan; it does not connect to targets, deploy systems, or ingest customer data.",
+    "shortDescription": "Install and operate one private BizHub instance.",
+    "longDescription": "Adds one bounded BizHub MCP server and one bootstrap Skill for an approved Ubuntu installation, instance verification, resource reads, and preview-gated business writes.",
     "developerName": "kingcharleslzy-ai",
     "category": "Productivity",
-    "capabilities": ["Read-only host discovery", "Draft install plans"],
+    "capabilities": ["Deployment guidance", "Instance health", "Preview-gated business actions"],
     "websiteURL": "https://github.com/kingcharleslzy-ai/bizhub-installer",
     "defaultPrompt": [
-      "Inspect this host and build a BizHub draft plan."
+      "Guide me through a verified BizHub installation from this fixed release."
     ]
   },
   "mcpServers": "./.mcp.json"

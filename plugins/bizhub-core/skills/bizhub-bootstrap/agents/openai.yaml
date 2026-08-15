@@ -1,6 +1,4 @@
 interface:
   display_name: "BizHub Bootstrap"
-  short_description: "Build a safe, read-only BizHub setup plan."
-  default_prompt: "Use $bizhub-bootstrap to inspect my Agent host and build a read-only BizHub setup plan."
-policy:
-  allow_implicit_invocation: false
+  short_description: "Install and verify one private BizHub instance."
+  default_prompt: "Use $bizhub-bootstrap to guide a verified BizHub installation from this fixed release."

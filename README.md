@@ -1,91 +1,130 @@
-# BizHub Installer
+# BizHub
 
-Agent-first bootstrap for setting up a private BizHub instance.
+BizHub is a small, private business system that a customer's Agent can install
+from one fixed public GitHub release. Each company receives one independent
+instance, one administrator account, one application container, and one SQLite
+database.
 
-> **Current status: preview / read-only.** This repository does not yet install
-> a production backend, deploy a production frontend, or ingest real customer
-> data. It provides one small MCP server and one bootstrap Skill so an Agent can
-> inspect non-sensitive facts about its own host and build a draft plan.
+> **Release state: `v0.3.0-preview.1` implementation preview.** The application
+> and installer are implemented, but this exact release must not be described
+> as stable until its Ubuntu clean-host install, Docker end-to-end flow,
+> backup/restore rehearsal, sensitive-information scan, and fresh-Agent forward
+> test are recorded as passed.
 
-## Give this repository to an Agent
+## Give the release to an Agent
 
-Send the Agent this tagged preview release URL:
+Use the immutable release URL once the tag is published:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/tree/v0.2.0-preview.1`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.1`
 
-Ask it to:
+Ask the Agent to verify the release and checksums, install the repository's one
+plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
+The Agent will ask about the Ubuntu target, access mode, company profile,
+administrator username, and first data source. Enter the administrator password
+only in the target host's interactive TTY.
 
-1. read `AGENTS.md` and `install/bootstrap.yaml` without running repository code;
-2. show you the preview limitations and the host changes it proposes;
-3. get your approval before installing the plugin or registering the MCP server;
-4. load exactly one `bizhub-bootstrap` Skill and one `bizhub-mcp` server;
-5. inspect only the Agent host, ask the three deployment questions, and return
-   a non-executable draft plan.
-
-Do not paste passwords, API keys, cookies, private keys, or database files into
-chat. The preview does not need them.
-
-## Included
-
-- `plugins/bizhub-core`: a Codex-compatible plugin package.
-- `bizhub-mcp`: a dependency-free, read-only stdio MCP server with local
-  host discovery and deterministic draft planning.
-- `bizhub-bootstrap`: the only BizHub-managed Skill in this repository.
-- `docs/customer-skill-extension.md`: guidance for a customer's own Agent to
-  add a small project-specific Skill later, only when a repeated workflow
-  justifies it.
-
-## Preview installation
-
-Use a trusted host-native plugin installer with the tagged release above and
-select `plugins/bizhub-core`. If the host does not support plugins, it may
-register the single server described in `plugins/bizhub-core/.mcp.json` from a
-tagged local checkout. For direct registration, resolve both `cwd` and the
-script argument to absolute paths under that checkout; do not assume another
-host will interpret `.` as the plugin directory.
-
-Installation changes the local Agent environment, so the Agent must first show
-the target path, command, and rollback action and receive explicit approval.
-Never run from a moving branch or a `latest` dependency.
-
-After registration, call `bizhub_bootstrap_status` and verify that the
-repository and release match this project and that all production/data
-capabilities remain `false`. If that readback fails, remove the registration
-and stop.
-
-`bizhub_discover_local_host` reports only OS family, architecture, Python
-version, CPU count, and free disk space. It does not return hostname, username,
-home path, IP addresses, environment variables, files, or secrets. It never
-claims that the Agent host is the deployment target.
-
-To uninstall this preview, remove the `bizhub-core` plugin entry or the direct
-`bizhub-mcp` registration created during installation, restart/reload the
-Agent host, and verify that the five `bizhub_*` tools are no longer listed.
-The preview creates no backend service or customer database.
-
-## Maintainer verification
-
-These commands execute repository code. Run them only from a reviewed tagged
-checkout, in an isolated development environment, with explicit code-execution
-approval. They are not part of the customer's setup interview.
-
-```bash
-python3 -m unittest discover -s tests -v
-python3 /path/to/skill-creator/scripts/quick_validate.py \
-  plugins/bizhub-core/skills/bizhub-bootstrap
-python3 /path/to/plugin-creator/scripts/validate_plugin.py \
-  plugins/bizhub-core
-```
-
-The release's reviewed file digests are recorded in
-`install/CHECKSUMS.sha256`.
+The Agent must show the generated plan and receive approval for its exact hash
+before running installation. A repository link, README, or GitHub signature is
+provenance—not permission to change a machine.
 
 ## Product boundary
 
-This repository is a clean public distribution surface. It does not contain the
-private BizHub application repository, customer data, production credentials,
-internal operations plugins, or deployment access.
+Included:
 
-The MIT license in this repository applies only to this public bootstrap code.
-Other BizHub software and customer-specific integrations may use different
-terms.
+- company legal/display name, brand, timezone, and default currency;
+- one Argon2-protected administrator with a secure HttpOnly session;
+- customers and suppliers, products, units, and inventory locations;
+- sales and purchase orders with partial fulfillment and cancellation;
+- immutable inventory movements, non-negative stock, and reversal corrections;
+- CSV/JSON staging, validation, preview, idempotent apply, and readback;
+- audit history, online SQLite backup, verified restore, and system health;
+- one FastAPI + built Vue application container;
+- one `bizhub-mcp` and one `bizhub-bootstrap` Skill.
+
+Not included:
+
+- multi-tenancy, RBAC, employee applications, SSO, or MFA;
+- invoices, payment, receivables, accounting, manufacturing, logistics, or
+  employee task management;
+- a general connector SDK or any company-specific collection logic;
+- PostgreSQL or a claim of automatic migration from an arbitrary legacy ERP.
+
+Customer-specific mapping remains in the customer's private environment. The
+documentation-only [extension guide](docs/customer-skill-extension.md) explains
+when a customer's Agent may add one narrow Skill later.
+
+## Supported deployment
+
+The first supported target is Ubuntu 24.04 with Docker Engine. Run the CLI on
+the target through the user's approved SSH session:
+
+```bash
+sudo ./bizhubctl preflight
+
+sudo ./bizhubctl plan \
+  --access domain \
+  --bind-address 127.0.0.1 \
+  --hostname bizhub.example.com \
+  --profile-id example-company \
+  --legal-name "Example Company Ltd." \
+  --display-name "Example Company" \
+  --brand-mark EX \
+  --timezone Asia/Shanghai \
+  --currency CNY \
+  --admin-username admin \
+  --output /tmp/bizhub-install-plan.json
+
+sudo ./bizhubctl install \
+  --plan /tmp/bizhub-install-plan.json \
+  --approve EXACT_PLAN_HASH
+sudo ./bizhubctl verify
+sudo ./bizhubctl backup --label initial-restore-test
+```
+
+For `domain` and `cloudflare` access, the application binds only to loopback;
+the approved Agent configures HTTPS using the examples in `deploy/`. For
+`private` access, the plan requires an explicit private IP. Plain HTTP is
+possible only with the conspicuous `--allow-http-private` plan flag and should
+be limited to a trusted private network.
+
+The CLI uses these fixed host paths:
+
+- configuration: `/etc/bizhub`;
+- database and install state: `/var/lib/bizhub`;
+- backups: `/var/backups/bizhub`.
+
+Repeated install/update is a no-op when the approved state is already active.
+Updates create a verified online backup first. `uninstall` removes only the
+container and intentionally retains configuration, data, state, and backups.
+There is no purge command.
+
+See [operations](docs/operations.md) and [data import](docs/data-import.md) for
+the bounded procedures.
+
+## Local development verification
+
+These commands execute reviewed repository code and are for maintainers:
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r app/backend/requirements-dev.lock
+PYTHONPATH=app/backend .venv/bin/pytest -q app/backend/tests tests
+
+cd app/frontend
+npm ci
+npm run build
+npm audit --audit-level=high
+```
+
+Docker verification must use a clean environment without the private product
+repository on `PYTHONPATH`. The release evidence must distinguish implemented,
+locally tested, and clean-Ubuntu-tested facts.
+
+## Licensing
+
+The bootstrap, Agent integration, documentation, and plugin paths listed in
+[LICENSE](LICENSE) use MIT. The application core, deployment templates, and
+`bizhubctl` use the source-available BizHub Core Private Deployment License,
+which permits internal deployment and modification but not redistribution,
+resale, or hosted/managed service. License text must receive owner/legal review
+before a stable release.

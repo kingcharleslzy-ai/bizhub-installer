@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import unittest
 from pathlib import Path
 
@@ -38,6 +40,21 @@ class DistributionShapeTests(unittest.TestCase):
         guide = ROOT / "docs" / "customer-skill-extension.md"
         self.assertTrue(guide.is_file())
         self.assertFalse((guide.parent / "SKILL.md").exists())
+
+    def test_installer_and_mcp_are_executable(self) -> None:
+        for path in [ROOT / "bizhubctl", PLUGIN / "scripts" / "bizhub_mcp.py"]:
+            self.assertTrue(path.stat().st_mode & stat.S_IXUSR)
+
+    def test_no_extra_plugin_execution_surfaces(self) -> None:
+        allowed = {
+            PLUGIN / "scripts" / "bizhub_mcp.py",
+            PLUGIN / "skills" / "bizhub-bootstrap" / "SKILL.md",
+        }
+        executable_files = {
+            path for path in PLUGIN.rglob("*")
+            if path.is_file() and path.stat().st_mode & stat.S_IXUSR
+        }
+        self.assertEqual(executable_files, {PLUGIN / "scripts" / "bizhub_mcp.py"})
 
 
 if __name__ == "__main__":

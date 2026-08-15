@@ -1,0 +1,5 @@
+# Replace bizhub.example.com before enabling this site.
+bizhub.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+}

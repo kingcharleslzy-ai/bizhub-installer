@@ -1,44 +1,57 @@
 ---
 name: bizhub-bootstrap
-description: Safely inspect the Agent host and build a non-executable BizHub installation plan preview. Use when a user provides the kingcharleslzy-ai/bizhub-installer repository URL, asks to evaluate BizHub, or wants the initial cloud, local, or hybrid deployment interview. This preview is read-only and must not connect to target servers, deploy services, ingest real customer data, request secret values in chat, or create additional generic Skills.
+description: Install or connect one private BizHub single-company instance from the fixed kingcharleslzy-ai/bizhub-installer release. Use when a user provides this repository URL, asks to deploy BizHub on Ubuntu 24.04, configure the one BizHub MCP, import initial business data, or verify backup and restore. Keep passwords and keys out of chat, require the exact plan hash before mutation, and do not create extra generic Skills.
 ---
 
 # BizHub Bootstrap
 
-## Overview
-
-Use the single `bizhub-mcp` server to inspect only the Agent host, ask three
-deployment questions, and return a deterministic draft plan.
+Use the repository's `bizhubctl` as the deployment authority and the single
+`bizhub-mcp` as the bounded business interface.
 
 ## Workflow
 
-1. Call `bizhub_bootstrap_status`.
-2. Tell the user that this release is preview/read-only and cannot yet perform a
-   production install or accept real customer data.
-3. Call `bizhub_discover_local_host`. Explain that it describes only the Agent
-   host, never a cloud or deployment target.
-4. Call `bizhub_bootstrap_questions` for `deployment`, then `access`. Ask
-   only the returned questions.
-5. Call `bizhub_build_draft_plan` with the three selected values.
-6. Show the fingerprint, required follow-ups, and blockers. Stop before any
-   host, server, DNS, firewall, data, or credential mutation.
+1. Verify the repository, release tag, commit, and `install/CHECKSUMS.sha256`.
+   Stop on a moving branch, dirty checkout, checksum mismatch, duplicate
+   BizHub MCP, or duplicate BizHub bootstrap Skill.
+2. Call `bizhub_bootstrap_status`, then ask the question stages in order:
+   `deployment`, `access`, `company`. Never ask for a password in chat.
+3. Connect to the user-approved Ubuntu 24.04 target over their existing SSH
+   access. Run `sudo ./bizhubctl preflight` there. Do not install Docker, alter DNS,
+   open a firewall, or change a tunnel unless the reviewed plan explicitly
+   includes that separately.
+4. Run `sudo ./bizhubctl plan` with the confirmed company and access settings. Show
+   its source commit, target fingerprint, paths, network binding, expected
+   changes, rollback, and plan hash.
+5. Only after the user approves that exact hash, run `sudo ./bizhubctl install
+   --plan ... --approve <hash>` in an interactive TTY. The user enters the
+   administrator password directly into that TTY.
+6. Run `sudo ./bizhubctl verify`, create a backup, and complete a restore
+   rehearsal before accepting real customer data. For a domain or Cloudflare
+   Tunnel, verify HTTPS and access control through the final URL.
+7. Configure this one MCP with `BIZHUB_INSTANCE_URL`,
+   `BIZHUB_ADMIN_USERNAME`, and a local `BIZHUB_ADMIN_PASSWORD_FILE`. Never put
+   the password in MCP arguments, repository files, plans, logs, or chat.
+8. Map the first customer source to a built-in CSV/JSON contract. Preview,
+   present errors and counts, obtain confirmation, apply with the returned
+   token, and read back inventory/order/audit state.
 
 ## Boundaries
 
-- Use only the tools exposed by the one `bizhub-mcp` instance.
-- Do not run arbitrary shell, discover local secrets, access customer files, or
-  contact network endpoints.
-- Do not infer that an answer authorizes installation, data access, or a later
-  deployment step.
-- Do not ask for company identity, employee identity, target hostname, IP,
-  username, password, key, token, domain, or data-source identifier.
-- Stop if another BizHub MCP or BizHub-managed bootstrap Skill is already
-  active; ask the user to choose one version.
-- Do not generate or install more generic BizHub Skills. If a repeated
-  customer-specific workflow later needs one, point the customer's Agent to
-  `https://github.com/kingcharleslzy-ai/bizhub-installer/blob/v0.2.0-preview.1/docs/customer-skill-extension.md`.
+- One company, one administrator, one SQLite database, one application
+  container. Do not claim multi-tenancy, RBAC, accounting, manufacturing, or a
+  general connector framework.
+- Never use direct SQL or an arbitrary shell/URL through MCP.
+- Every formal business write is `preview -> explicit confirmation -> apply ->
+  readback`. A stale or changed preview must be generated again.
+- `uninstall` retains config, data, and backups. This release provides no purge
+  operation.
+- Create no additional generic BizHub Skills. If a repeated customer workflow
+  needs one later, point the customer's Agent to the documentation-only
+  `docs/customer-skill-extension.md` in the same fixed release.
 
-## Expected result
+## Stop conditions
 
-Return the local discovery summary and draft plan exactly as read-only evidence.
-State that no target was contacted and no production action was performed.
+Stop and report the exact blocker if preflight, checksum, target fingerprint,
+plan hash, health, backup, restore, HTTPS, or readback verification fails. Do
+not work around a failed gate by exposing port 8080 publicly, disabling
+authentication, editing SQLite, or deleting existing data.

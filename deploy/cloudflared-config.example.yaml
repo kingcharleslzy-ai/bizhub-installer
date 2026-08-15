@@ -1,0 +1,7 @@
+# Create and authorize the tunnel outside this repository, then replace both values.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+ingress:
+  - hostname: bizhub.example.com
+    service: http://127.0.0.1:8080
+  - service: http_status:404
