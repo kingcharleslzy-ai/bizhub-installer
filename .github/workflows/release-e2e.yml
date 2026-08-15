@@ -1,0 +1,84 @@
+name: release-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Fixed BizHub preview tag to verify
+        required: true
+        default: v0.3.0-preview.2
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out verification harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: harness
+
+      - name: Check out fixed public release
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          path: release
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: release/app/frontend/package-lock.json
+
+      - name: Verify release provenance and static gates
+        run: |
+          test "$(git -C release describe --exact-match --tags HEAD)" = "${{ inputs.release_tag }}"
+          python release/scripts/verify_checksums.py
+          python -m venv release/.venv
+          release/.venv/bin/pip install --disable-pip-version-check -r release/app/backend/requirements-dev.lock
+          PYTHONPATH="$PWD/release/app/backend" release/.venv/bin/pytest -q release/app/backend/tests release/tests
+          npm --prefix release/app/frontend ci --ignore-scripts
+          npm --prefix release/app/frontend run build
+          npm --prefix release/app/frontend audit --audit-level=high
+
+      - name: Run target preflight and produce approved-plan candidate
+        id: plan
+        shell: bash
+        run: |
+          sudo release/bizhubctl preflight
+          runner_ip="$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')"
+          test -n "$runner_ip"
+          sudo release/bizhubctl plan \
+            --access private \
+            --bind-address "$runner_ip" \
+            --allow-http-private \
+            --profile-id github-e2e \
+            --legal-name "GitHub E2E Synthetic Company" \
+            --display-name "BizHub E2E" \
+            --brand-mark E2E \
+            --timezone UTC \
+            --currency USD \
+            --admin-username admin \
+            --output /tmp/bizhub-install-plan.json
+          plan_hash="$(sudo jq -r .plan_hash /tmp/bizhub-install-plan.json)"
+          test "${#plan_hash}" = 64
+          echo "runner_ip=$runner_ip" >> "$GITHUB_OUTPUT"
+          echo "plan_hash=$plan_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Install, exercise, back up, restore, and uninstall
+        run: |
+          sudo python harness/tests/ubuntu_release_e2e.py \
+            --repo "$PWD/release" \
+            --plan /tmp/bizhub-install-plan.json \
+            --plan-hash "${{ steps.plan.outputs.plan_hash }}" \
+            --instance-url "http://${{ steps.plan.outputs.runner_ip }}:8080"

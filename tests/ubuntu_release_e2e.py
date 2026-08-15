@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import http.cookiejar
+import json
+import os
+import pty
+import secrets
+import sqlite3
+import subprocess
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
+
+
+def run(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, cwd=cwd, check=True, text=True, capture_output=True)
+
+
+def install_with_tty(repo: Path, plan: Path, plan_hash: str, password: str) -> str:
+    pid, descriptor = pty.fork()
+    if pid == 0:
+        os.chdir(repo)
+        os.execv(str(repo / "bizhubctl"), [str(repo / "bizhubctl"), "install", "--plan", str(plan), "--approve", plan_hash])
+    output = bytearray()
+    sent_first = False
+    sent_second = False
+    while True:
+        try:
+            chunk = os.read(descriptor, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+        rendered = output.decode(errors="replace")
+        if "Administrator password:" in rendered and not sent_first:
+            os.write(descriptor, (password + "\n").encode()); sent_first = True
+        if "Repeat administrator password:" in rendered and not sent_second:
+            os.write(descriptor, (password + "\n").encode()); sent_second = True
+    _, status = os.waitpid(pid, 0)
+    os.close(descriptor)
+    text = output.decode(errors="replace")
+    if password in text:
+        raise RuntimeError("TTY unexpectedly echoed the administrator password")
+    if os.waitstatus_to_exitcode(status) != 0:
+        raise RuntimeError("interactive installation failed: " + text[-4000:])
+    return text
+
+
+class Api:
+    def __init__(self, base: str, username: str, password: str):
+        self.base = base.rstrip("/")
+        self.opener = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.call("/api/auth/login", {"username": username, "password": password})
+
+    def call(self, path: str, payload: dict | None = None, expected: int = 200):
+        body = json.dumps(payload).encode() if payload is not None else None
+        request = Request(self.base + path, data=body, method="POST" if body is not None else "GET")
+        request.add_header("Accept", "application/json")
+        if body is not None:
+            request.add_header("Content-Type", "application/json")
+            request.add_header("X-BizHub-Request", "1")
+        try:
+            with self.opener.open(request, timeout=10) as response:
+                status = response.status; result = json.loads(response.read())
+        except HTTPError as exc:
+            status = exc.code; result = json.loads(exc.read())
+        if status != expected:
+            raise AssertionError(f"{path}: expected {expected}, got {status}: {result}")
+        return result
+
+    def apply(self, action: str, data: dict):
+        preview = self.call("/api/actions/preview", {"action": action, "data": data})
+        return self.call("/api/actions/apply", {"action": action, "data": data, "preview_token": preview["preview_token"], "review_note": "confirmed synthetic E2E action"})
+
+
+def inventory_quantity(api: Api) -> str:
+    balances = api.call("/api/inventory")["balances"]
+    assert len(balances) == 1
+    return balances[0]["quantity"]
+
+
+def exercise_business_flow(api: Api) -> None:
+    supplier = api.apply("create_party", {"canonical_name": "Supplier E2E", "roles": ["supplier"]})["entity_id"]
+    customer = api.apply("create_party", {"canonical_name": "Customer E2E", "roles": ["customer"]})["entity_id"]
+    unit = api.apply("create_unit", {"code": "pcs", "display_name": "Pieces", "dimension": "count"})["entity_id"]
+    second_unit = api.apply("create_unit", {"code": "kg", "display_name": "Kilogram", "dimension": "weight"})["entity_id"]
+    product = api.apply("create_product", {"canonical_name": "Widget", "sku": "WIDGET-1", "unit_id": unit})["entity_id"]
+    location = api.apply("create_location", {"code": "MAIN", "display_name": "Main Warehouse"})["entity_id"]
+
+    purchase = api.apply("create_purchase_order", {"source_id": "e2e", "external_id": "po-1", "order_no": "PO-1", "supplier_id": supplier, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": unit, "quantity": "10"}]})
+    purchase_line = purchase["readback"]["lines"][0]["id"]
+    receipt = api.apply("receive_purchase", {"source_id": "e2e", "external_id": "receipt-1", "order_id": purchase["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": purchase_line, "quantity": "6"}]})
+    assert receipt["readback"]["lines"][0]["remaining_quantity"] == "4"
+
+    sale = api.apply("create_sales_order", {"source_id": "e2e", "external_id": "so-1", "order_no": "SO-1", "customer_id": customer, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": unit, "quantity": "4"}]})
+    sale_line = sale["readback"]["lines"][0]["id"]
+    shipment = api.apply("ship_sale", {"source_id": "e2e", "external_id": "shipment-1", "order_id": sale["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": sale_line, "quantity": "3"}]})
+    assert shipment["readback"]["lines"][0]["remaining_quantity"] == "1"
+    assert inventory_quantity(api) == "3"
+
+    api.call("/api/actions/preview", {"action": "create_sales_order", "data": {"order_no": "BAD-UNIT", "customer_id": customer, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": second_unit, "quantity": "1"}]}}, expected=409)
+    api.call("/api/actions/preview", {"action": "ship_sale", "data": {"order_id": sale["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": sale_line, "quantity": "99"}]}}, expected=409)
+    api.call("/api/imports/csv/preview", {"resource": "unit", "source_id": "bad", "csv_text": "code,display_name\npcs,Pieces\n"}, expected=409)
+
+    pending = {"canonical_name": "Pending Product", "sku": "PENDING", "unit_id": unit}
+    token = api.call("/api/actions/preview", {"action": "create_product", "data": pending})["preview_token"]
+    api.call("/api/actions/apply", {"action": "create_product", "data": {**pending, "sku": "TAMPERED"}, "preview_token": token, "review_note": "tampered"}, expected=409)
+    api.apply("create_location", {"code": "SECOND", "display_name": "Second Warehouse"})
+    api.call("/api/actions/apply", {"action": "create_product", "data": pending, "preview_token": token, "review_note": "stale"}, expected=409)
+
+    records = [{"external_id": "unit-box", "code": "box", "display_name": "Box", "dimension": "package"}]
+    preview = api.call("/api/imports/json/preview", {"resource": "unit", "source_id": "e2e-import", "records": records})
+    applied = api.call("/api/imports/apply", {"resource": "unit", "source_id": "e2e-import", "records": records, "preview_token": preview["preview_token"], "review_note": "confirmed synthetic import"})
+    assert applied["applied_count"] == 1
+    replay = api.call("/api/imports/json/preview", {"resource": "unit", "source_id": "e2e-import", "records": records})
+    assert replay["already_satisfied_count"] == 1
+
+    movement_id = shipment["readback"]["movement_ids"][0]
+    api.apply("reverse_movement", {"movement_id": movement_id, "business_date": "2026-08-15", "note": "reverse synthetic shipment"})
+    assert inventory_quantity(api) == "6"
+
+
+def exercise_mcp(repo: Path, instance_url: str, password_file: Path) -> None:
+    messages = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "bizhub_instance_health", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "bizhub_resource_query", "arguments": {"resource": "inventory"}}},
+    ]
+    environment = {**os.environ, "BIZHUB_INSTANCE_URL": instance_url, "BIZHUB_ADMIN_USERNAME": "admin", "BIZHUB_ADMIN_PASSWORD_FILE": str(password_file)}
+    process = subprocess.run(["python3", str(repo / "plugins/bizhub-core/scripts/bizhub_mcp.py")], input="\n".join(json.dumps(item) for item in messages) + "\n", text=True, capture_output=True, check=True, env=environment)
+    responses = [json.loads(line) for line in process.stdout.splitlines()]
+    assert responses[1]["result"]["structuredContent"]["status"] == "ok"
+    assert responses[2]["result"]["structuredContent"]["balances"][0]["quantity"] == "6"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--plan-hash", required=True)
+    parser.add_argument("--instance-url", required=True)
+    args = parser.parse_args()
+    password = secrets.token_urlsafe(30)
+    output = install_with_tty(args.repo.resolve(), args.plan.resolve(), args.plan_hash, password)
+    assert '"status": "installed"' in output
+    run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
+    api = Api(args.instance_url, "admin", password)
+    exercise_business_flow(api)
+
+    backup_result = json.loads(run([str(args.repo / "bizhubctl"), "backup", "--label", "e2e-restore"], cwd=args.repo).stdout)
+    backup_path = Path(backup_result["host_path"])
+    api.apply("post_inventory_adjustment", {"product_id": 1, "unit_id": 1, "location_id": 1, "quantity_delta": "2", "business_date": "2026-08-15", "note": "post-backup synthetic change"})
+    assert inventory_quantity(api) == "8"
+    run([str(args.repo / "bizhubctl"), "restore", "--backup", str(backup_path)], cwd=args.repo)
+    api = Api(args.instance_url, "admin", password)
+    assert inventory_quantity(api) == "6"
+    run(["docker", "restart", "bizhub"])
+    run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
+    api = Api(args.instance_url, "admin", password)
+    assert inventory_quantity(api) == "6"
+
+    password_file = Path("/tmp/bizhub-e2e-mcp-password")
+    password_file.write_text(password + "\n", encoding="utf-8"); password_file.chmod(0o600)
+    try:
+        exercise_mcp(args.repo, args.instance_url, password_file)
+    finally:
+        password_file.unlink(missing_ok=True)
+
+    no_op = json.loads(run([str(args.repo / "bizhubctl"), "install", "--plan", str(args.plan), "--approve", args.plan_hash], cwd=args.repo).stdout)
+    assert no_op["status"] == "no_op"
+    update = json.loads(run([str(args.repo / "bizhubctl"), "update", "--plan", str(args.plan), "--approve", args.plan_hash], cwd=args.repo).stdout)
+    assert update["status"] == "no_op"
+    removed = json.loads(run([str(args.repo / "bizhubctl"), "uninstall", "--approve", f"retain-data:{args.plan_hash}"], cwd=args.repo).stdout)
+    assert removed["status"] == "uninstalled_data_retained"
+    assert Path("/var/lib/bizhub/data/bizhub.db").is_file()
+    assert backup_path.is_file()
+    connection = sqlite3.connect("/var/lib/bizhub/data/bizhub.db")
+    try:
+        assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    finally:
+        connection.close()
+    print(json.dumps({"status": "passed", "release_commit": run(["git", "rev-parse", "HEAD"], cwd=args.repo).stdout.strip()}))
+
+
+if __name__ == "__main__":
+    main()

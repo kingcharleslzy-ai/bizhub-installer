@@ -1,6 +1,6 @@
 {
   "name": "bizhub-core",
-  "version": "0.3.0-preview.1",
+  "version": "0.3.0-preview.2",
   "description": "Install and operate one private BizHub business instance through a bounded MCP bridge.",
   "author": {
     "name": "kingcharleslzy-ai"

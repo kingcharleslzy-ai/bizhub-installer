@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.3.0-preview.1"
+VERSION = "0.3.0-preview.2"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"
@@ -52,7 +52,8 @@ def repository_root() -> Path:
 
 
 def git_value(*args: str) -> str:
-    result = run(["git", "-C", str(repository_root()), *args])
+    root = repository_root()
+    result = run(["git", "-c", f"safe.directory={root}", "-C", str(root), *args])
     return result.stdout.strip()
 
 
