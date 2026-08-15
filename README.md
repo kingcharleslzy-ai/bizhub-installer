@@ -5,7 +5,7 @@ from one fixed public GitHub release. Each company receives one independent
 instance, one administrator account, one application container, and one SQLite
 database.
 
-> **Release state: `v0.3.0-preview.3` implementation preview.** The application
+> **Release state: `v0.3.0-preview.4` implementation preview.** The application
 > and installer are implemented, but this exact release must not be described
 > as stable until its Ubuntu clean-host install, Docker end-to-end flow,
 > backup/restore rehearsal, sensitive-information scan, and fresh-Agent forward
@@ -15,7 +15,7 @@ database.
 
 Use the immutable release URL once the tag is published:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.3`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0-preview.4`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -26,6 +26,25 @@ only in the target host's interactive TTY.
 The Agent must show the generated plan and receive approval for its exact hash
 before running installation. A repository link, README, or GitHub signature is
 provenance—not permission to change a machine.
+
+After resolving the release tag to its verified 40-character commit, the Agent
+may use the host-native Codex plugin commands below. It must show these host
+changes and obtain approval before running them; `<VERIFIED_COMMIT>` is never a
+moving branch or an unverified tag:
+
+```bash
+codex plugin marketplace add kingcharleslzy-ai/bizhub-installer \
+  --ref <VERIFIED_COMMIT>
+codex plugin add bizhub-core@bizhub-public
+codex plugin list --json
+```
+
+The final readback must show exactly one enabled `bizhub-core` from
+`bizhub-public`, at the version declared by the fixed release. Start a new Agent
+task before using its Skill or MCP tools. If the host does not expose these CLI
+commands, use its Plugins directory to add the same pinned repository source
+and install `bizhub-core`; do not copy files into a global Skill directory or
+register a second MCP as a workaround.
 
 ## Product boundary
 

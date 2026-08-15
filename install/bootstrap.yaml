@@ -4,7 +4,7 @@ status: implementation_preview
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.3.0-preview.3
+  release_tag: v0.3.0-preview.4
   checksums_path: install/CHECKSUMS.sha256
 
 delivery:
@@ -16,6 +16,17 @@ delivery:
   bootstrap_skill_id: bizhub-bootstrap
   bootstrap_skill_path: plugins/bizhub-core/skills/bizhub-bootstrap
   customer_extension_guide: docs/customer-skill-extension.md
+
+agent_host_setup:
+  marketplace_source: kingcharleslzy-ai/bizhub-installer
+  marketplace_name: bizhub-public
+  plugin_selector: bizhub-core@bizhub-public
+  required_ref: verified_40_character_release_commit
+  required_readback:
+    - exactly_one_enabled_bizhub_core
+    - exactly_one_bizhub_bootstrap_skill
+    - exactly_one_bizhub_mcp
+  start_new_task_after_install: true
 
 supported_target:
   os: Ubuntu 24.04

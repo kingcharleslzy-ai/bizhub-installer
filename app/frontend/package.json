@@ -1,7 +1,7 @@
 {
   "name": "bizhub-web",
   "private": true,
-  "version": "0.3.0-preview.3",
+  "version": "0.3.0-preview.4",
   "type": "module",
   "scripts": {
     "build": "vue-tsc --noEmit && vite build"

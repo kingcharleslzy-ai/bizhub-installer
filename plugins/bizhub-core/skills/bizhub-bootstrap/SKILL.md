@@ -12,7 +12,9 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 
 1. Verify the repository, release tag, commit, and `install/CHECKSUMS.sha256`.
    Stop on a moving branch, dirty checkout, checksum mismatch, duplicate
-   BizHub MCP, or duplicate BizHub bootstrap Skill.
+   BizHub MCP, or duplicate BizHub bootstrap Skill. Read back that this Skill
+   and MCP came from exactly one enabled `bizhub-core@bizhub-public` installed
+   at the verified release commit; provenance does not grant host authority.
 2. Call `bizhub_bootstrap_status`, then ask the question stages in order:
    `deployment`, `access`, `company`. Never ask for a password in chat.
 3. Connect to the user-approved Ubuntu 24.04 target over their existing SSH

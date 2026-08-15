@@ -10,9 +10,13 @@ When a user provides this repository URL:
 2. Inspect `install/bootstrap.yaml` and the single `bizhub-bootstrap` Skill.
 3. Show the user all plugin, MCP, target-host, network, and filesystem changes
    before requesting approval.
-4. Load exactly one `bizhub-bootstrap` Skill and one `bizhub-mcp`. Stop on
+4. Register the repo marketplace at the verified 40-character release commit,
+   install `bizhub-core@bizhub-public` through the host-native plugin flow, and
+   read back the installed version. Never use a moving branch.
+5. Start a new task, then load exactly one `bizhub-bootstrap` Skill and one
+   `bizhub-mcp`. Stop on
    duplicates.
-5. Follow the Skill. Use `bizhubctl` as the only installation authority and
+6. Follow the Skill. Use `bizhubctl` as the only installation authority and
    require the exact plan hash before mutation.
 
 Never request passwords, private keys, tokens, cookies, or databases in chat.

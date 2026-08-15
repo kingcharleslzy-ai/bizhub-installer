@@ -12,6 +12,21 @@ PLUGIN = ROOT / "plugins" / "bizhub-core"
 
 
 class DistributionShapeTests(unittest.TestCase):
+    def test_agent_install_entrypoint_is_pinned_and_unambiguous(self) -> None:
+        marketplace = json.loads(
+            (ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(marketplace["name"], "bizhub-public")
+        self.assertEqual([item["name"] for item in marketplace["plugins"]], ["bizhub-core"])
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        bootstrap = (ROOT / "install" / "bootstrap.yaml").read_text(encoding="utf-8")
+        self.assertIn("--ref <VERIFIED_COMMIT>", readme)
+        self.assertIn("codex plugin add bizhub-core@bizhub-public", readme)
+        self.assertNotIn("--ref main", readme)
+        self.assertIn("required_ref: verified_40_character_release_commit", bootstrap)
+        self.assertIn("plugin_selector: bizhub-core@bizhub-public", bootstrap)
+
     def test_exactly_one_mcp_server(self) -> None:
         payload = json.loads((PLUGIN / ".mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(list(payload), ["mcpServers"])
