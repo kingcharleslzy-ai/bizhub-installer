@@ -100,6 +100,12 @@ readback, business flow, backup/restore, restart and MCP path; it is not yet the
 clean-host installer/release gate. See the
 [verification record](docs/verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
 
+A later development candidate also passed the narrowed private Git-whitelist
+bundle and immutable-image plan lifecycle: install, repeated install no-op,
+backup/restore, update, repeated update no-op, verify, and retain-data uninstall.
+The stable release gate deliberately remained closed. See the
+[derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md).
+
 ## Supported deployment
 
 The first supported target is Ubuntu 24.04 with Docker Engine. Run the CLI on
