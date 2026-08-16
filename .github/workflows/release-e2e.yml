@@ -9,7 +9,7 @@ on:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.4.0-preview.1
+        default: v0.4.0-preview.3
 
 permissions:
   contents: write
@@ -54,13 +54,16 @@ jobs:
         shell: bash
         run: |
           npm install --global @openai/codex@0.147.0
+          release_tag="${{ inputs.release_tag || github.ref_name }}"
+          release_version="${release_tag#v}"
+          test "$release_tag" = "v$(jq -r .version release/plugins/bizhub-core/.codex-plugin/plugin.json)"
           release_commit="$(git -C release rev-parse HEAD)"
           marketplace="$(codex plugin marketplace add kingcharleslzy-ai/bizhub-installer --ref "$release_commit" --json)"
           marketplace_root="$(jq -r .installedRoot <<<"$marketplace")"
           test "$(git -C "$marketplace_root" rev-parse HEAD)" = "$release_commit"
           installed="$(codex plugin add bizhub-core@bizhub-public --json)"
           plugin_path="$(jq -r .installedPath <<<"$installed")"
-          test "$(jq -r .version <<<"$installed")" = "0.4.0-preview.1"
+          test "$(jq -r .version <<<"$installed")" = "$release_version"
           test "$(find "$plugin_path/skills" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
           test -f "$plugin_path/skills/bizhub-bootstrap/SKILL.md"
           test "$(jq -r '.mcpServers | keys | join(",")' "$plugin_path/.mcp.json")" = bizhub-mcp
@@ -74,7 +77,7 @@ jobs:
               '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"bizhub_bootstrap_status","arguments":{}}}' \
               | python3 scripts/bizhub_mcp.py
           )"
-          test "$(jq -sr '.[0].result.serverInfo.version' <<<"$mcp_output")" = "0.4.0-preview.1"
+          test "$(jq -sr '.[0].result.serverInfo.version' <<<"$mcp_output")" = "$release_version"
           test "$(jq -sr '.[1].result.tools | length' <<<"$mcp_output")" = 7
           test "$(jq -sr '.[2].result.structuredContent.maturity' <<<"$mcp_output")" = implementation_preview
 
@@ -116,14 +119,15 @@ jobs:
         shell: bash
         run: |
           release_tag="${{ inputs.release_tag || github.ref_name }}"
-          test "$release_tag" = v0.4.0-preview.1
+          release_version="${release_tag#v}"
+          test "$release_tag" = "v$(jq -r .version release/plugins/bizhub-core/.codex-plugin/plugin.json)"
           if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$release_tag" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --prerelease \
               --title "BizHub $release_tag" \
-              --notes "Implementation preview for the bounded customer-private read-only derived-image chain. Ubuntu 24.04 install, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
+              --notes "Implementation preview $release_version for the bounded customer-private read-only derived-image chain, loopback-only access, and plan-bound Docker resource limits. Ubuntu 24.04 install, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
           fi
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease,tagName,url \
-            --jq 'select(.isPrerelease == true and .tagName == "v0.4.0-preview.1") | .url'
+            --jq ". | select(.isPrerelease == true and .tagName == \"$release_tag\") | .url"

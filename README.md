@@ -11,7 +11,7 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.4.0-preview.2`.** It adds the bounded
+> **Current development preview: `v0.4.0-preview.3`.** It adds the bounded
 > customer-private read-only derived-image chain, loopback-only access, and
 > plan-bound container resource limits. It must pass the tag-triggered clean
 > Ubuntu workflow and fresh-Agent forward test before publication, and it does
@@ -25,7 +25,7 @@ Use the immutable release URL once the tag is published:
 
 Once the derived-image preview tag is published and verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.2`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.3`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -97,7 +97,7 @@ self-install in production. See [modular architecture](docs/modular-architecture
 [read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
 
-The `v0.4.0-preview.2` candidate implements the first deliberately narrow adoption
+The `v0.4.0-preview.3` candidate implements the first deliberately narrow adoption
 step: an immutable derived image may load reviewed customer-private **read-only**
 routers by fixed Python import name. The core rejects mutation routes, lifecycle
 handlers, undeclared paths, missing dependencies, duplicate capabilities and
@@ -121,7 +121,10 @@ and the
 [preview.1 release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
 The preview.2 loopback and resource-limit candidate also passed a synthetic
 [Ubuntu Docker E2E](docs/verification/v040-preview2-loopback-resource-e2e-2026-08-16.md);
-the final tag-triggered release gate remains required.
+its immutable tag workflow then failed closed before host installation because
+the workflow still expected the preview.1 plugin version. The
+[failure record](docs/verification/v040-preview2-release-gate-failure-2026-08-16.md)
+is retained; preview.3 derives release identity from the tag and manifest.
 
 ## Supported deployment
 
