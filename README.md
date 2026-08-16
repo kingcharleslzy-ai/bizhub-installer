@@ -119,6 +119,9 @@ See the
 [derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md)
 and the
 [preview.1 release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
+The preview.2 loopback and resource-limit candidate also passed a synthetic
+[Ubuntu Docker E2E](docs/verification/v040-preview2-loopback-resource-e2e-2026-08-16.md);
+the final tag-triggered release gate remains required.
 
 ## Supported deployment
 
