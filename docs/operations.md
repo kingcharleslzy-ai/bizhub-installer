@@ -17,6 +17,11 @@ Backups are SQLite online backups, written atomically to
 the customer's approved encrypted backup system; this repository does not
 invent a storage provider or credential path.
 
+`status` and `verify` also compare the container's observed memory, memory-swap,
+CPU, and PID limits with the approved plan. A missing limit or any drift is a failed
+verification; do not hide it by restarting the container with an ad hoc Docker
+command.
+
 ## Restore rehearsal
 
 Choose one regular `.sqlite` file directly under `/var/backups/bizhub`:

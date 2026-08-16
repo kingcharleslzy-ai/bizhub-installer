@@ -22,8 +22,10 @@ Use the repository's `bizhubctl` as the deployment authority and the single
    open a firewall, or change a tunnel unless the reviewed plan explicitly
    includes that separately.
 4. Run `sudo ./bizhubctl plan` with the confirmed company and access settings. Show
-   its source commit, target fingerprint, paths, network binding, expected
-   changes, rollback, and plan hash.
+   its source commit, target fingerprint, paths, network binding, CPU/memory/PID
+   limits, expected changes, rollback, and plan hash. Use `loopback` only when
+   the instance must remain reachable solely through the target host or an SSH
+   port forward; do not add a proxy or public route for that mode.
 5. Only after the user approves that exact hash, run `sudo ./bizhubctl install
    --plan ... --approve <hash>` in an interactive TTY. The user enters the
    administrator password directly into that TTY.
@@ -54,6 +56,6 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 ## Stop conditions
 
 Stop and report the exact blocker if preflight, checksum, target fingerprint,
-plan hash, health, backup, restore, HTTPS, or readback verification fails. Do
+plan hash, resource-limit readback, health, backup, restore, HTTPS, or readback verification fails. Do
 not work around a failed gate by exposing port 8080 publicly, disabling
 authentication, editing SQLite, or deleting existing data.

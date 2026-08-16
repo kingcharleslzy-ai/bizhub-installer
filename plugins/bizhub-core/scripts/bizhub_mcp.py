@@ -16,9 +16,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.4.0-preview.1"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.4.0-preview.2"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
-RELEASE_TAG = "v0.4.0-preview.1"
+RELEASE_TAG = "v0.4.0-preview.2"
 PROTOCOL_VERSION = "2024-11-05"
 ACTION_NAMES = [
     "create_party", "create_product", "create_unit", "create_location",
@@ -50,7 +50,7 @@ QUESTION_STAGES: dict[str, dict[str, Any]] = {
     },
     "access": {
         "questions": [
-            {"id": "access", "question": "Use a private address, an HTTPS domain, or Cloudflare Tunnel?", "choices": ["private", "domain", "cloudflare"]},
+            {"id": "access", "question": "Use loopback-only access, a private address, an HTTPS domain, or Cloudflare Tunnel?", "choices": ["loopback", "private", "domain", "cloudflare"]},
         ],
         "next_stage": "company",
     },

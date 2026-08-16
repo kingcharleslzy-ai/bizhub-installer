@@ -44,7 +44,7 @@ The authenticated system map returns the effective manifest set and:
 ```json
 {
   "core_identity": {
-    "version": "0.4.0-preview.1",
+    "version": "0.4.0-preview.2",
     "source_commit": "40-character commit or development"
   }
 }

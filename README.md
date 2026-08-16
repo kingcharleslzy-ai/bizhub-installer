@@ -11,10 +11,11 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.4.0-preview.1`.** It adds the bounded
-> customer-private read-only derived-image chain. Its tag-triggered clean Ubuntu
-> workflow and fresh-Agent read-only forward test passed, but it intentionally
-> remains a preview and does not replace the stable default.
+> **Current development preview: `v0.4.0-preview.2`.** It adds the bounded
+> customer-private read-only derived-image chain, loopback-only access, and
+> plan-bound container resource limits. It must pass the tag-triggered clean
+> Ubuntu workflow and fresh-Agent forward test before publication, and it does
+> not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -22,9 +23,9 @@ Use the immutable release URL once the tag is published:
 
 `https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
 
-For the derived-image preview verification only, use:
+Once the derived-image preview tag is published and verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.1`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.2`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -96,7 +97,7 @@ self-install in production. See [modular architecture](docs/modular-architecture
 [read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
 
-The `v0.4.0-preview.1` candidate implements the first deliberately narrow adoption
+The `v0.4.0-preview.2` candidate implements the first deliberately narrow adoption
 step: an immutable derived image may load reviewed customer-private **read-only**
 routers by fixed Python import name. The core rejects mutation routes, lifecycle
 handlers, undeclared paths, missing dependencies, duplicate capabilities and
@@ -117,7 +118,7 @@ bootstrap forward test; the stable promotion gate deliberately remains closed.
 See the
 [derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md)
 and the
-[preview release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
+[preview.1 release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
 
 ## Supported deployment
 
@@ -128,9 +129,8 @@ the target through the user's approved SSH session:
 sudo ./bizhubctl preflight
 
 sudo ./bizhubctl plan \
-  --access domain \
+  --access loopback \
   --bind-address 127.0.0.1 \
-  --hostname bizhub.example.com \
   --profile-id example-company \
   --legal-name "Example Company Ltd." \
   --display-name "Example Company" \
@@ -138,6 +138,9 @@ sudo ./bizhubctl plan \
   --timezone Asia/Shanghai \
   --currency CNY \
   --admin-username admin \
+  --memory-mib 512 \
+  --cpu-millicores 1000 \
+  --pids-limit 256 \
   --output /tmp/bizhub-install-plan.json
 
 sudo ./bizhubctl install \
@@ -165,11 +168,19 @@ runtime identity that differs from its image label. The two local images must
 remain available until install/update finishes; a tag alone is never stored as
 deployment authority.
 
-For `domain` and `cloudflare` access, the application binds only to loopback;
+`loopback` access binds only to `127.0.0.1`, creates no reverse-proxy step, and
+is intended for SSH port-forwarded administration or a bounded shadow run. For
+`domain` and `cloudflare` access, the application also binds only to loopback;
 the approved Agent configures HTTPS using the examples in `deploy/`. For
 `private` access, the plan requires an explicit private IP. Plain HTTP is
 possible only with the conspicuous `--allow-http-private` plan flag and should
 be limited to a trusted private network.
+
+Every plan records memory, CPU, and PID limits. Install, update, no-op, status,
+and verify read back the Docker values and fail closed on drift. The defaults
+are 512 MiB, 1000 millicores, and 256 PIDs; a smaller host may use reviewed
+values within the CLI's bounded ranges. The memory-swap ceiling equals the
+memory ceiling, so a container cannot consume additional host swap.
 
 The CLI uses these fixed host paths:
 

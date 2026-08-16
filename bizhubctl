@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.4.0-preview.1"
+VERSION = "0.4.0-preview.2"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"
@@ -161,6 +161,9 @@ def plan_hash(plan: dict[str, Any]) -> str:
 
 
 def validate_bind(access: str, bind_address: str, hostname: str) -> None:
+    if access == "loopback":
+        if bind_address != "127.0.0.1" or hostname:
+            raise ValueError("loopback access requires 127.0.0.1 and no hostname")
     if access == "private":
         try:
             address = ipaddress.ip_address(bind_address)
@@ -172,6 +175,35 @@ def validate_bind(access: str, bind_address: str, hostname: str) -> None:
         raise ValueError("domain and Cloudflare access must bind the application to loopback")
     if access in {"domain", "cloudflare"} and not hostname:
         raise ValueError("domain and Cloudflare access require a hostname")
+
+
+def resource_limits(memory_mib: int, cpu_millicores: int, pids_limit: int) -> dict[str, int]:
+    if not 256 <= memory_mib <= 65536:
+        raise ValueError("memory limit must be between 256 and 65536 MiB")
+    if not 250 <= cpu_millicores <= 64000:
+        raise ValueError("CPU limit must be between 250 and 64000 millicores")
+    if not 64 <= pids_limit <= 4096:
+        raise ValueError("PID limit must be between 64 and 4096")
+    return {
+        "memory_mib": memory_mib,
+        "cpu_millicores": cpu_millicores,
+        "pids_limit": pids_limit,
+    }
+
+
+def expected_docker_resources(instance: dict[str, Any]) -> dict[str, int]:
+    limits = instance.get("resource_limits") or {}
+    validated = resource_limits(
+        int(limits.get("memory_mib", 0)),
+        int(limits.get("cpu_millicores", 0)),
+        int(limits.get("pids_limit", 0)),
+    )
+    return {
+        "memory_bytes": validated["memory_mib"] * 1024 * 1024,
+        "memory_swap_bytes": validated["memory_mib"] * 1024 * 1024,
+        "nano_cpus": validated["cpu_millicores"] * 1_000_000,
+        "pids_limit": validated["pids_limit"],
+    }
 
 
 def inspect_docker_image(reference: str) -> dict[str, Any]:
@@ -269,6 +301,9 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
     if preflight["status"] != "passed":
         raise RuntimeError(f"target preflight failed: {json.dumps(preflight['checks'], sort_keys=True)}")
     validate_bind(args.access, args.bind_address, args.hostname)
+    limits = resource_limits(args.memory_mib, args.cpu_millicores, args.pids_limit)
+    if args.allow_http_private and args.access != "private":
+        raise ValueError("--allow-http-private is valid only for private access")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", args.profile_id) or len(args.profile_id) > 64:
         raise ValueError("profile id must be a lowercase hyphenated identifier")
     if not (1 <= len(args.legal_name.strip()) <= 160 and 1 <= len(args.display_name.strip()) <= 80):
@@ -322,7 +357,8 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
             "port": args.port,
             "access": args.access,
             "hostname": args.hostname,
-            "cookie_secure": args.access != "private" or not args.allow_http_private,
+            "cookie_secure": False if args.access == "loopback" else args.access != "private" or not args.allow_http_private,
+            "resource_limits": limits,
         },
         "company_profile": profile,
         "administrator": {"username": args.admin_username.strip(), "password_source": "interactive_tty"},
@@ -334,7 +370,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
                 else "build one application image from the pinned repository commit"
             ),
             "create the single administrator using a TTY-only password",
-            "start one loopback/private-bound BizHub container",
+            "start one resource-limited loopback/private-bound BizHub container",
         ],
         "external_steps": external_steps,
         "rollback": "retain data and backups; restore the previous image and verified SQLite backup",
@@ -437,6 +473,41 @@ def container_exists() -> bool:
     return run(["docker", "inspect", CONTAINER], check=False).returncode == 0
 
 
+def inspect_container() -> dict[str, Any]:
+    result = run(["docker", "inspect", CONTAINER], check=False)
+    if result.returncode != 0:
+        raise RuntimeError("BizHub container does not exist")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Docker returned invalid container metadata") from exc
+    if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
+        raise RuntimeError("Docker must return exactly one BizHub container")
+    return payload[0]
+
+
+def container_resource_status(instance: dict[str, Any]) -> dict[str, Any]:
+    host_config = inspect_container().get("HostConfig") or {}
+    observed = {
+        "memory_bytes": int(host_config.get("Memory") or 0),
+        "memory_swap_bytes": int(host_config.get("MemorySwap") or 0),
+        "nano_cpus": int(host_config.get("NanoCpus") or 0),
+        "pids_limit": int(host_config.get("PidsLimit") or 0),
+    }
+    try:
+        expected = expected_docker_resources(instance)
+    except (TypeError, ValueError) as exc:
+        return {"status": "drift", "expected": None, "observed": observed, "reason": str(exc)}
+    return {"status": "ok" if observed == expected else "drift", "expected": expected, "observed": observed}
+
+
+def require_container_resources(instance: dict[str, Any]) -> dict[str, Any]:
+    result = container_resource_status(instance)
+    if result["status"] != "ok":
+        raise RuntimeError(f"container resource limits differ from the approved plan: {json.dumps(result, sort_keys=True)}")
+    return result
+
+
 def container_running() -> bool:
     result = run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], check=False)
     return result.returncode == 0 and result.stdout.strip() == "true"
@@ -447,10 +518,14 @@ def start_container(plan: dict[str, Any], image: str) -> None:
         run(["docker", "rm", "-f", CONTAINER])
     bind = plan["instance"]["bind_address"]
     port = str(plan["instance"]["port"])
+    limits = expected_docker_resources(plan["instance"])
     run([
         "docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
         "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges:true", "-p", f"{bind}:{port}:8080",
+        "--security-opt", "no-new-privileges:true",
+        "--memory", str(limits["memory_bytes"]), "--memory-swap", str(limits["memory_swap_bytes"]),
+        "--cpus", f"{limits['nano_cpus'] / 1_000_000_000:g}",
+        "--pids-limit", str(limits["pids_limit"]), "-p", f"{bind}:{port}:8080",
         *docker_mounts(plan), image,
     ])
 
@@ -495,7 +570,12 @@ def install(args: argparse.Namespace) -> dict[str, Any]:
     require_confirmation(plan, args.approve)
     state = current_state()
     if state and state.get("plan_hash") == plan["plan_hash"] and state.get("status") == "installed" and container_running():
-        return {"status": "no_op", "plan_hash": plan["plan_hash"], "health": wait_healthy(plan)}
+        return {
+            "status": "no_op",
+            "plan_hash": plan["plan_hash"],
+            "health": wait_healthy(plan),
+            "resources": require_container_resources(plan["instance"]),
+        }
     ensure_directories()
     if not (ETC / "company.json").exists():
         write_secure(ETC / "company.json", canonical(plan["company_profile"]) + b"\n")
@@ -517,13 +597,20 @@ def install(args: argparse.Namespace) -> dict[str, Any]:
         ], input_text=first + "\n")
     start_container(plan, image)
     health = wait_healthy(plan)
+    resources = require_container_resources(plan["instance"])
     state = {
         "schema_version": 1, "status": "installed", "installed_at": now(), "updated_at": now(),
         "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"],
-        "image": image, "health": health,
+        "image": image, "health": health, "resources": resources,
     }
     write_state(state)
-    return {"status": "installed", "plan_hash": plan["plan_hash"], "health": health, "external_steps": plan["external_steps"]}
+    return {
+        "status": "installed",
+        "plan_hash": plan["plan_hash"],
+        "health": health,
+        "resources": resources,
+        "external_steps": plan["external_steps"],
+    }
 
 
 def backup_instance(label: str = "manual") -> dict[str, Any]:
@@ -545,7 +632,8 @@ def verify_instance() -> dict[str, Any]:
         raise RuntimeError("install state does not exist")
     result = run(["docker", "exec", CONTAINER, "python", "-m", "bizhub.manage", "verify"])
     health = wait_healthy({"instance": state["instance"]})
-    return {"status": "ok", "database": json.loads(result.stdout), "health": health, "state": state}
+    resources = require_container_resources(state["instance"])
+    return {"status": "ok", "database": json.loads(result.stdout), "health": health, "resources": resources, "state": state}
 
 
 def restore_instance(path: Path) -> dict[str, Any]:
@@ -588,7 +676,11 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
     if not previous:
         raise RuntimeError("install BizHub before updating")
     if previous.get("plan_hash") == plan["plan_hash"] and container_running():
-        return {"status": "no_op", "health": wait_healthy(plan)}
+        return {
+            "status": "no_op",
+            "health": wait_healthy(plan),
+            "resources": require_container_resources(plan["instance"]),
+        }
     if json.loads((ETC / "company.json").read_text(encoding="utf-8")) != plan["company_profile"]:
         raise RuntimeError("company profile changes are not supported by update")
     backup = backup_instance("before-update")
@@ -597,6 +689,7 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
     try:
         start_container(plan, image)
         health = wait_healthy(plan)
+        resources = require_container_resources(plan["instance"])
     except Exception:
         if container_exists():
             run(["docker", "rm", "-f", CONTAINER])
@@ -608,12 +701,13 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copy2(source, destination)
         os.chown(destination, 10001, 10001)
         os.chmod(destination, 0o600)
-        start_container({"instance": previous["instance"]}, old_image)
+        rollback_instance = {**previous["instance"], "resource_limits": plan["instance"]["resource_limits"]}
+        start_container({"instance": rollback_instance}, old_image)
         wait_healthy({"instance": previous["instance"]})
         raise
-    updated = {**previous, "status": "installed", "updated_at": now(), "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"], "image": image, "health": health}
+    updated = {**previous, "status": "installed", "updated_at": now(), "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"], "image": image, "health": health, "resources": resources}
     write_state(updated)
-    return {"status": "updated", "backup": backup, "health": health}
+    return {"status": "updated", "backup": backup, "health": health, "resources": resources}
 
 
 def uninstall(args: argparse.Namespace) -> dict[str, Any]:
@@ -638,7 +732,7 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("preflight")
     plan = commands.add_parser("plan")
     plan.add_argument("--output", type=Path, default=Path("/tmp/bizhub-install-plan.json"))
-    plan.add_argument("--access", choices=["private", "domain", "cloudflare"], required=True)
+    plan.add_argument("--access", choices=["loopback", "private", "domain", "cloudflare"], required=True)
     plan.add_argument("--bind-address", required=True)
     plan.add_argument("--port", type=int, default=8080, choices=range(1024, 65536), metavar="PORT")
     plan.add_argument("--hostname", default="")
@@ -650,6 +744,9 @@ def parser() -> argparse.ArgumentParser:
     plan.add_argument("--timezone", required=True)
     plan.add_argument("--currency", default="CNY")
     plan.add_argument("--admin-username", required=True)
+    plan.add_argument("--memory-mib", type=int, default=512)
+    plan.add_argument("--cpu-millicores", type=int, default=1000)
+    plan.add_argument("--pids-limit", type=int, default=256)
     plan.add_argument(
         "--candidate-core-image",
         help="local public core image reference used to prove derived filesystem ancestry",
@@ -688,7 +785,16 @@ def main() -> None:
             result = verify_instance()
         elif args.command == "status":
             state = current_state()
-            result = {"status": "absent"} if state is None else {"status": state["status"], "container_running": container_running(), "state": state}
+            if state is None:
+                result = {"status": "absent"}
+            else:
+                running = container_running()
+                result = {
+                    "status": state["status"],
+                    "container_running": running,
+                    "resources": container_resource_status(state["instance"]) if running else None,
+                    "state": state,
+                }
         elif args.command == "backup":
             result = backup_instance(args.label)
         elif args.command == "restore":

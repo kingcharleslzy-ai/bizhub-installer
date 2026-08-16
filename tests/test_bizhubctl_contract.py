@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,9 +28,12 @@ def test_cli_has_only_bounded_lifecycle_commands():
 
 def test_network_binding_rules_fail_closed():
     cli = load_cli()
+    cli.validate_bind("loopback", "127.0.0.1", "")
     cli.validate_bind("private", "192.168.50.10", "")
     cli.validate_bind("domain", "127.0.0.1", "bizhub.example.com")
     for values in [
+        ("loopback", "0.0.0.0", ""),
+        ("loopback", "127.0.0.1", "bizhub.example.com"),
         ("private", "0.0.0.0", ""),
         ("private", "8.8.8.8", ""),
         ("domain", "192.168.1.5", "bizhub.example.com"),
@@ -37,6 +41,123 @@ def test_network_binding_rules_fail_closed():
     ]:
         with pytest.raises(ValueError):
             cli.validate_bind(*values)
+
+
+def test_resource_limits_are_bounded_and_convert_to_docker_values():
+    cli = load_cli()
+    limits = cli.resource_limits(384, 500, 128)
+    assert limits == {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128}
+    assert cli.expected_docker_resources({"resource_limits": limits}) == {
+        "memory_bytes": 384 * 1024 * 1024,
+        "memory_swap_bytes": 384 * 1024 * 1024,
+        "nano_cpus": 500_000_000,
+        "pids_limit": 128,
+    }
+    for values in [(255, 500, 128), (384, 249, 128), (384, 500, 63)]:
+        with pytest.raises(ValueError):
+            cli.resource_limits(*values)
+
+
+def test_loopback_plan_binds_resource_limits_without_an_external_step(monkeypatch):
+    cli = load_cli()
+    monkeypatch.setattr(cli, "preflight_result", lambda: {"status": "passed"})
+    monkeypatch.setattr(
+        cli,
+        "source_identity",
+        lambda: {"repository": "canonical", "release_tag": f"v{cli.VERSION}", "commit": "a" * 40, "tree": "b" * 40},
+    )
+    monkeypatch.setattr(cli, "application_digest", lambda: "c" * 64)
+    monkeypatch.setattr(cli, "target_fingerprint", lambda: "d" * 64)
+    args = SimpleNamespace(
+        access="loopback",
+        bind_address="127.0.0.1",
+        hostname="",
+        allow_http_private=False,
+        memory_mib=384,
+        cpu_millicores=500,
+        pids_limit=128,
+        profile_id="example-company",
+        legal_name="Example Company Ltd.",
+        display_name="Example Company",
+        brand_mark="EX",
+        currency="CNY",
+        admin_username="admin",
+        timezone="Asia/Shanghai",
+        candidate_core_image=None,
+        candidate_image=None,
+        port=18481,
+    )
+    plan = cli.make_plan(args)
+    assert plan["instance"]["access"] == "loopback"
+    assert plan["instance"]["cookie_secure"] is False
+    assert plan["instance"]["resource_limits"] == {
+        "memory_mib": 384,
+        "cpu_millicores": 500,
+        "pids_limit": 128,
+    }
+    assert plan["external_steps"] == []
+    assert plan["plan_hash"] == cli.plan_hash(plan)
+
+
+def test_start_container_applies_the_exact_planned_resource_limits(monkeypatch):
+    cli = load_cli()
+    commands = []
+    monkeypatch.setattr(cli, "container_exists", lambda: False)
+    monkeypatch.setattr(cli, "run", lambda command, **_: commands.append(command) or SimpleNamespace(returncode=0))
+    plan = {
+        "instance": {
+            "bind_address": "127.0.0.1",
+            "port": 18481,
+            "cookie_secure": False,
+            "resource_limits": {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128},
+        }
+    }
+    cli.start_container(plan, "sha256:" + "d" * 64)
+    command = commands[-1]
+    assert command[command.index("--memory") + 1] == str(384 * 1024 * 1024)
+    assert command[command.index("--memory-swap") + 1] == str(384 * 1024 * 1024)
+    assert command[command.index("--cpus") + 1] == "0.5"
+    assert command[command.index("--pids-limit") + 1] == "128"
+    assert command[command.index("-p") + 1] == "127.0.0.1:18481:8080"
+
+
+def test_container_resource_readback_detects_drift(monkeypatch):
+    cli = load_cli()
+    instance = {"resource_limits": {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128}}
+    monkeypatch.setattr(
+        cli,
+        "inspect_container",
+        lambda: {
+            "HostConfig": {
+                "Memory": 384 * 1024 * 1024,
+                "MemorySwap": 384 * 1024 * 1024,
+                "NanoCpus": 500_000_000,
+                "PidsLimit": 128,
+            }
+        },
+    )
+    assert cli.container_resource_status(instance)["status"] == "ok"
+    monkeypatch.setattr(
+        cli,
+        "inspect_container",
+        lambda: {"HostConfig": {"Memory": 0, "MemorySwap": 0, "NanoCpus": 0, "PidsLimit": 0}},
+    )
+    assert cli.container_resource_status(instance)["status"] == "drift"
+    with pytest.raises(RuntimeError, match="differ from the approved plan"):
+        cli.require_container_resources(instance)
+
+
+def test_legacy_state_without_resource_limits_is_visible_as_drift(monkeypatch):
+    cli = load_cli()
+    monkeypatch.setattr(
+        cli,
+        "inspect_container",
+        lambda: {"HostConfig": {"Memory": 0, "MemorySwap": 0, "NanoCpus": 0, "PidsLimit": 0}},
+    )
+    status = cli.container_resource_status({})
+    assert status["status"] == "drift"
+    assert status["expected"] is None
+    assert "memory limit" in status["reason"]
 
 
 def test_plan_hash_detects_any_change():
