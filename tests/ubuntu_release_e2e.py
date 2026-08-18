@@ -82,6 +82,27 @@ def inventory_quantity(api: Api) -> str:
     return balances[0]["quantity"]
 
 
+def assert_effective_cgroup_limits(plan: Path) -> None:
+    approved = json.loads(plan.read_text(encoding="utf-8"))
+    limits = approved["instance"]["resource_limits"]
+    pid = int(run(["docker", "inspect", "-f", "{{.State.Pid}}", "bizhub"]).stdout.strip())
+    memberships = Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8").splitlines()
+    unified = [line.partition("::")[2] for line in memberships if line.startswith("0::")]
+    assert len(unified) == 1 and unified[0].startswith("/")
+    root = Path("/sys/fs/cgroup").resolve(strict=True)
+    group = (root / unified[0].lstrip("/")).resolve(strict=True)
+    assert group == root or root in group.parents
+    memory = (group / "memory.max").read_text(encoding="utf-8").strip()
+    swap = (group / "memory.swap.max").read_text(encoding="utf-8").strip()
+    cpu = (group / "cpu.max").read_text(encoding="utf-8").strip().split()
+    pids = (group / "pids.max").read_text(encoding="utf-8").strip()
+    assert memory == str(limits["memory_mib"] * 1024 * 1024)
+    assert swap == str(limits["swap_mib"] * 1024 * 1024)
+    assert len(cpu) == 2 and cpu[0] != "max"
+    assert int(cpu[0]) * 1000 == int(cpu[1]) * limits["cpu_millicores"]
+    assert pids == str(limits["pids_limit"])
+
+
 def exercise_business_flow(api: Api) -> None:
     supplier = api.apply("create_party", {"canonical_name": "Supplier E2E", "roles": ["supplier"]})["entity_id"]
     customer = api.apply("create_party", {"canonical_name": "Customer E2E", "roles": ["customer"]})["entity_id"]
@@ -147,6 +168,7 @@ def main() -> None:
     output = install_with_tty(args.repo.resolve(), args.plan.resolve(), args.plan_hash, password)
     assert '"status": "installed"' in output
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
+    assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     exercise_business_flow(api)
 
@@ -159,6 +181,7 @@ def main() -> None:
     assert inventory_quantity(api) == "6"
     run(["docker", "restart", "bizhub"])
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
+    assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
 

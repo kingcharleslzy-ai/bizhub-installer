@@ -9,7 +9,7 @@ on:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.4.0-preview.3
+        default: v0.4.0-preview.4
 
 permissions:
   contents: write
@@ -127,7 +127,7 @@ jobs:
               --verify-tag \
               --prerelease \
               --title "BizHub $release_tag" \
-              --notes "Implementation preview $release_version for the bounded customer-private read-only derived-image chain, loopback-only access, and plan-bound Docker resource limits. Ubuntu 24.04 install, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
+              --notes "Implementation preview $release_version for the bounded customer-private read-only derived-image chain, loopback-only access, and plan-bound Docker plus effective Linux cgroup v2 resource limits. Ubuntu 24.04 install, kernel resource readback, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
           fi
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease,tagName,url \
             --jq ". | select(.isPrerelease == true and .tagName == \"$release_tag\") | .url"

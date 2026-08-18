@@ -17,10 +17,13 @@ Backups are SQLite online backups, written atomically to
 the customer's approved encrypted backup system; this repository does not
 invent a storage provider or credential path.
 
-`status` and `verify` also compare the container's observed memory, memory-swap,
-CPU, and PID limits with the approved plan. A missing limit or any drift is a failed
-verification; do not hide it by restarting the container with an ad hoc Docker
-command.
+`status` and `verify` compare both Docker metadata and the running container's
+effective Linux cgroup v2 memory, additional swap, CPU, and PID limits with the
+approved plan. Docker `--memory-swap` is a combined memory-plus-swap ceiling;
+the plan's `swap_mib` and cgroup `memory.swap.max` are the additional swap
+allowance. An unlimited, missing, unreadable, malformed, or mismatched cgroup
+value is a failed verification even when `docker inspect` looks correct. Do not
+hide drift by restarting the container with an ad hoc Docker command.
 
 ## Restore rehearsal
 

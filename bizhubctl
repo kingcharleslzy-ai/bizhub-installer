@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.4.0-preview.3"
+VERSION = "0.4.0-preview.4"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"
@@ -32,6 +32,7 @@ DATA = ROOT / "var/lib/bizhub"
 APP_DATA = DATA / "data"
 BACKUPS = ROOT / "var/backups/bizhub"
 STATE = DATA / "install-state.json"
+CGROUP_ROOT = Path("/sys/fs/cgroup")
 PLAN_CONTRACT = "bizhub.install-plan.v1"
 DERIVED_EXTENSION_MODE = "read-only-reference"
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -136,17 +137,28 @@ def preflight_result() -> dict[str, Any]:
     release = os_release()
     docker_ok, docker_detail = docker_available()
     disk = shutil.disk_usage(DATA.parent if DATA.parent.exists() else ROOT)
+    cgroup_controllers = CGROUP_ROOT / "cgroup.controllers"
     checks = {
         "ubuntu_24_04": release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "24.04",
         "architecture": platform.machine() in {"x86_64", "aarch64", "arm64"},
         "docker_engine": docker_ok,
+        "cgroup_v2": cgroup_controllers.is_file(),
         "disk_free_gib_at_least_10": disk.free >= 10 * 1024**3,
         "root_or_test_prefix": os.geteuid() == 0 or ROOT != Path("/"),
     }
     return {
         "status": "passed" if all(checks.values()) else "failed",
         "checks": checks,
-        "details": {"os_release": release, "docker": docker_detail, "disk_free_bytes": disk.free},
+        "details": {
+            "os_release": release,
+            "docker": docker_detail,
+            "cgroup_controllers": (
+                cgroup_controllers.read_text(encoding="utf-8").split()
+                if cgroup_controllers.is_file()
+                else []
+            ),
+            "disk_free_bytes": disk.free,
+        },
         "target_fingerprint": target_fingerprint(),
     }
 
@@ -177,15 +189,20 @@ def validate_bind(access: str, bind_address: str, hostname: str) -> None:
         raise ValueError("domain and Cloudflare access require a hostname")
 
 
-def resource_limits(memory_mib: int, cpu_millicores: int, pids_limit: int) -> dict[str, int]:
+def resource_limits(memory_mib: int, swap_mib: int, cpu_millicores: int, pids_limit: int) -> dict[str, int]:
     if not 256 <= memory_mib <= 65536:
         raise ValueError("memory limit must be between 256 and 65536 MiB")
+    if not 0 <= swap_mib <= 65536:
+        raise ValueError("additional swap limit must be between 0 and 65536 MiB")
+    if memory_mib + swap_mib > 131072:
+        raise ValueError("combined memory and swap limit must not exceed 131072 MiB")
     if not 250 <= cpu_millicores <= 64000:
         raise ValueError("CPU limit must be between 250 and 64000 millicores")
     if not 64 <= pids_limit <= 4096:
         raise ValueError("PID limit must be between 64 and 4096")
     return {
         "memory_mib": memory_mib,
+        "swap_mib": swap_mib,
         "cpu_millicores": cpu_millicores,
         "pids_limit": pids_limit,
     }
@@ -195,14 +212,33 @@ def expected_docker_resources(instance: dict[str, Any]) -> dict[str, int]:
     limits = instance.get("resource_limits") or {}
     validated = resource_limits(
         int(limits.get("memory_mib", 0)),
+        int(limits.get("swap_mib", -1)),
         int(limits.get("cpu_millicores", 0)),
         int(limits.get("pids_limit", 0)),
     )
     return {
         "memory_bytes": validated["memory_mib"] * 1024 * 1024,
-        "memory_swap_bytes": validated["memory_mib"] * 1024 * 1024,
+        # Docker --memory-swap is the combined memory-plus-swap ceiling. The
+        # kernel's cgroup v2 memory.swap.max is the additional swap ceiling.
+        "memory_swap_total_bytes": (validated["memory_mib"] + validated["swap_mib"]) * 1024 * 1024,
         "nano_cpus": validated["cpu_millicores"] * 1_000_000,
         "pids_limit": validated["pids_limit"],
+    }
+
+
+def expected_cgroup_resources(instance: dict[str, Any]) -> dict[str, int]:
+    limits = instance.get("resource_limits") or {}
+    validated = resource_limits(
+        int(limits.get("memory_mib", 0)),
+        int(limits.get("swap_mib", -1)),
+        int(limits.get("cpu_millicores", 0)),
+        int(limits.get("pids_limit", 0)),
+    )
+    return {
+        "memory_max_bytes": validated["memory_mib"] * 1024 * 1024,
+        "memory_swap_max_bytes": validated["swap_mib"] * 1024 * 1024,
+        "cpu_millicores": validated["cpu_millicores"],
+        "pids_max": validated["pids_limit"],
     }
 
 
@@ -301,7 +337,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
     if preflight["status"] != "passed":
         raise RuntimeError(f"target preflight failed: {json.dumps(preflight['checks'], sort_keys=True)}")
     validate_bind(args.access, args.bind_address, args.hostname)
-    limits = resource_limits(args.memory_mib, args.cpu_millicores, args.pids_limit)
+    limits = resource_limits(args.memory_mib, args.swap_mib, args.cpu_millicores, args.pids_limit)
     if args.allow_http_private and args.access != "private":
         raise ValueError("--allow-http-private is valid only for private access")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", args.profile_id) or len(args.profile_id) > 64:
@@ -486,19 +522,112 @@ def inspect_container() -> dict[str, Any]:
     return payload[0]
 
 
+def _bounded_cgroup_path(container: dict[str, Any]) -> Path:
+    state = container.get("State") or {}
+    pid = int(state.get("Pid") or 0)
+    if pid <= 0:
+        raise RuntimeError("BizHub container has no running host PID")
+    membership = Path(f"/proc/{pid}/cgroup")
+    try:
+        lines = membership.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise RuntimeError(f"cannot read container cgroup membership for PID {pid}") from exc
+    unified = [line.partition("::")[2] for line in lines if line.startswith("0::")]
+    if len(unified) != 1 or not unified[0].startswith("/"):
+        raise RuntimeError("container is not attached to one valid cgroup v2 path")
+    cgroup_root = CGROUP_ROOT.resolve(strict=True)
+    candidate = (cgroup_root / unified[0].lstrip("/")).resolve(strict=True)
+    if candidate != cgroup_root and cgroup_root not in candidate.parents:
+        raise RuntimeError("container cgroup path escapes the cgroup v2 hierarchy")
+    if not candidate.is_dir():
+        raise RuntimeError("container cgroup v2 path is not a directory")
+    return candidate
+
+
+def _read_cgroup_value(directory: Path, name: str) -> str:
+    path = directory / name
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(f"cannot read effective cgroup value {name}") from exc
+    if not value:
+        raise RuntimeError(f"effective cgroup value {name} is empty")
+    return value
+
+
+def _finite_cgroup_integer(value: str, name: str) -> int:
+    if value == "max":
+        raise RuntimeError(f"effective cgroup value {name} is unlimited")
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"effective cgroup value {name} is invalid") from exc
+    if parsed < 0:
+        raise RuntimeError(f"effective cgroup value {name} is negative")
+    return parsed
+
+
+def effective_cgroup_resources(container: dict[str, Any]) -> dict[str, Any]:
+    directory = _bounded_cgroup_path(container)
+    memory_raw = _read_cgroup_value(directory, "memory.max")
+    swap_raw = _read_cgroup_value(directory, "memory.swap.max")
+    cpu_raw = _read_cgroup_value(directory, "cpu.max")
+    pids_raw = _read_cgroup_value(directory, "pids.max")
+    cpu_parts = cpu_raw.split()
+    if len(cpu_parts) != 2:
+        raise RuntimeError("effective cgroup value cpu.max is invalid")
+    quota = _finite_cgroup_integer(cpu_parts[0], "cpu.max quota")
+    period = _finite_cgroup_integer(cpu_parts[1], "cpu.max period")
+    if period <= 0:
+        raise RuntimeError("effective cgroup cpu.max period must be positive")
+    return {
+        "cgroup_version": 2,
+        "cgroup_path": "/" + directory.relative_to(CGROUP_ROOT.resolve()).as_posix(),
+        "memory_max_bytes": _finite_cgroup_integer(memory_raw, "memory.max"),
+        "memory_swap_max_bytes": _finite_cgroup_integer(swap_raw, "memory.swap.max"),
+        "cpu_quota": quota,
+        "cpu_period": period,
+        "pids_max": _finite_cgroup_integer(pids_raw, "pids.max"),
+        "raw": {
+            "memory.max": memory_raw,
+            "memory.swap.max": swap_raw,
+            "cpu.max": cpu_raw,
+            "pids.max": pids_raw,
+        },
+    }
+
+
 def container_resource_status(instance: dict[str, Any]) -> dict[str, Any]:
-    host_config = inspect_container().get("HostConfig") or {}
-    observed = {
+    container = inspect_container()
+    host_config = container.get("HostConfig") or {}
+    observed_docker = {
         "memory_bytes": int(host_config.get("Memory") or 0),
-        "memory_swap_bytes": int(host_config.get("MemorySwap") or 0),
+        "memory_swap_total_bytes": int(host_config.get("MemorySwap") or 0),
         "nano_cpus": int(host_config.get("NanoCpus") or 0),
         "pids_limit": int(host_config.get("PidsLimit") or 0),
     }
     try:
-        expected = expected_docker_resources(instance)
-    except (TypeError, ValueError) as exc:
-        return {"status": "drift", "expected": None, "observed": observed, "reason": str(exc)}
-    return {"status": "ok" if observed == expected else "drift", "expected": expected, "observed": observed}
+        expected_docker = expected_docker_resources(instance)
+        expected_cgroup = expected_cgroup_resources(instance)
+        observed_cgroup = effective_cgroup_resources(container)
+        cgroup_matches = (
+            observed_cgroup["memory_max_bytes"] == expected_cgroup["memory_max_bytes"]
+            and observed_cgroup["memory_swap_max_bytes"] == expected_cgroup["memory_swap_max_bytes"]
+            and observed_cgroup["pids_max"] == expected_cgroup["pids_max"]
+            and observed_cgroup["cpu_quota"] * 1000
+            == observed_cgroup["cpu_period"] * expected_cgroup["cpu_millicores"]
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        return {
+            "status": "drift",
+            "expected": None,
+            "observed": {"docker": observed_docker, "cgroup_v2": None},
+            "reason": str(exc),
+        }
+    expected = {"docker": expected_docker, "cgroup_v2": expected_cgroup}
+    observed = {"docker": observed_docker, "cgroup_v2": observed_cgroup}
+    status = "ok" if observed_docker == expected_docker and cgroup_matches else "drift"
+    return {"status": status, "expected": expected, "observed": observed}
 
 
 def require_container_resources(instance: dict[str, Any]) -> dict[str, Any]:
@@ -523,7 +652,8 @@ def start_container(plan: dict[str, Any], image: str) -> None:
         "docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
         "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
-        "--memory", str(limits["memory_bytes"]), "--memory-swap", str(limits["memory_swap_bytes"]),
+        "--memory", str(limits["memory_bytes"]),
+        "--memory-swap", str(limits["memory_swap_total_bytes"]),
         "--cpus", f"{limits['nano_cpus'] / 1_000_000_000:g}",
         "--pids-limit", str(limits["pids_limit"]), "-p", f"{bind}:{port}:8080",
         *docker_mounts(plan), image,
@@ -744,7 +874,13 @@ def parser() -> argparse.ArgumentParser:
     plan.add_argument("--timezone", required=True)
     plan.add_argument("--currency", default="CNY")
     plan.add_argument("--admin-username", required=True)
-    plan.add_argument("--memory-mib", type=int, default=512)
+    plan.add_argument("--memory-mib", type=int, default=1024)
+    plan.add_argument(
+        "--swap-mib",
+        type=int,
+        default=512,
+        help="additional swap allowance; Docker receives memory plus this value as --memory-swap",
+    )
     plan.add_argument("--cpu-millicores", type=int, default=1000)
     plan.add_argument("--pids-limit", type=int, default=256)
     plan.add_argument(

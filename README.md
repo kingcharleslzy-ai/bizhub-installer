@@ -11,9 +11,9 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.4.0-preview.3`.** It adds the bounded
-> customer-private read-only derived-image chain, loopback-only access, and
-> plan-bound container resource limits. It must pass the tag-triggered clean
+> **Current development preview: `v0.4.0-preview.4`.** It adds fail-closed
+> Linux cgroup v2 readback to the bounded customer-private derived-image chain,
+> loopback-only access, and plan-bound container resource limits. It must pass the tag-triggered clean
 > Ubuntu workflow and fresh-Agent forward test before publication, and it does
 > not replace the stable default.
 
@@ -25,7 +25,7 @@ Use the immutable release URL once the tag is published:
 
 Once the derived-image preview tag is published and verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.3`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.4`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -97,7 +97,7 @@ self-install in production. See [modular architecture](docs/modular-architecture
 [read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
 
-The `v0.4.0-preview.3` candidate implements the first deliberately narrow adoption
+The `v0.4.0-preview.4` candidate implements the first deliberately narrow adoption
 step: an immutable derived image may load reviewed customer-private **read-only**
 routers by fixed Python import name. The core rejects mutation routes, lifecycle
 handlers, undeclared paths, missing dependencies, duplicate capabilities and
@@ -144,7 +144,8 @@ sudo ./bizhubctl plan \
   --timezone Asia/Shanghai \
   --currency CNY \
   --admin-username admin \
-  --memory-mib 512 \
+  --memory-mib 1024 \
+  --swap-mib 512 \
   --cpu-millicores 1000 \
   --pids-limit 256 \
   --output /tmp/bizhub-install-plan.json
@@ -182,11 +183,15 @@ the approved Agent configures HTTPS using the examples in `deploy/`. For
 possible only with the conspicuous `--allow-http-private` plan flag and should
 be limited to a trusted private network.
 
-Every plan records memory, CPU, and PID limits. Install, update, no-op, status,
-and verify read back the Docker values and fail closed on drift. The defaults
-are 512 MiB, 1000 millicores, and 256 PIDs; a smaller host may use reviewed
-values within the CLI's bounded ranges. The memory-swap ceiling equals the
-memory ceiling, so a container cannot consume additional host swap.
+Every plan records memory, additional swap, CPU, and PID limits. Install,
+update, no-op, status, and verify compare both Docker metadata and the running
+container's Linux cgroup v2 `memory.max`, `memory.swap.max`, `cpu.max`, and
+`pids.max` values. An unlimited, unreadable, malformed, or mismatched kernel
+value fails closed even if Docker metadata looks correct. The defaults are
+1024 MiB memory, 512 MiB additional swap, 1000 millicores, and 256 PIDs; a
+smaller host may use explicitly reviewed values within the CLI's bounded
+ranges. Docker's `--memory-swap` receives the combined 1536 MiB ceiling while
+the kernel must report the additional 512 MiB swap ceiling.
 
 The CLI uses these fixed host paths:
 

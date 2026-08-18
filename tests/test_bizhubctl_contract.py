@@ -45,15 +45,21 @@ def test_network_binding_rules_fail_closed():
 
 def test_resource_limits_are_bounded_and_convert_to_docker_values():
     cli = load_cli()
-    limits = cli.resource_limits(384, 500, 128)
-    assert limits == {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128}
+    limits = cli.resource_limits(1024, 512, 1000, 256)
+    assert limits == {"memory_mib": 1024, "swap_mib": 512, "cpu_millicores": 1000, "pids_limit": 256}
     assert cli.expected_docker_resources({"resource_limits": limits}) == {
-        "memory_bytes": 384 * 1024 * 1024,
-        "memory_swap_bytes": 384 * 1024 * 1024,
-        "nano_cpus": 500_000_000,
-        "pids_limit": 128,
+        "memory_bytes": 1024 * 1024 * 1024,
+        "memory_swap_total_bytes": 1536 * 1024 * 1024,
+        "nano_cpus": 1_000_000_000,
+        "pids_limit": 256,
     }
-    for values in [(255, 500, 128), (384, 249, 128), (384, 500, 63)]:
+    assert cli.expected_cgroup_resources({"resource_limits": limits}) == {
+        "memory_max_bytes": 1024 * 1024 * 1024,
+        "memory_swap_max_bytes": 512 * 1024 * 1024,
+        "cpu_millicores": 1000,
+        "pids_max": 256,
+    }
+    for values in [(255, 512, 1000, 256), (1024, -1, 1000, 256), (1024, 512, 249, 256), (1024, 512, 1000, 63)]:
         with pytest.raises(ValueError):
             cli.resource_limits(*values)
 
@@ -74,6 +80,7 @@ def test_loopback_plan_binds_resource_limits_without_an_external_step(monkeypatc
         hostname="",
         allow_http_private=False,
         memory_mib=384,
+        swap_mib=192,
         cpu_millicores=500,
         pids_limit=128,
         profile_id="example-company",
@@ -92,6 +99,7 @@ def test_loopback_plan_binds_resource_limits_without_an_external_step(monkeypatc
     assert plan["instance"]["cookie_secure"] is False
     assert plan["instance"]["resource_limits"] == {
         "memory_mib": 384,
+        "swap_mib": 192,
         "cpu_millicores": 500,
         "pids_limit": 128,
     }
@@ -109,13 +117,13 @@ def test_start_container_applies_the_exact_planned_resource_limits(monkeypatch):
             "bind_address": "127.0.0.1",
             "port": 18481,
             "cookie_secure": False,
-            "resource_limits": {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128},
+            "resource_limits": {"memory_mib": 384, "swap_mib": 192, "cpu_millicores": 500, "pids_limit": 128},
         }
     }
     cli.start_container(plan, "sha256:" + "d" * 64)
     command = commands[-1]
     assert command[command.index("--memory") + 1] == str(384 * 1024 * 1024)
-    assert command[command.index("--memory-swap") + 1] == str(384 * 1024 * 1024)
+    assert command[command.index("--memory-swap") + 1] == str(576 * 1024 * 1024)
     assert command[command.index("--cpus") + 1] == "0.5"
     assert command[command.index("--pids-limit") + 1] == "128"
     assert command[command.index("-p") + 1] == "127.0.0.1:18481:8080"
@@ -123,20 +131,48 @@ def test_start_container_applies_the_exact_planned_resource_limits(monkeypatch):
 
 def test_container_resource_readback_detects_drift(monkeypatch):
     cli = load_cli()
-    instance = {"resource_limits": {"memory_mib": 384, "cpu_millicores": 500, "pids_limit": 128}}
+    instance = {"resource_limits": {"memory_mib": 384, "swap_mib": 192, "cpu_millicores": 500, "pids_limit": 128}}
+    effective = {
+        "cgroup_version": 2,
+        "cgroup_path": "/system.slice/docker-test.scope",
+        "memory_max_bytes": 384 * 1024 * 1024,
+        "memory_swap_max_bytes": 192 * 1024 * 1024,
+        "cpu_quota": 50000,
+        "cpu_period": 100000,
+        "pids_max": 128,
+        "raw": {
+            "memory.max": str(384 * 1024 * 1024),
+            "memory.swap.max": str(192 * 1024 * 1024),
+            "cpu.max": "50000 100000",
+            "pids.max": "128",
+        },
+    }
+    monkeypatch.setattr(cli, "effective_cgroup_resources", lambda _container: effective)
     monkeypatch.setattr(
         cli,
         "inspect_container",
         lambda: {
+            "State": {"Pid": 1234},
             "HostConfig": {
                 "Memory": 384 * 1024 * 1024,
-                "MemorySwap": 384 * 1024 * 1024,
+                "MemorySwap": 576 * 1024 * 1024,
                 "NanoCpus": 500_000_000,
                 "PidsLimit": 128,
             }
         },
     )
     assert cli.container_resource_status(instance)["status"] == "ok"
+    unlimited_swap = {**effective, "memory_swap_max_bytes": None, "raw": {**effective["raw"], "memory.swap.max": "max"}}
+    monkeypatch.setattr(
+        cli,
+        "effective_cgroup_resources",
+        lambda _container: (_ for _ in ()).throw(RuntimeError("effective cgroup value memory.swap.max is unlimited")),
+    )
+    result = cli.container_resource_status(instance)
+    assert result["status"] == "drift"
+    assert "memory.swap.max is unlimited" in result["reason"]
+    monkeypatch.setattr(cli, "effective_cgroup_resources", lambda _container: unlimited_swap)
+    assert cli.container_resource_status(instance)["status"] == "drift"
     monkeypatch.setattr(
         cli,
         "inspect_container",
@@ -151,13 +187,39 @@ def test_legacy_state_without_resource_limits_is_visible_as_drift(monkeypatch):
     cli = load_cli()
     monkeypatch.setattr(
         cli,
+        "effective_cgroup_resources",
+        lambda _container: (_ for _ in ()).throw(RuntimeError("should not be trusted")),
+    )
+    monkeypatch.setattr(
+        cli,
         "inspect_container",
         lambda: {"HostConfig": {"Memory": 0, "MemorySwap": 0, "NanoCpus": 0, "PidsLimit": 0}},
     )
     status = cli.container_resource_status({})
     assert status["status"] == "drift"
     assert status["expected"] is None
-    assert "memory limit" in status["reason"]
+    assert "memory limit" in status["reason"] or "should not be trusted" in status["reason"]
+
+
+def test_effective_cgroup_v2_values_are_read_from_the_kernel(monkeypatch, tmp_path):
+    cli = load_cli()
+    group = tmp_path / "system.slice" / "docker-test.scope"
+    group.mkdir(parents=True)
+    (group / "memory.max").write_text(str(1024 * 1024 * 1024), encoding="utf-8")
+    (group / "memory.swap.max").write_text(str(512 * 1024 * 1024), encoding="utf-8")
+    (group / "cpu.max").write_text("100000 100000", encoding="utf-8")
+    (group / "pids.max").write_text("256", encoding="utf-8")
+    monkeypatch.setattr(cli, "CGROUP_ROOT", tmp_path)
+    monkeypatch.setattr(cli, "_bounded_cgroup_path", lambda _container: group)
+    observed = cli.effective_cgroup_resources({"State": {"Pid": 42}})
+    assert observed["memory_max_bytes"] == 1024 * 1024 * 1024
+    assert observed["memory_swap_max_bytes"] == 512 * 1024 * 1024
+    assert observed["cpu_quota"] == observed["cpu_period"] == 100000
+    assert observed["pids_max"] == 256
+
+    (group / "memory.swap.max").write_text("max", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="memory.swap.max is unlimited"):
+        cli.effective_cgroup_resources({"State": {"Pid": 42}})
 
 
 def test_plan_hash_detects_any_change():
