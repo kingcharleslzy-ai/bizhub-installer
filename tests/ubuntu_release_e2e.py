@@ -144,6 +144,95 @@ def exercise_business_flow(api: Api) -> None:
     assert inventory_quantity(api) == "6"
 
 
+def assert_reconciled_master_data(api: Api) -> None:
+    catalog = api.call("/api/resources/catalog")
+    party = next(item for item in catalog["parties"] if item["canonical_name"] == "Reconciled E2E Party")
+    assert party["legal_name"] == "Reconciled E2E Party Limited"
+    assert party["roles"] == ["customer", "supplier"]
+    assert party["status"] == "active"
+    mappings = api.call(
+        "/api/external-records?source_id=e2e-master-data&resource_type=party&limit=10"
+    )["items"]
+    mapping = next(item for item in mappings if item["external_id"] == "party-1")
+    assert mapping["entity_id"] == party["id"]
+    assert len(mapping["payload_digest"]) == 64
+
+
+def exercise_master_data_reconcile(api: Api) -> None:
+    source_id = "e2e-master-data"
+    original = [{
+        "external_id": "party-1",
+        "canonical_name": "Original E2E Party",
+        "legal_name": "Original E2E Party Ltd.",
+        "roles": ["customer"],
+        "status": "active",
+    }]
+    imported = api.call(
+        "/api/imports/json/preview",
+        {"resource": "party", "source_id": source_id, "records": original},
+    )
+    applied_import = api.call(
+        "/api/imports/apply",
+        {
+            "resource": "party",
+            "source_id": source_id,
+            "records": original,
+            "preview_token": imported["preview_token"],
+            "review_note": "confirmed synthetic master-data import",
+        },
+    )
+    assert applied_import["applied_count"] == 1
+
+    desired = [{
+        **original[0],
+        "canonical_name": "Reconciled E2E Party",
+        "legal_name": "Reconciled E2E Party Limited",
+        "roles": ["supplier", "customer"],
+    }]
+    preview = api.call(
+        "/api/imports/reconcile/preview",
+        {"resource": "party", "source_id": source_id, "records": desired},
+    )
+    assert preview["schema_version"] == "bizhub.master-data-reconcile-preview.v1"
+    assert preview["status"] == "ready" and preview["ready_count"] == 1
+    assert {item["field"] for item in preview["changes"][0]["field_diffs"]} == {
+        "canonical_name", "legal_name", "roles",
+    }
+
+    tampered = [{**desired[0], "canonical_name": "Tampered E2E Party"}]
+    api.call(
+        "/api/imports/reconcile/apply",
+        {
+            "resource": "party",
+            "source_id": source_id,
+            "records": tampered,
+            "preview_token": preview["preview_token"],
+            "review_note": "tampered synthetic reconcile",
+        },
+        expected=409,
+    )
+    reconciled = api.call(
+        "/api/imports/reconcile/apply",
+        {
+            "resource": "party",
+            "source_id": source_id,
+            "records": desired,
+            "preview_token": preview["preview_token"],
+            "review_note": "confirmed synthetic master-data reconcile",
+        },
+    )
+    assert reconciled["status"] == "applied"
+    assert reconciled["entities"][0]["readback"]["canonical_name"] == "Reconciled E2E Party"
+    assert any(item["action"] == "reconcile:party" for item in api.call("/api/audit?limit=200"))
+    replay = api.call(
+        "/api/imports/reconcile/preview",
+        {"resource": "party", "source_id": source_id, "records": desired},
+    )
+    assert replay["status"] == "already_satisfied"
+    assert replay["changes"] == []
+    assert_reconciled_master_data(api)
+
+
 def exercise_mcp(repo: Path, instance_url: str, password_file: Path) -> None:
     messages = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}}},
@@ -171,6 +260,7 @@ def main() -> None:
     assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     exercise_business_flow(api)
+    exercise_master_data_reconcile(api)
 
     backup_result = json.loads(run([str(args.repo / "bizhubctl"), "backup", "--label", "e2e-restore"], cwd=args.repo).stdout)
     backup_path = Path(backup_result["host_path"])
@@ -179,11 +269,13 @@ def main() -> None:
     run([str(args.repo / "bizhubctl"), "restore", "--backup", str(backup_path)], cwd=args.repo)
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
+    assert_reconciled_master_data(api)
     run(["docker", "restart", "bizhub"])
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
     assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
+    assert_reconciled_master_data(api)
 
     password_file = Path("/tmp/bizhub-e2e-mcp-password")
     password_file.write_text(password + "\n", encoding="utf-8"); password_file.chmod(0o600)

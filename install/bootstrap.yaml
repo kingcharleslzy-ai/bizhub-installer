@@ -4,7 +4,7 @@ status: implementation_preview
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.4.0-preview.4
+  release_tag: v0.5.0-preview.1
   checksums_path: install/CHECKSUMS.sha256
 
 delivery:
@@ -44,6 +44,8 @@ capabilities:
   loopback_only_access: true
   plan_bound_container_resource_limits: true
   effective_linux_cgroup_v2_readback: true
+  external_master_data_identity_readback: true
+  explicit_master_data_reconcile: true
   arbitrary_shell_via_mcp: false
   arbitrary_url_via_mcp: false
   database_direct_write: false

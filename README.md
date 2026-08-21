@@ -11,11 +11,11 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.4.0-preview.4`.** It adds fail-closed
-> Linux cgroup v2 readback to the bounded customer-private derived-image chain,
-> loopback-only access, and plan-bound container resource limits. It must pass the tag-triggered clean
-> Ubuntu workflow and fresh-Agent forward test before publication, and it does
-> not replace the stable default.
+> **Current development preview: `v0.5.0-preview.1`.** It adds stable external
+> identity readback plus explicit preview-gated reconcile for changed parties,
+> units, and their aliases. Its tag workflow must pass on a disposable Ubuntu
+> 24.04 runner before the GitHub Release page is created, and it does not replace
+> the stable default.
 
 ## Give the release to an Agent
 
@@ -23,9 +23,9 @@ Use the immutable release URL once the tag is published:
 
 `https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
 
-Once the derived-image preview tag is published and verified, use:
+Once the master-data reconcile preview tag is published and verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.4.0-preview.4`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.5.0-preview.1`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -97,14 +97,14 @@ self-install in production. See [modular architecture](docs/modular-architecture
 [read-only extension boundary](docs/read-only-extension.md), and the machine-readable
 [module manifest schema](schemas/module-manifest.v1.schema.json).
 
-The `v0.4.0-preview.4` candidate implements the first deliberately narrow adoption
-step: an immutable derived image may load reviewed customer-private **read-only**
-routers by fixed Python import name. The core rejects mutation routes, lifecycle
-handlers, undeclared paths, missing dependencies, duplicate capabilities and
-extension-owned durable entities. This remains a preview and does not change
-the supported `v0.3.0` production path.
+The `v0.4.0-preview.4` candidate implemented the first deliberately narrow
+adoption step: an immutable derived image may load reviewed customer-private
+**read-only** routers by fixed Python import name. The core rejects mutation
+routes, lifecycle handlers, undeclared paths, missing dependencies, duplicate
+capabilities and extension-owned durable entities. That contract remains part
+of the preview line and does not change the supported `v0.3.0` production path.
 
-The unreleased Phase 3A synthetic candidate adds the next small master-data
+The `v0.5.0-preview.1` Phase 3A candidate adds the next small master-data
 contract: a checksum-verified SQLite migration ledger, active/deprecated status
 for parties and units, party/unit aliases with one canonical owner, and bounded
 authenticated external-identity mapping readback. JSON imports can create these
@@ -113,9 +113,9 @@ surface is unchanged. A separate reconcile contract now accepts changed party,
 unit, party-alias, and unit-alias records only when their external identity
 already exists. It previews exact field diffs, binds them to the current state
 generation and signed token, applies one atomic batch, appends audit, and verifies
-resource plus mapping readback. This candidate has only synthetic cross-repository
-tests: it has not received customer data, changed the reference deployment, or
-become a published release.
+resource plus mapping readback. Before its Release page is created, the fixed-tag
+workflow must repeat these contracts on a disposable Ubuntu 24.04 host. This
+candidate has not received customer data or changed the reference deployment.
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity

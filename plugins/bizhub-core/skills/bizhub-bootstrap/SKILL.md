@@ -38,6 +38,10 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 8. Map the first customer source to a built-in CSV/JSON contract. Preview,
    present errors and counts, obtain confirmation, apply with the returned
    token, and read back inventory/order/audit state.
+9. When a later source record keeps the same `source_id + external_id` but its
+   party, unit, or alias fields change, use the explicit master-data reconcile
+   preview/apply contract. Never turn a changed record into a second identity or
+   bypass a missing/conflicting mapping.
 
 ## Boundaries
 

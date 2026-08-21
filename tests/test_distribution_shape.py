@@ -73,7 +73,7 @@ class DistributionShapeTests(unittest.TestCase):
         self.assertEqual(executable_files, {PLUGIN / "scripts" / "bizhub_mcp.py"})
 
     def test_preview_version_is_consistent_across_delivery_surfaces(self) -> None:
-        version = "0.4.0-preview.4"
+        version = "0.5.0-preview.1"
         plugin = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         frontend = json.loads((ROOT / "app/frontend/package.json").read_text(encoding="utf-8"))
         bootstrap = (ROOT / "install/bootstrap.yaml").read_text(encoding="utf-8")
@@ -94,7 +94,7 @@ class DistributionShapeTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release-e2e.yml").read_text(encoding="utf-8")
         self.assertIn('release_version="${release_tag#v}"', workflow)
         self.assertIn('release/plugins/bizhub-core/.codex-plugin/plugin.json', workflow)
-        self.assertNotRegex(workflow, r'test .* = "?0\.4\.0-preview\.\d+')
+        self.assertNotRegex(workflow, r'test .* = "?\d+\.\d+\.\d+-preview\.\d+')
 
 
 if __name__ == "__main__":

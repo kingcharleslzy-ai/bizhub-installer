@@ -16,9 +16,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.4.0-preview.4"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.5.0-preview.1"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
-RELEASE_TAG = "v0.4.0-preview.4"
+RELEASE_TAG = "v0.5.0-preview.1"
 PROTOCOL_VERSION = "2024-11-05"
 ACTION_NAMES = [
     "create_party", "create_party_alias", "create_product", "create_unit", "create_unit_alias", "create_location",
