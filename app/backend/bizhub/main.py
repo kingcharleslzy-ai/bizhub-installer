@@ -19,11 +19,14 @@ from .contracts import (
     CsvImportPreviewRequest,
     ImportApplyRequest,
     ImportPreviewRequest,
+    ReconcileApplyRequest,
+    ReconcilePreviewRequest,
 )
 from .db import database, initialize_database, state_version
 from .extensions import load_extension_modules
 from .imports import apply_import, csv_records, csv_template, preview_import
 from .modules import register_extension_manifests, reset_runtime_modules, system_map
+from .reconcile import apply_reconcile, preview_reconcile
 from .security import (
     authenticated_user,
     clear_login_failures,
@@ -281,6 +284,29 @@ def json_import_preview(payload: ImportPreviewRequest, conn: Db, _: Mutation, __
 @app.post("/api/imports/apply")
 def import_apply(payload: ImportApplyRequest, conn: Db, _: Mutation, user: User) -> dict[str, Any]:
     return apply_import(
+        conn,
+        resource=payload.resource,
+        source_id=payload.source_id,
+        records=payload.records,
+        preview_token=payload.preview_token,
+        actor=user["username"],
+        review_note=payload.review_note,
+    )
+
+
+@app.post("/api/imports/reconcile/preview")
+def reconcile_preview(payload: ReconcilePreviewRequest, conn: Db, _: Mutation, __: User) -> dict[str, Any]:
+    return preview_reconcile(
+        conn,
+        resource=payload.resource,
+        source_id=payload.source_id,
+        records=payload.records,
+    )
+
+
+@app.post("/api/imports/reconcile/apply")
+def reconcile_apply(payload: ReconcileApplyRequest, conn: Db, _: Mutation, user: User) -> dict[str, Any]:
+    return apply_reconcile(
         conn,
         resource=payload.resource,
         source_id=payload.source_id,

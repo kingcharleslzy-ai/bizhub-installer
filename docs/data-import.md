@@ -33,10 +33,21 @@ mismatch, insufficient inventory, changed input, expired/stale tokens, and
 concurrent catalog changes fail closed. Correct imported formal history with a
 new reversing movement; do not delete or edit movement rows.
 
-The current contract is create-or-replay only. There is no update/reconcile
-action for an existing external identity: a changed name, status, role, owner,
-dimension, or alias payload is rejected and must not be worked around by
-inventing a second external ID.
+The ordinary import contract remains create-or-replay: changed content is still
+rejected there and must not be worked around by inventing a second external ID.
+For `party`, `unit`, `party_alias`, and `unit_alias`, use the separate
+`POST /api/imports/reconcile/preview` then
+`POST /api/imports/reconcile/apply` contract. Every reconcile record requires an
+existing mapping and explicit status. Preview returns the exact before/after
+field diff, current state generation, mapping digests, and a signed token. Apply
+accepts only the same input/diff/generation, writes one atomic batch, appends an
+audit event, and verifies both entity and mapping readback.
+
+Reconcile fails closed for a missing or wrong-type external identity, duplicate
+business key, canonical/alias collision, token tamper, concurrent state change,
+mapping/entity drift, unsafe role removal, and a unit code/dimension change after
+business use. Product, location, order, inventory, and other resources do not
+have reconcile semantics in this candidate.
 
 Sales and purchase CSV lines use `lines_json`, for example:
 

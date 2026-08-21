@@ -235,6 +235,20 @@ class ImportApplyRequest(ImportPreviewRequest):
     review_note: str = Field(min_length=3, max_length=1000)
 
 
+ReconcileResource = Literal["party", "party_alias", "unit", "unit_alias"]
+
+
+class ReconcilePreviewRequest(StrictModel):
+    resource: ReconcileResource
+    source_id: str = Field(min_length=1, max_length=80)
+    records: list[dict] = Field(min_length=1, max_length=5000)
+
+
+class ReconcileApplyRequest(ReconcilePreviewRequest):
+    preview_token: str = Field(min_length=70, max_length=8192)
+    review_note: str = Field(min_length=3, max_length=1000)
+
+
 class CsvImportPreviewRequest(StrictModel):
     resource: CsvImportResource
     source_id: str = Field(min_length=1, max_length=80)

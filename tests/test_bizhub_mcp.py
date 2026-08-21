@@ -90,6 +90,10 @@ class FakeBizHub(BaseHTTPRequestHandler):
             return self._json(200, {"status": "ready", "preview_token": "x" * 80})
         if self.path == "/api/actions/apply":
             return self._json(200, {"status": "applied", "readback": {"id": 1}})
+        if self.path == "/api/imports/reconcile/preview":
+            return self._json(200, {"status": "ready", "preview_token": "r" * 80, "changes": [{"entity_id": 7}]})
+        if self.path == "/api/imports/reconcile/apply":
+            return self._json(200, {"status": "applied", "entities": [{"entity_id": 7}]})
         return self._json(404, {"detail": "missing"})
 
 
@@ -140,14 +144,20 @@ class BizHubMcpTests(unittest.TestCase):
                 mappings = session.tool(4, "bizhub_resource_query", {"resource": "external_mappings", "source_id": "synthetic-master-v1", "resource_type": "party", "limit": 10})["structuredContent"]
                 preview = session.tool(5, "bizhub_action_preview", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}})["structuredContent"]
                 applied = session.tool(6, "bizhub_action_apply", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}, "preview_token": preview["preview_token"], "review_note": "confirmed in test"})["structuredContent"]
+                reconcile_data = {"resource": "party", "source_id": "synthetic-master-v1", "records": [{"external_id": "party:1", "canonical_name": "Renamed", "roles": ["customer"], "status": "active"}]}
+                reconcile_preview = session.tool(7, "bizhub_action_preview", {"action": "reconcile_master_data", "data": reconcile_data})["structuredContent"]
+                reconciled = session.tool(8, "bizhub_action_apply", {"action": "reconcile_master_data", "data": reconcile_data, "preview_token": reconcile_preview["preview_token"], "review_note": "confirmed reconcile"})["structuredContent"]
         server.shutdown(); server.server_close(); thread.join(timeout=2)
         self.assertEqual(health["status"], "ok")
         self.assertEqual(catalog, {"products": []})
         self.assertEqual(system_map["schema_version"], "bizhub.system-map.v1")
         self.assertEqual(mappings["items"][0]["external_id"], "party:1")
         self.assertEqual(applied["status"], "applied")
-        self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply"])
-        self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied]))
+        self.assertEqual(reconciled["entities"][0]["entity_id"], 7)
+        self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply", "/api/imports/reconcile/preview", "/api/imports/reconcile/apply"])
+        self.assertEqual(FakeBizHub.calls[-2][1], reconcile_data)
+        self.assertEqual(FakeBizHub.calls[-1][1]["preview_token"], "r" * 80)
+        self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied, reconcile_preview, reconciled]))
 
     def test_missing_or_public_http_configuration_fails_closed(self):
         cases = [

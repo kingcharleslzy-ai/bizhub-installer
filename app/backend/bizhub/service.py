@@ -285,6 +285,7 @@ def _validate_alias_owner(
     owner_id: int,
     alias: str,
     status: str | None,
+    exclude_alias_id: int | None = None,
 ) -> None:
     normalized = normalize_alias(alias)
     if not normalized:
@@ -302,9 +303,14 @@ def _validate_alias_owner(
             if int(row["id"]) == owner_id:
                 raise ValueError("alias duplicates its canonical resource identity")
             raise ValueError("alias conflicts with a different canonical resource")
+    parameters: list[Any] = [normalized]
+    where = "normalized_alias=?"
+    if exclude_alias_id is not None:
+        where += " AND id<>?"
+        parameters.append(exclude_alias_id)
     rows = conn.execute(
-        f"SELECT {owner_column},status FROM {table} WHERE normalized_alias=?",
-        (normalized,),
+        f"SELECT {owner_column},status FROM {table} WHERE {where}",
+        tuple(parameters),
     ).fetchall()
     if any(int(row[owner_column]) == owner_id for row in rows):
         raise ValueError("alias already exists for the canonical resource")
@@ -320,11 +326,14 @@ def _validate_canonical_value(
     alias_table: str,
     value: str,
     label: str,
+    exclude_entity_id: int | None = None,
 ) -> None:
     normalized = normalize_alias(value)
     if not normalized:
         raise ValueError(f"{label} canonical identity must contain visible text")
-    for row in conn.execute(f"SELECT {column} FROM {table}"):
+    for row in conn.execute(f"SELECT id,{column} FROM {table}"):
+        if exclude_entity_id is not None and int(row["id"]) == exclude_entity_id:
+            continue
         if normalize_alias(str(row[column])) == normalized:
             raise ValueError(f"{label} canonical identity already exists")
     if conn.execute(
@@ -332,6 +341,134 @@ def _validate_canonical_value(
         (normalized,),
     ).fetchone():
         raise ValueError(f"{label} canonical identity conflicts with an existing alias")
+
+
+def validate_master_data_reconcile(
+    conn: sqlite3.Connection,
+    resource: str,
+    model: StrictModel,
+    entity_id: int,
+) -> None:
+    if resource == "party":
+        current = _require_existing_row(conn, "parties", entity_id, "party")
+        _validate_canonical_value(
+            conn,
+            table="parties",
+            column="canonical_name",
+            alias_table="party_aliases",
+            value=model.canonical_name,
+            label="party",
+            exclude_entity_id=entity_id,
+        )
+        current_roles = {
+            str(row[0]) for row in conn.execute("SELECT role_key FROM party_roles WHERE party_id=?", (entity_id,))
+        }
+        removed_roles = current_roles - set(model.roles)
+        if "customer" in removed_roles and conn.execute(
+            "SELECT 1 FROM sales_orders WHERE customer_id=? LIMIT 1", (entity_id,)
+        ).fetchone():
+            raise ValueError("customer role cannot be removed after sales use")
+        if "supplier" in removed_roles and conn.execute(
+            "SELECT 1 FROM purchase_orders WHERE supplier_id=? LIMIT 1", (entity_id,)
+        ).fetchone():
+            raise ValueError("supplier role cannot be removed after purchase use")
+        if (model.status or "active") == "deprecated" and current["status"] != "deprecated":
+            has_open_sales = conn.execute(
+                "SELECT 1 FROM sales_orders WHERE customer_id=? AND status IN ('confirmed','partially_fulfilled') LIMIT 1",
+                (entity_id,),
+            ).fetchone()
+            has_open_purchases = conn.execute(
+                "SELECT 1 FROM purchase_orders WHERE supplier_id=? AND status IN ('confirmed','partially_fulfilled') LIMIT 1",
+                (entity_id,),
+            ).fetchone()
+            if has_open_sales or has_open_purchases:
+                raise ValueError("party cannot be deprecated while orders remain open")
+        return
+    if resource == "unit":
+        current = _require_existing_row(conn, "units", entity_id, "unit")
+        _validate_canonical_value(
+            conn,
+            table="units",
+            column="code",
+            alias_table="unit_aliases",
+            value=model.code,
+            label="unit",
+            exclude_entity_id=entity_id,
+        )
+        identity_changed = model.code != current["code"] or model.dimension != current["dimension"]
+        if identity_changed:
+            used = any(
+                conn.execute(f"SELECT 1 FROM {table} WHERE unit_id=? LIMIT 1", (entity_id,)).fetchone()
+                for table in ("products", "sales_order_lines", "purchase_order_lines", "inventory_movements")
+            )
+            if used:
+                raise ValueError("unit code or dimension cannot change after business use")
+        if (model.status or "active") == "deprecated" and current["status"] != "deprecated":
+            if conn.execute("SELECT 1 FROM products WHERE unit_id=? AND status='active' LIMIT 1", (entity_id,)).fetchone():
+                raise ValueError("unit cannot be deprecated while active products use it")
+        return
+    if resource in {"party_alias", "unit_alias"}:
+        table = "party_aliases" if resource == "party_alias" else "unit_aliases"
+        owner_column = "party_id" if resource == "party_alias" else "unit_id"
+        owner_table = "parties" if resource == "party_alias" else "units"
+        owner_label = "party" if resource == "party_alias" else "unit"
+        owner_id = model.party_id if resource == "party_alias" else model.unit_id
+        if conn.execute(f"SELECT 1 FROM {table} WHERE id=?", (entity_id,)).fetchone() is None:
+            raise ValueError(f"{resource} does not exist")
+        _require_existing_row(conn, owner_table, owner_id, owner_label)
+        _validate_alias_owner(
+            conn,
+            table,
+            owner_column,
+            owner_id,
+            model.alias,
+            model.status,
+            exclude_alias_id=entity_id,
+        )
+        return
+    raise ValueError("unsupported reconcile resource")
+
+
+def execute_master_data_reconcile(
+    conn: sqlite3.Connection,
+    resource: str,
+    model: StrictModel,
+    entity_id: int,
+) -> dict[str, Any]:
+    now = utc_now()
+    if resource == "party":
+        conn.execute(
+            "UPDATE parties SET canonical_name=?,legal_name=?,status=?,updated_at=? WHERE id=?",
+            (model.canonical_name.strip(), model.legal_name.strip(), model.status or "active", now, entity_id),
+        )
+        current_roles = {
+            str(row[0]) for row in conn.execute("SELECT role_key FROM party_roles WHERE party_id=?", (entity_id,))
+        }
+        desired_roles = set(model.roles)
+        for role in sorted(current_roles - desired_roles):
+            conn.execute("DELETE FROM party_roles WHERE party_id=? AND role_key=?", (entity_id, role))
+        for role in sorted(desired_roles - current_roles):
+            conn.execute(
+                "INSERT INTO party_roles(party_id,role_key,created_at) VALUES(?,?,?)",
+                (entity_id, role, now),
+            )
+        return party_readback(conn, entity_id)
+    if resource == "unit":
+        conn.execute(
+            "UPDATE units SET code=?,display_name=?,dimension=?,status=?,updated_at=? WHERE id=?",
+            (model.code, model.display_name.strip(), model.dimension, model.status or "active", now, entity_id),
+        )
+        return unit_readback(conn, entity_id)
+    if resource in {"party_alias", "unit_alias"}:
+        table = "party_aliases" if resource == "party_alias" else "unit_aliases"
+        owner_column = "party_id" if resource == "party_alias" else "unit_id"
+        owner_id = model.party_id if resource == "party_alias" else model.unit_id
+        conn.execute(
+            f"UPDATE {table} SET {owner_column}=?,alias=?,normalized_alias=?,status=?,updated_at=? WHERE id=?",
+            (owner_id, model.alias.strip(), normalize_alias(model.alias), model.status or "active", now, entity_id),
+        )
+        return alias_readback(conn, resource, entity_id)
+    raise ValueError("unsupported reconcile resource")
 
 
 def preview_action(conn: sqlite3.Connection, action: str, data: dict[str, Any]) -> dict[str, Any]:

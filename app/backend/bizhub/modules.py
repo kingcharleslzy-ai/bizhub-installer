@@ -12,6 +12,7 @@ from .contracts import ACTION_MODELS
 
 MODULE_MANIFEST_VERSION = "bizhub.module-manifest.v1"
 SYSTEM_MAP_VERSION = "bizhub.system-map.v1"
+KERNEL_MANAGED_ACTIONS = {"reconcile_master_data"}
 
 
 class StrictModel(BaseModel):
@@ -199,6 +200,7 @@ BUILTIN_MODULES: tuple[ModuleManifest, ...] = (
         entities=("external_record", "import_preview"),
         ui_sections=("import",),
         read_apis=("/api/imports/template/{resource}", "/api/external-records"),
+        actions=(ActionBinding(action_id="reconcile_master_data"),),
         import_resources=("party", "party_alias", "product", "unit", "unit_alias", "location", "opening_inventory", "sales_order", "purchase_order"),
         formal_writer="delegated_owner",
     ),
@@ -270,7 +272,7 @@ def _validate_registry(modules: tuple[ModuleManifest, ...]) -> None:
     declared_actions = {
         binding.action_id for module in modules if module.source == "builtin" for binding in module.actions
     }
-    if declared_actions != set(ACTION_MODELS):
+    if declared_actions != set(ACTION_MODELS) | KERNEL_MANAGED_ACTIONS:
         raise RuntimeError("module manifests and supported business actions have drifted")
 
 

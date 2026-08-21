@@ -23,7 +23,7 @@ PROTOCOL_VERSION = "2024-11-05"
 ACTION_NAMES = [
     "create_party", "create_party_alias", "create_product", "create_unit", "create_unit_alias", "create_location",
     "create_sales_order", "create_purchase_order", "receive_purchase", "ship_sale",
-    "post_inventory_adjustment", "reverse_movement", "cancel_order",
+    "post_inventory_adjustment", "reverse_movement", "cancel_order", "reconcile_master_data",
 ]
 STATUS = {
     "maturity": "implementation_preview",
@@ -74,8 +74,8 @@ TOOLS = [
     {"name": "bizhub_target_preflight", "description": "Return non-sensitive facts about this host before running bizhubctl preflight on the deployment target.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_instance_health", "description": "Read health from the one BizHub instance configured in the MCP environment.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_resource_query", "description": "Read one bounded resource projection, external identity mapping, or the effective module map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit", "system_map", "external_mappings"]}, "source_id": {"type": "string", "minLength": 1, "maxLength": 80}, "resource_type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "after_id": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_action_preview", "description": "Validate and preview one supported business action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed action to the configured instance, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
+    {"name": "bizhub_action_preview", "description": "Validate and preview one supported business or master-data reconcile action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed business or master-data reconcile action, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
 ]
 
 
@@ -216,6 +216,13 @@ def handle_tool_call(params: Any) -> dict[str, Any]:
                 return error
             if arguments["action"] not in ACTION_NAMES or not isinstance(arguments["data"], dict):
                 return error_result("invalid_action_input")
+            if arguments["action"] == "reconcile_master_data":
+                path = "/api/imports/reconcile/preview" if name.endswith("preview") else "/api/imports/reconcile/apply"
+                payload = dict(arguments["data"])
+                if name.endswith("apply"):
+                    payload["preview_token"] = arguments["preview_token"]
+                    payload["review_note"] = arguments["review_note"]
+                return tool_result(instance_client().request(path, payload))
             path = "/api/actions/preview" if name.endswith("preview") else "/api/actions/apply"
             return tool_result(instance_client().request(path, arguments))
         return error_result("unknown_tool", requested_tool=name, allowed_tools=[tool["name"] for tool in TOOLS])

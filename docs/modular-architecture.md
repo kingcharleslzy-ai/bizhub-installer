@@ -185,9 +185,12 @@ active/deprecated status; party and unit aliases have explicit external identity
 and one canonical owner; and authenticated API/MCP readback exposes bounded
 external mappings. The private reference repository has a separately tested,
 query-only snapshot exporter whose output validates against these public JSON
-contracts. This proves a cross-repository contract with synthetic fixtures only.
-It does not import customer data, deploy to Shadow, switch a reader or writer,
-or implement changed-record reconcile.
+contracts. The same candidate now implements explicit changed-record reconcile
+for parties, units, and their aliases with field-diff preview, signed generation
+binding, atomic apply, audit, idempotency, and entity/mapping readback. Two
+successive private synthetic snapshots pass the public create then reconcile
+contracts. This does not import customer data, deploy to Shadow, or switch a
+reader or writer.
 
 The first derived-image runtime proof is recorded in
 [read-only extension Ubuntu E2E](verification/read-only-extension-ubuntu-e2e-2026-08-15.md).

@@ -109,10 +109,13 @@ contract: a checksum-verified SQLite migration ledger, active/deprecated status
 for parties and units, party/unit aliases with one canonical owner, and bounded
 authenticated external-identity mapping readback. JSON imports can create these
 aliases after resolving their owner IDs through the mapping readback; the CSV
-surface is unchanged. Existing `(source_id, external_id)` records with changed
-content still fail closed because reconcile preview/apply is not implemented.
-This candidate has only synthetic cross-repository tests: it has not received
-customer data, changed the reference deployment, or become a published release.
+surface is unchanged. A separate reconcile contract now accepts changed party,
+unit, party-alias, and unit-alias records only when their external identity
+already exists. It previews exact field diffs, binds them to the current state
+generation and signed token, applies one atomic batch, appends audit, and verifies
+resource plus mapping readback. This candidate has only synthetic cross-repository
+tests: it has not received customer data, changed the reference deployment, or
+become a published release.
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity

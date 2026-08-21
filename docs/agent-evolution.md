@@ -78,9 +78,11 @@ A mapping or collector must:
 - never write SQLite, invent a missing relation, or silently coerce an unknown
   unit, party, product or date.
 
-The current public import contract has create/replay semantics only. If the same
-external identity arrives with changed content, the Agent must stop and report
-that reconcile is unavailable; it must not create a replacement identity to
+The ordinary import contract has create/replay semantics only. For a changed
+party, unit, party alias, or unit alias, the Agent may call the dedicated
+reconcile preview, show its exact field diffs, and apply only with the returned
+token and explicit approval. Other resource types still have no reconcile
+contract: the Agent must stop and must not create a replacement external ID to
 simulate an update.
 
 ## Customer Skill contract

@@ -8,6 +8,7 @@ import pytest
 
 from bizhub.config import company_profile_digest
 from bizhub.db import BASELINE_VERSION, SCHEMA_SQL, SCHEMA_VERSION, initialize_database, utc_now
+from bizhub.service import payload_digest
 
 
 def import_records(api, resource: str, source_id: str, records: list[dict]) -> dict:
@@ -30,6 +31,28 @@ def import_records(api, resource: str, source_id: str, records: list[dict]) -> d
     )
     assert applied.status_code == 200, applied.text
     return applied.json()
+
+
+def reconcile_preview(api, resource: str, source_id: str, records: list[dict]):
+    return api(
+        "post",
+        "/api/imports/reconcile/preview",
+        json={"resource": resource, "source_id": source_id, "records": records},
+    )
+
+
+def reconcile_apply(api, resource: str, source_id: str, records: list[dict], preview_token: str):
+    return api(
+        "post",
+        "/api/imports/reconcile/apply",
+        json={
+            "resource": resource,
+            "source_id": source_id,
+            "records": records,
+            "preview_token": preview_token,
+            "review_note": "confirmed synthetic master-data reconcile",
+        },
+    )
 
 
 def test_version_one_database_upgrades_through_checksum_ledger(client, tmp_path: Path):
@@ -242,3 +265,282 @@ def test_party_unit_alias_import_and_external_mapping_readback(api):
 def test_external_mapping_readback_requires_authentication(client):
     client.post("/api/auth/logout", headers={"X-BizHub-Request": "1"})
     assert client.get("/api/external-records", params={"source_id": "synthetic"}).status_code == 401
+
+
+def test_party_reconcile_previews_diff_applies_audit_and_replays(api):
+    source_id = "synthetic-reconcile-v1"
+    original = {
+        "external_id": "party:1",
+        "canonical_name": "Original Customer",
+        "legal_name": "Original Customer Ltd.",
+        "roles": ["customer"],
+        "status": "active",
+    }
+    desired = {
+        **original,
+        "canonical_name": "Renamed Customer",
+        "legal_name": "Renamed Customer Limited",
+        "roles": ["supplier", "customer"],
+    }
+    import_records(api, "party", source_id, [original])
+
+    preview_response = reconcile_preview(api, "party", source_id, [desired])
+    assert preview_response.status_code == 200, preview_response.text
+    preview = preview_response.json()
+    assert preview["schema_version"] == "bizhub.master-data-reconcile-preview.v1"
+    assert preview["status"] == "ready"
+    assert preview["ready_count"] == 1
+    change = preview["changes"][0]
+    assert change["change_kind"] == "update"
+    assert {item["field"] for item in change["field_diffs"]} == {"canonical_name", "legal_name", "roles"}
+
+    applied_response = reconcile_apply(api, "party", source_id, [desired], preview["preview_token"])
+    assert applied_response.status_code == 200, applied_response.text
+    applied = applied_response.json()
+    assert applied["status"] == "applied"
+    assert applied["entities"][0]["readback"]["canonical_name"] == "Renamed Customer"
+    assert applied["entities"][0]["readback"]["roles"] == ["customer", "supplier"]
+
+    mapping = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party"},
+    ).json()["items"][0]
+    normalized_desired = {"source_id": source_id, **desired}
+    assert mapping["payload_digest"] == payload_digest(normalized_desired)
+    audit = api("get", "/api/audit", params={"limit": 1}).json()[0]
+    assert audit["action"] == "reconcile:party"
+    assert "Original Customer" in audit["before_json"]
+    assert "Renamed Customer" in audit["after_json"]
+    assert mapping["payload_digest"] in audit["after_json"]
+
+    replay = reconcile_preview(api, "party", source_id, [desired]).json()
+    assert replay["status"] == "already_satisfied"
+    assert replay["changes"] == []
+
+
+def test_reconcile_identity_digest_refresh_and_alias_owner_change(api):
+    source_id = "synthetic-reconcile-refresh"
+    parties = [
+        {"external_id": "party:1", "canonical_name": "First Party", "roles": ["customer"]},
+        {"external_id": "party:2", "canonical_name": "Second Party", "roles": ["supplier"]},
+    ]
+    import_records(api, "party", source_id, parties)
+    party_mappings = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party"},
+    ).json()["items"]
+    party_ids = {item["external_id"]: item["entity_id"] for item in party_mappings}
+
+    explicit_status = {**parties[0], "status": "active"}
+    refresh_preview = reconcile_preview(api, "party", source_id, [explicit_status]).json()
+    assert refresh_preview["changes"][0]["change_kind"] == "identity_digest_refresh"
+    assert refresh_preview["changes"][0]["field_diffs"] == []
+    refreshed = reconcile_apply(
+        api,
+        "party",
+        source_id,
+        [explicit_status],
+        refresh_preview["preview_token"],
+    ).json()
+    assert refreshed["entities"][0]["change_kind"] == "identity_digest_refresh"
+
+    alias = {
+        "external_id": "party_alias:1",
+        "party_id": party_ids["party:1"],
+        "alias": "Shared Trading Name",
+        "status": "active",
+    }
+    import_records(api, "party_alias", source_id, [alias])
+    moved_alias = {**alias, "party_id": party_ids["party:2"]}
+    alias_preview = reconcile_preview(api, "party_alias", source_id, [moved_alias]).json()
+    assert alias_preview["changes"][0]["field_diffs"] == [
+        {"field": "party_id", "before": party_ids["party:1"], "after": party_ids["party:2"]}
+    ]
+    moved = reconcile_apply(
+        api,
+        "party_alias",
+        source_id,
+        [moved_alias],
+        alias_preview["preview_token"],
+    ).json()
+    assert moved["entities"][0]["readback"]["party_id"] == party_ids["party:2"]
+
+
+def test_reconcile_rejects_tamper_concurrency_missing_identity_and_unsafe_unit_change(api):
+    source_id = "synthetic-reconcile-guards"
+    unit = {
+        "external_id": "unit:1",
+        "code": "pcs",
+        "display_name": "Pieces",
+        "dimension": "count",
+        "status": "active",
+    }
+    import_records(api, "unit", source_id, [unit])
+    desired = {**unit, "display_name": "Individual Pieces"}
+    preview = reconcile_preview(api, "unit", source_id, [desired]).json()
+
+    tampered = reconcile_apply(
+        api,
+        "unit",
+        source_id,
+        [{**desired, "display_name": "Tampered Value"}],
+        preview["preview_token"],
+    )
+    assert tampered.status_code == 409
+    assert "does not match" in tampered.json()["detail"]
+
+    import_records(
+        api,
+        "party",
+        source_id,
+        [{"external_id": "party:state-bump", "canonical_name": "State Bump", "roles": ["customer"]}],
+    )
+    stale = reconcile_apply(api, "unit", source_id, [desired], preview["preview_token"])
+    assert stale.status_code == 409
+    assert "does not match" in stale.json()["detail"]
+
+    missing = reconcile_preview(
+        api,
+        "unit",
+        source_id,
+        [{**unit, "external_id": "unit:missing"}],
+    )
+    assert missing.status_code == 409
+    assert "requires an existing external identity" in missing.json()["detail"]
+
+    mismatched = reconcile_preview(
+        api,
+        "unit",
+        source_id,
+        [
+            {
+                "external_id": "party:state-bump",
+                "code": "other",
+                "display_name": "Other",
+                "dimension": "count",
+                "status": "active",
+            }
+        ],
+    )
+    assert mismatched.status_code == 409
+    assert "different resource type" in mismatched.json()["detail"]
+
+    unit_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "unit"},
+    ).json()["items"][0]["entity_id"]
+    import_records(
+        api,
+        "product",
+        source_id,
+        [{"external_id": "product:1", "canonical_name": "Product", "sku": "SKU-1", "unit_id": unit_id}],
+    )
+    unsafe = reconcile_preview(api, "unit", source_id, [{**unit, "dimension": "weight"}])
+    assert unsafe.status_code == 409
+    assert "cannot change after business use" in unsafe.json()["detail"]
+
+
+def test_reconcile_detects_mapping_entity_drift(api):
+    source_id = "synthetic-reconcile-drift"
+    party = {
+        "external_id": "party:1",
+        "canonical_name": "Expected Name",
+        "roles": ["customer"],
+        "status": "active",
+    }
+    import_records(api, "party", source_id, [party])
+    mapping = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party"},
+    ).json()["items"][0]
+    with sqlite3.connect(os.environ["BIZHUB_DATABASE_PATH"]) as conn:
+        conn.execute("UPDATE parties SET canonical_name='Drifted Name' WHERE id=?", (mapping["entity_id"],))
+
+    drift = reconcile_preview(api, "party", source_id, [party])
+    assert drift.status_code == 409
+    assert "digest disagrees" in drift.json()["detail"]
+
+
+def test_reconcile_preserves_roles_and_units_that_have_business_consumers(api):
+    source_id = "synthetic-reconcile-consumers"
+    party = {
+        "external_id": "party:1",
+        "canonical_name": "Order Customer",
+        "roles": ["customer"],
+        "status": "active",
+    }
+    unit = {
+        "external_id": "unit:1",
+        "code": "pcs",
+        "display_name": "Pieces",
+        "dimension": "count",
+        "status": "active",
+    }
+    import_records(api, "party", source_id, [party])
+    import_records(api, "unit", source_id, [unit])
+    party_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party"},
+    ).json()["items"][0]["entity_id"]
+    unit_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "unit"},
+    ).json()["items"][0]["entity_id"]
+    import_records(
+        api,
+        "product",
+        source_id,
+        [{"external_id": "product:1", "canonical_name": "Product", "sku": "SKU-1", "unit_id": unit_id}],
+    )
+    product_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "product"},
+    ).json()["items"][0]["entity_id"]
+    import_records(
+        api,
+        "sales_order",
+        source_id,
+        [
+            {
+                "external_id": "sale:1",
+                "order_no": "SO-1",
+                "customer_id": party_id,
+                "order_date": "2026-08-21",
+                "lines": [{"product_id": product_id, "unit_id": unit_id, "quantity": "1"}],
+            }
+        ],
+    )
+
+    role_removal = reconcile_preview(
+        api,
+        "party",
+        source_id,
+        [{**party, "roles": ["supplier"]}],
+    )
+    assert role_removal.status_code == 409
+    assert "cannot be removed after sales use" in role_removal.json()["detail"]
+
+    party_deprecation = reconcile_preview(
+        api,
+        "party",
+        source_id,
+        [{**party, "status": "deprecated"}],
+    )
+    assert party_deprecation.status_code == 409
+    assert "orders remain open" in party_deprecation.json()["detail"]
+
+    unit_deprecation = reconcile_preview(
+        api,
+        "unit",
+        source_id,
+        [{**unit, "status": "deprecated"}],
+    )
+    assert unit_deprecation.status_code == 409
+    assert "active products use it" in unit_deprecation.json()["detail"]
