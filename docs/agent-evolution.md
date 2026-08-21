@@ -66,9 +66,11 @@ design proposal and does not generate executable production code.
 A mapping or collector must:
 
 - emit `source_id + external_id` for every external record;
-- resolve imported parent identities through bounded external-mapping readback
-  before emitting child records such as party or unit aliases; never guess a
-  core integer ID from a name or source-system ID;
+- use the dependency-aware party bundle when successors or party-alias owners
+  are expressed by external identity; for contracts outside that bundle,
+  resolve imported parent identities through bounded external-mapping readback
+  before emitting child records; never guess a core integer ID from a name or
+  source-system ID;
 - retain a cursor or replay boundary outside formal business tables;
 - preserve raw evidence by reference and digest when required;
 - transform into an existing JSON/import/action contract;
@@ -84,6 +86,11 @@ reconcile preview, show its exact field diffs, and apply only with the returned
 token and explicit approval. Other resource types still have no reconcile
 contract: the Agent must stop and must not create a replacement external ID to
 simulate an update.
+
+The party bundle is also create/replay only. Its one preview binds all parties,
+aliases, external-reference edges, operation digests, and the current state
+generation. The Agent cannot split an approved bundle into sequential writes or
+reuse its token after any input, dependency, mapping, or state change.
 
 ## Customer Skill contract
 

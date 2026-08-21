@@ -35,9 +35,12 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 7. Configure this one MCP with `BIZHUB_INSTANCE_URL`,
    `BIZHUB_ADMIN_USERNAME`, and a local `BIZHUB_ADMIN_PASSWORD_FILE`. Never put
    the password in MCP arguments, repository files, plans, logs, or chat.
-8. Map the first customer source to a built-in CSV/JSON contract. Preview,
-   present errors and counts, obtain confirmation, apply with the returned
-   token, and read back inventory/order/audit state.
+8. Map the first customer source to a built-in CSV/JSON contract. When party
+   successors or party-alias owners are expressed by `source_id + external_id`,
+   use the dependency-aware master-data bundle action so one preview binds the
+   complete input, dependency graph, state generation, and expected operations.
+   Present errors and counts, obtain confirmation, apply with the returned
+   token, and read back resources, mappings, relationships, state, and audit.
 9. When a later source record keeps the same `source_id + external_id` but its
    party, unit, or alias fields change, use the explicit master-data reconcile
    preview/apply contract. Never turn a changed record into a second identity or

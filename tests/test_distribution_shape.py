@@ -73,7 +73,7 @@ class DistributionShapeTests(unittest.TestCase):
         self.assertEqual(executable_files, {PLUGIN / "scripts" / "bizhub_mcp.py"})
 
     def test_preview_version_is_consistent_across_delivery_surfaces(self) -> None:
-        version = "0.5.0-preview.2"
+        version = "0.6.0-preview.1"
         plugin = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         frontend = json.loads((ROOT / "app/frontend/package.json").read_text(encoding="utf-8"))
         bootstrap = (ROOT / "install/bootstrap.yaml").read_text(encoding="utf-8")

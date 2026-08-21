@@ -189,8 +189,13 @@ contracts. The same candidate now implements explicit changed-record reconcile
 for parties, units, and their aliases with field-diff preview, signed generation
 binding, atomic apply, audit, idempotency, and entity/mapping readback. Two
 successive private synthetic snapshots pass the public create then reconcile
-contracts. This does not import customer data, deploy to Shadow, or switch a
-reader or writer.
+contracts. The next bounded contract accepts parties and party aliases as one
+dependency-aware create/replay bundle. Successor and owner references resolve
+only through the same source's external identities; preview binds the complete
+input, dependency graph, expected operations, and state generation; apply is
+one transaction with exact resource/mapping/relationship/audit readback and
+zero writes on failure. This does not create a connector SDK, import customer
+data, deploy to Shadow, or switch a reader or writer.
 
 The first derived-image runtime proof is recorded in
 [read-only extension Ubuntu E2E](verification/read-only-extension-ubuntu-e2e-2026-08-15.md).

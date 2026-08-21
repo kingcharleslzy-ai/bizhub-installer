@@ -12,7 +12,7 @@ from .contracts import ACTION_MODELS
 
 MODULE_MANIFEST_VERSION = "bizhub.module-manifest.v1"
 SYSTEM_MAP_VERSION = "bizhub.system-map.v1"
-KERNEL_MANAGED_ACTIONS = {"reconcile_master_data"}
+KERNEL_MANAGED_ACTIONS = {"reconcile_master_data", "import_master_data_bundle"}
 
 
 class StrictModel(BaseModel):
@@ -204,12 +204,21 @@ BUILTIN_MODULES: tuple[ModuleManifest, ...] = (
         display_name="Data import",
         kind="integration",
         dependencies=("master_data", "inventory", "sales", "procurement"),
-        provides=("csv_import", "json_import", "external_record_idempotency", "external_mapping_readback"),
+        provides=(
+            "csv_import",
+            "json_import",
+            "external_record_idempotency",
+            "external_mapping_readback",
+            "dependency_aware_master_data_bundle",
+        ),
         requires=("party_catalog", "product_catalog", "inventory_movement", "sales_order", "purchase_order"),
         entities=("external_record", "import_preview"),
         ui_sections=("import",),
         read_apis=("/api/imports/template/{resource}", "/api/external-records"),
-        actions=(ActionBinding(action_id="reconcile_master_data"),),
+        actions=(
+            ActionBinding(action_id="reconcile_master_data"),
+            ActionBinding(action_id="import_master_data_bundle"),
+        ),
         import_resources=("party", "party_alias", "product", "unit", "unit_alias", "location", "opening_inventory", "sales_order", "purchase_order"),
         formal_writer="delegated_owner",
     ),

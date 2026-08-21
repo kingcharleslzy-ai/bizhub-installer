@@ -16,14 +16,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.5.0-preview.2"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.6.0-preview.1"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
-RELEASE_TAG = "v0.5.0-preview.2"
+RELEASE_TAG = "v0.6.0-preview.1"
 PROTOCOL_VERSION = "2024-11-05"
 ACTION_NAMES = [
     "create_party", "create_party_alias", "create_product", "create_unit", "create_unit_alias", "create_location",
     "create_sales_order", "create_purchase_order", "receive_purchase", "ship_sale",
     "post_inventory_adjustment", "reverse_movement", "cancel_order", "reconcile_master_data",
+    "import_master_data_bundle",
 ]
 STATUS = {
     "maturity": "implementation_preview",
@@ -218,6 +219,17 @@ def handle_tool_call(params: Any) -> dict[str, Any]:
                 return error_result("invalid_action_input")
             if arguments["action"] == "reconcile_master_data":
                 path = "/api/imports/reconcile/preview" if name.endswith("preview") else "/api/imports/reconcile/apply"
+                payload = dict(arguments["data"])
+                if name.endswith("apply"):
+                    payload["preview_token"] = arguments["preview_token"]
+                    payload["review_note"] = arguments["review_note"]
+                return tool_result(instance_client().request(path, payload))
+            if arguments["action"] == "import_master_data_bundle":
+                path = (
+                    "/api/imports/master-data-bundle/preview"
+                    if name.endswith("preview")
+                    else "/api/imports/master-data-bundle/apply"
+                )
                 payload = dict(arguments["data"])
                 if name.endswith("apply"):
                     payload["preview_token"] = arguments["preview_token"]

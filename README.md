@@ -11,11 +11,11 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.5.0-preview.2`.** It adds stable external
-> identity readback, explicit preview-gated reconcile, and an explicit successor
-> link for deprecated parties whose old name remains an alias of the active
-> successor. Its fixed-tag Ubuntu workflow passed; it remains a prerelease and
-> does not replace the stable default.
+> **Current development preview: `v0.6.0-preview.1`.** It adds one atomic,
+> dependency-aware party master-data bundle: successor and alias-owner
+> references resolve by `source_id + external_id`, while the complete input,
+> dependency graph, operation set, state generation, and exact readback remain
+> preview-gated. It remains a prerelease and does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -23,9 +23,10 @@ Use the immutable release URL once the tag is published:
 
 `https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
 
-Once the master-data reconcile preview tag is published and verified, use:
+Once the dependency-aware master-data bundle preview tag is published and
+verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.5.0-preview.2`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.6.0-preview.1`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -123,6 +124,19 @@ deployment. Its fixed-tag workflow repeated the complete Ubuntu install,
 successor/reconcile, business-flow, plugin/MCP, backup/restore and retain-data
 uninstall gates. See the
 [v0.5.0-preview.2 release record](docs/verification/v050-preview2-party-successor-release-e2e-2026-08-21.md).
+
+The `v0.6.0-preview.1` candidate closes the next real-snapshot gate without a
+connector framework or customer-specific rule. One strict party bundle accepts
+deprecated-party `successor_party_external_id` and party-alias
+`party_external_id` references under the same source. Preview covers the
+complete normalized bundle, dependency graph/topological order, input and
+operation digests, and current state generation. Cycles, missing owners,
+duplicate or cross-resource identities, canonical/alias collisions, inactive
+successors, and content/state drift all fail closed before a token can authorize
+an apply. Apply rechecks the same analysis under one SQLite transaction, creates
+resources, external mappings and audit rows atomically, and returns exact
+relationship/mapping/state/audit readback. Any mid-bundle failure rolls back to
+zero writes; exact replay is a no-op with no extra audit or state generation.
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity

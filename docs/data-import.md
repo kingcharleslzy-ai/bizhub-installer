@@ -9,19 +9,36 @@ Every record must contain a customer-chosen `external_id`; every batch has one
 `source_id`. Their pair is the permanent idempotency identity. Reusing the pair
 with changed content is rejected.
 
-Party and unit JSON records may include `status: active|deprecated`. A
-deprecated party may additionally include `successor_party_id`, which must
-refer to an already-created active party. Active parties cannot declare a
-successor. Alias JSON
+Party and unit JSON records may include `status: active|deprecated`. The
+ordinary single-resource JSON contract accepts a deprecated party's numeric
+`successor_party_id` only when the active successor already exists. Alias JSON
 records use `alias`, the same status values, and the canonical owner's integer
-`party_id` or `unit_id`. An adapter first imports the canonical resource, then
-queries authenticated `GET /api/external-records?source_id=...&resource_type=...`
-to resolve its external ID to the BizHub entity ID before previewing aliases.
-For a source snapshot, import active successor parties first, resolve their
-external IDs, then import deprecated predecessors with `successor_party_id`,
-and only then import aliases. An active alias may reuse a deprecated
-predecessor's canonical name only when its owner is that exact declared
-successor; missing or mismatched links fail closed.
+`party_id` or `unit_id`.
+
+For a complete party snapshot, use
+`POST /api/imports/master-data-bundle/preview` then
+`POST /api/imports/master-data-bundle/apply`. Its strict `resources` object
+contains `parties` and `party_aliases`. A deprecated party may declare
+`successor_party_external_id`; every party alias declares
+`party_external_id`. Both resolve inside the same `source_id` to either a party
+in the complete bundle or an exact existing external mapping. Preview validates
+the whole bundle without writes and returns its input/identity summaries,
+dependency graph and topological order, expected create/replay operations,
+current state generation, and one signed token. Apply accepts only that same
+input, graph, operation set, and state, writes every new resource/mapping/audit
+row in one transaction, and returns exact resource, relationship, mapping,
+state, and audit readback. A failed record rolls back the entire bundle.
+
+Circular references, unknown owners/successors, cross-resource or duplicate
+external identities, inactive successors, canonical/alias conflicts, content
+drift, token tamper, and concurrent state changes fail closed. Exact replay is
+a no-op: it returns the same readback without a state bump or duplicate audit.
+An active alias may reuse a deprecated predecessor's canonical name only when
+its external owner is that exact declared successor.
+
+Adapters that use the ordinary resource-by-resource contract can still query
+authenticated `GET /api/external-records?source_id=...&resource_type=...` to
+resolve external IDs to BizHub entity IDs.
 The endpoint is cursor-paginated with `after_id` and a maximum `limit` of 500;
 the existing `bizhub_resource_query(resource=external_mappings)` tool exposes
 the same bounded readback.

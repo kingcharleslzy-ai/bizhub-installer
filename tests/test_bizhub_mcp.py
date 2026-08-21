@@ -62,7 +62,7 @@ class FakeBizHub(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            return self._json(200, {"status": "ok", "version": "0.5.0-preview.2"})
+            return self._json(200, {"status": "ok", "version": "0.6.0-preview.1"})
         if self.headers.get("Cookie") != "bizhub_session=test":
             return self._json(401, {"detail": "authentication required"})
         endpoints = {
@@ -94,6 +94,10 @@ class FakeBizHub(BaseHTTPRequestHandler):
             return self._json(200, {"status": "ready", "preview_token": "r" * 80, "changes": [{"entity_id": 7}]})
         if self.path == "/api/imports/reconcile/apply":
             return self._json(200, {"status": "applied", "entities": [{"entity_id": 7}]})
+        if self.path == "/api/imports/master-data-bundle/preview":
+            return self._json(200, {"status": "ready", "preview_token": "b" * 80, "dependency_graph": {"edges": []}})
+        if self.path == "/api/imports/master-data-bundle/apply":
+            return self._json(200, {"status": "applied", "readback": [{"entity_id": 8}]})
         return self._json(404, {"detail": "missing"})
 
 
@@ -147,6 +151,9 @@ class BizHubMcpTests(unittest.TestCase):
                 reconcile_data = {"resource": "party", "source_id": "synthetic-master-v1", "records": [{"external_id": "party:1", "canonical_name": "Renamed", "roles": ["customer"], "status": "active"}]}
                 reconcile_preview = session.tool(7, "bizhub_action_preview", {"action": "reconcile_master_data", "data": reconcile_data})["structuredContent"]
                 reconciled = session.tool(8, "bizhub_action_apply", {"action": "reconcile_master_data", "data": reconcile_data, "preview_token": reconcile_preview["preview_token"], "review_note": "confirmed reconcile"})["structuredContent"]
+                bundle_data = {"source_id": "synthetic-master-v1", "resources": {"parties": [], "party_aliases": [{"external_id": "party_alias:1", "party_external_id": "party:1", "alias": "Alias", "status": "active"}]}}
+                bundle_preview = session.tool(9, "bizhub_action_preview", {"action": "import_master_data_bundle", "data": bundle_data})["structuredContent"]
+                bundle_applied = session.tool(10, "bizhub_action_apply", {"action": "import_master_data_bundle", "data": bundle_data, "preview_token": bundle_preview["preview_token"], "review_note": "confirmed bundle"})["structuredContent"]
         server.shutdown(); server.server_close(); thread.join(timeout=2)
         self.assertEqual(health["status"], "ok")
         self.assertEqual(catalog, {"products": []})
@@ -154,10 +161,13 @@ class BizHubMcpTests(unittest.TestCase):
         self.assertEqual(mappings["items"][0]["external_id"], "party:1")
         self.assertEqual(applied["status"], "applied")
         self.assertEqual(reconciled["entities"][0]["entity_id"], 7)
-        self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply", "/api/imports/reconcile/preview", "/api/imports/reconcile/apply"])
-        self.assertEqual(FakeBizHub.calls[-2][1], reconcile_data)
-        self.assertEqual(FakeBizHub.calls[-1][1]["preview_token"], "r" * 80)
-        self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied, reconcile_preview, reconciled]))
+        self.assertEqual(bundle_applied["readback"][0]["entity_id"], 8)
+        self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply", "/api/imports/reconcile/preview", "/api/imports/reconcile/apply", "/api/imports/master-data-bundle/preview", "/api/imports/master-data-bundle/apply"])
+        self.assertEqual(FakeBizHub.calls[-4][1], reconcile_data)
+        self.assertEqual(FakeBizHub.calls[-3][1]["preview_token"], "r" * 80)
+        self.assertEqual(FakeBizHub.calls[-2][1], bundle_data)
+        self.assertEqual(FakeBizHub.calls[-1][1]["preview_token"], "b" * 80)
+        self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied, reconcile_preview, reconciled, bundle_preview, bundle_applied]))
 
     def test_missing_or_public_http_configuration_fails_closed(self):
         cases = [

@@ -19,9 +19,12 @@ from .contracts import (
     CsvImportPreviewRequest,
     ImportApplyRequest,
     ImportPreviewRequest,
+    MasterDataBundleApplyRequest,
+    MasterDataBundlePreviewRequest,
     ReconcileApplyRequest,
     ReconcilePreviewRequest,
 )
+from .bundle_import import apply_master_data_bundle, preview_master_data_bundle
 from .db import database, initialize_database, state_version
 from .extensions import load_extension_modules
 from .imports import apply_import, csv_records, csv_template, preview_import
@@ -288,6 +291,37 @@ def import_apply(payload: ImportApplyRequest, conn: Db, _: Mutation, user: User)
         resource=payload.resource,
         source_id=payload.source_id,
         records=payload.records,
+        preview_token=payload.preview_token,
+        actor=user["username"],
+        review_note=payload.review_note,
+    )
+
+
+@app.post("/api/imports/master-data-bundle/preview")
+def master_data_bundle_preview(
+    payload: MasterDataBundlePreviewRequest,
+    conn: Db,
+    _: Mutation,
+    __: User,
+) -> dict[str, Any]:
+    return preview_master_data_bundle(
+        conn,
+        source_id=payload.source_id,
+        resources=payload.resources.model_dump(mode="json"),
+    )
+
+
+@app.post("/api/imports/master-data-bundle/apply")
+def master_data_bundle_apply(
+    payload: MasterDataBundleApplyRequest,
+    conn: Db,
+    _: Mutation,
+    user: User,
+) -> dict[str, Any]:
+    return apply_master_data_bundle(
+        conn,
+        source_id=payload.source_id,
+        resources=payload.resources.model_dump(mode="json"),
         preview_token=payload.preview_token,
         actor=user["username"],
         review_note=payload.review_note,

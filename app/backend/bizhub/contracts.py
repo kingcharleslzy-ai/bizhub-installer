@@ -250,6 +250,58 @@ class ReconcileApplyRequest(ReconcilePreviewRequest):
     review_note: str = Field(min_length=3, max_length=1000)
 
 
+class BundleParty(StrictModel):
+    external_id: str = Field(min_length=1, max_length=160)
+    canonical_name: str = Field(min_length=1, max_length=200)
+    legal_name: str = Field(default="", max_length=240)
+    roles: list[Literal["customer", "supplier"]] = Field(min_length=1, max_length=2)
+    status: Literal["active", "deprecated"]
+    successor_party_external_id: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @field_validator("roles")
+    @classmethod
+    def unique_roles(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("roles must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def successor_matches_status(self) -> "BundleParty":
+        if self.status == "active" and self.successor_party_external_id is not None:
+            raise ValueError("an active party cannot have a successor")
+        return self
+
+
+class BundlePartyAlias(StrictModel):
+    external_id: str = Field(min_length=1, max_length=160)
+    party_external_id: str = Field(min_length=1, max_length=160)
+    alias: str = Field(min_length=1, max_length=200)
+    status: Literal["active", "deprecated"]
+
+
+class MasterDataBundleResources(StrictModel):
+    parties: list[BundleParty] = Field(default_factory=list, max_length=5000)
+    party_aliases: list[BundlePartyAlias] = Field(default_factory=list, max_length=5000)
+
+    @model_validator(mode="after")
+    def nonempty(self) -> "MasterDataBundleResources":
+        if not self.parties and not self.party_aliases:
+            raise ValueError("master-data bundle must contain at least one record")
+        if len(self.parties) + len(self.party_aliases) > 5000:
+            raise ValueError("master-data bundle may contain at most 5000 records")
+        return self
+
+
+class MasterDataBundlePreviewRequest(StrictModel):
+    source_id: str = Field(min_length=1, max_length=80)
+    resources: MasterDataBundleResources
+
+
+class MasterDataBundleApplyRequest(MasterDataBundlePreviewRequest):
+    preview_token: str = Field(min_length=70, max_length=8192)
+    review_note: str = Field(min_length=3, max_length=1000)
+
+
 class CsvImportPreviewRequest(StrictModel):
     resource: CsvImportResource
     source_id: str = Field(min_length=1, max_length=80)

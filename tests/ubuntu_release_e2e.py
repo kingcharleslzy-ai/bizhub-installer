@@ -164,6 +164,106 @@ def assert_reconciled_master_data(api: Api) -> None:
     assert successor["aliases"] == [{"id": 1, "alias": "Former E2E Identity", "status": "active"}]
 
 
+def master_data_bundle_payload() -> dict:
+    return {
+        "source_id": "e2e-master-data-bundle",
+        "resources": {
+            "parties": [
+                {
+                    "external_id": "party:bundle-current",
+                    "canonical_name": "Bundle Current E2E Party",
+                    "roles": ["customer"],
+                    "status": "active",
+                },
+                {
+                    "external_id": "party:bundle-former",
+                    "canonical_name": "Bundle Former E2E Party",
+                    "roles": ["customer"],
+                    "status": "deprecated",
+                    "successor_party_external_id": "party:bundle-current",
+                },
+            ],
+            "party_aliases": [
+                {
+                    "external_id": "party_alias:bundle-former",
+                    "party_external_id": "party:bundle-current",
+                    "alias": "Bundle Former E2E Party",
+                    "status": "active",
+                }
+            ],
+        },
+    }
+
+
+def assert_bundled_master_data(api: Api) -> None:
+    mappings = api.call(
+        "/api/external-records?source_id=e2e-master-data-bundle&limit=20"
+    )["items"]
+    assert len(mappings) == 3
+    by_external_id = {item["external_id"]: item for item in mappings}
+    catalog = api.call("/api/resources/catalog")
+    current = next(item for item in catalog["parties"] if item["canonical_name"] == "Bundle Current E2E Party")
+    former = next(item for item in catalog["parties"] if item["canonical_name"] == "Bundle Former E2E Party")
+    assert by_external_id["party:bundle-current"]["entity_id"] == current["id"]
+    assert by_external_id["party:bundle-former"]["entity_id"] == former["id"]
+    assert former["successor_party_id"] == current["id"]
+    assert any(item["alias"] == "Bundle Former E2E Party" for item in current["aliases"])
+
+
+def exercise_master_data_bundle(api: Api) -> None:
+    payload = master_data_bundle_payload()
+    preview = api.call("/api/imports/master-data-bundle/preview", payload)
+    assert preview["schema_version"] == "bizhub.master-data-bundle-preview.v1"
+    assert preview["status"] == "ready"
+    assert preview["input_summary"]["resource_counts"] == {"party": 2, "party_alias": 1}
+    assert len(preview["dependency_graph"]["edges"]) == 2
+    assert preview["operations"]["create_count"] == 3
+
+    tampered = json.loads(json.dumps(payload))
+    tampered["resources"]["party_aliases"][0]["alias"] = "Tampered Bundle Alias"
+    api.call(
+        "/api/imports/master-data-bundle/apply",
+        {
+            **tampered,
+            "preview_token": preview["preview_token"],
+            "review_note": "tampered synthetic bundle",
+        },
+        expected=409,
+    )
+    assert api.call(
+        "/api/external-records?source_id=e2e-master-data-bundle&limit=20"
+    )["items"] == []
+
+    applied = api.call(
+        "/api/imports/master-data-bundle/apply",
+        {
+            **payload,
+            "preview_token": preview["preview_token"],
+            "review_note": "confirmed synthetic dependency-aware bundle",
+        },
+    )
+    assert applied["status"] == "applied"
+    assert applied["applied_count"] == 3
+    assert len(applied["readback"]) == 3
+    assert len(applied["audit_events"]) == 3
+    assert_bundled_master_data(api)
+
+    replay_preview = api.call("/api/imports/master-data-bundle/preview", payload)
+    assert replay_preview["status"] == "already_satisfied"
+    replay = api.call(
+        "/api/imports/master-data-bundle/apply",
+        {
+            **payload,
+            "preview_token": replay_preview["preview_token"],
+            "review_note": "confirmed synthetic dependency-aware bundle replay",
+        },
+    )
+    assert replay["status"] == "already_satisfied"
+    assert replay["applied_count"] == 0
+    assert replay["state_version_before"] == replay["state_version"]
+    assert replay["audit_events"] == []
+
+
 def exercise_master_data_reconcile(api: Api) -> None:
     source_id = "e2e-master-data"
     original = [{
@@ -333,6 +433,7 @@ def main() -> None:
     api = Api(args.instance_url, "admin", password)
     exercise_business_flow(api)
     exercise_master_data_reconcile(api)
+    exercise_master_data_bundle(api)
 
     backup_result = json.loads(run([str(args.repo / "bizhubctl"), "backup", "--label", "e2e-restore"], cwd=args.repo).stdout)
     backup_path = Path(backup_result["host_path"])
@@ -342,12 +443,14 @@ def main() -> None:
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
     assert_reconciled_master_data(api)
+    assert_bundled_master_data(api)
     run(["docker", "restart", "bizhub"])
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
     assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
     assert_reconciled_master_data(api)
+    assert_bundled_master_data(api)
 
     password_file = Path("/tmp/bizhub-e2e-mcp-password")
     password_file.write_text(password + "\n", encoding="utf-8"); password_file.chmod(0o600)
