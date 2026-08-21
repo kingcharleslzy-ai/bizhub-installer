@@ -11,7 +11,7 @@ from pathlib import Path
 from .config import company_profile_digest, database_path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BASELINE_VERSION = 1
 
 
@@ -266,6 +266,14 @@ MIGRATIONS: tuple[Migration, ...] = (
             ON unit_aliases(normalized_alias) WHERE status='active'
             """,
             "ALTER TABLE external_records ADD COLUMN updated_at TEXT",
+        ),
+    ),
+    Migration(
+        version=3,
+        name="party_successor_identity",
+        statements=(
+            "ALTER TABLE parties ADD COLUMN successor_party_id INTEGER REFERENCES parties(id) ON DELETE RESTRICT",
+            "CREATE INDEX ix_parties_successor ON parties(successor_party_id)",
         ),
     ),
 )

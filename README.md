@@ -11,10 +11,10 @@ database.
 > deployment must still verify its final private TLS, domain, or Cloudflare
 > Tunnel access path before real customer data enters.
 
-> **Current development preview: `v0.5.0-preview.1`.** It adds stable external
-> identity readback plus explicit preview-gated reconcile for changed parties,
-> units, and their aliases. Its fixed-tag workflow and fresh-Agent forward test
-> passed; it remains a prerelease and does not replace the stable default.
+> **Current development preview: `v0.5.0-preview.2`.** It adds stable external
+> identity readback, explicit preview-gated reconcile, and an explicit successor
+> link for deprecated parties whose old name remains an alias of the active
+> successor. It remains a prerelease and does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -24,7 +24,7 @@ Use the immutable release URL once the tag is published:
 
 Once the master-data reconcile preview tag is published and verified, use:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.5.0-preview.1`
+`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.5.0-preview.2`
 
 Ask the Agent to verify the release and checksums, install the repository's one
 plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
@@ -103,7 +103,7 @@ routes, lifecycle handlers, undeclared paths, missing dependencies, duplicate
 capabilities and extension-owned durable entities. That contract remains part
 of the preview line and does not change the supported `v0.3.0` production path.
 
-The `v0.5.0-preview.1` Phase 3A candidate adds the next small master-data
+The `v0.5.0-preview.2` Phase 3A candidate adds the next small master-data
 contract: a checksum-verified SQLite migration ledger, active/deprecated status
 for parties and units, party/unit aliases with one canonical owner, and bounded
 authenticated external-identity mapping readback. JSON imports can create these
@@ -112,11 +112,15 @@ surface is unchanged. A separate reconcile contract now accepts changed party,
 unit, party-alias, and unit-alias records only when their external identity
 already exists. It previews exact field diffs, binds them to the current state
 generation and signed token, applies one atomic batch, appends audit, and verifies
-resource plus mapping readback. The fixed-tag workflow repeated these contracts
-on a disposable Ubuntu 24.04 host before creating the Release page, and a fresh
-Agent directly called the installed MCP. This candidate has not received
-customer data or changed the reference deployment. See the
-[v0.5.0-preview.1 release record](docs/verification/v050-preview1-release-e2e-2026-08-21.md).
+resource plus mapping readback. A deprecated party may also retain one explicit
+active successor; the old canonical name can be an active alias of that exact
+successor, while every missing, self-referential, inactive, or mismatched link
+still fails closed. This contract came from a real private Shadow snapshot and
+preserves retired identity instead of deleting history or guessing by name.
+This candidate has not received customer data or changed the reference
+deployment. The previous fixed-tag workflow evidence remains in the
+[v0.5.0-preview.1 release record](docs/verification/v050-preview1-release-e2e-2026-08-21.md);
+preview.2 requires its own release gate before use.
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity

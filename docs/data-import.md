@@ -9,11 +9,19 @@ Every record must contain a customer-chosen `external_id`; every batch has one
 `source_id`. Their pair is the permanent idempotency identity. Reusing the pair
 with changed content is rejected.
 
-Party and unit JSON records may include `status: active|deprecated`. Alias JSON
+Party and unit JSON records may include `status: active|deprecated`. A
+deprecated party may additionally include `successor_party_id`, which must
+refer to an already-created active party. Active parties cannot declare a
+successor. Alias JSON
 records use `alias`, the same status values, and the canonical owner's integer
 `party_id` or `unit_id`. An adapter first imports the canonical resource, then
 queries authenticated `GET /api/external-records?source_id=...&resource_type=...`
 to resolve its external ID to the BizHub entity ID before previewing aliases.
+For a source snapshot, import active successor parties first, resolve their
+external IDs, then import deprecated predecessors with `successor_party_id`,
+and only then import aliases. An active alias may reuse a deprecated
+predecessor's canonical name only when its owner is that exact declared
+successor; missing or mismatched links fail closed.
 The endpoint is cursor-paginated with `after_id` and a maximum `limit` of 500;
 the existing `bizhub_resource_query(resource=external_mappings)` tool exposes
 the same bounded readback.

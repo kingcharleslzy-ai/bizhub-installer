@@ -127,7 +127,16 @@ BUILTIN_MODULES: tuple[ModuleManifest, ...] = (
         display_name="Master data",
         kind="business",
         provides=("party_catalog", "product_catalog", "unit_catalog", "location_catalog"),
-        entities=("party", "party_role", "party_alias", "product", "unit", "unit_alias", "location"),
+        entities=(
+            "party",
+            "party_role",
+            "party_alias",
+            "party_successor",
+            "product",
+            "unit",
+            "unit_alias",
+            "location",
+        ),
         ui_sections=("master",),
         read_apis=("/api/resources/catalog",),
         actions=(

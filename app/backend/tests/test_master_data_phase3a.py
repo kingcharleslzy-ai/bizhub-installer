@@ -77,6 +77,7 @@ def test_version_one_database_upgrades_through_checksum_ledger(client, tmp_path:
         assert migrations == [
             (1, "initial_schema", 64),
             (2, "master_data_aliases_and_external_record_updates", 64),
+            (3, "party_successor_identity", 64),
         ]
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -260,6 +261,96 @@ def test_party_unit_alias_import_and_external_mapping_readback(api):
     with sqlite3.connect(os.environ["BIZHUB_DATABASE_PATH"]) as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_deprecated_party_successor_allows_exact_active_alias_owner(api):
+    source_id = "synthetic-successor-v1"
+    successor = {
+        "external_id": "party:20",
+        "canonical_name": "Current Customer",
+        "roles": ["customer"],
+        "status": "active",
+    }
+    assert import_records(api, "party", source_id, [successor])["applied_count"] == 1
+    successor_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party"},
+    ).json()["items"][0]["entity_id"]
+
+    predecessor = {
+        "external_id": "party:10",
+        "canonical_name": "Former Customer Name",
+        "roles": ["customer"],
+        "status": "deprecated",
+        "successor_party_id": successor_id,
+    }
+    assert import_records(api, "party", source_id, [predecessor])["applied_count"] == 1
+    alias = {
+        "external_id": "party_alias:10",
+        "party_id": successor_id,
+        "alias": "Former Customer Name",
+        "status": "active",
+    }
+    assert import_records(api, "party_alias", source_id, [alias])["applied_count"] == 1
+
+    catalog = api("get", "/api/resources/catalog").json()
+    old = next(item for item in catalog["parties"] if item["canonical_name"] == "Former Customer Name")
+    current = next(item for item in catalog["parties"] if item["canonical_name"] == "Current Customer")
+    assert old["status"] == "deprecated"
+    assert old["successor_party_id"] == successor_id
+    assert current["aliases"] == [{"id": 1, "alias": "Former Customer Name", "status": "active"}]
+
+    active_with_successor = api(
+        "post",
+        "/api/imports/json/preview",
+        json={
+            "resource": "party",
+            "source_id": source_id,
+            "records": [
+                {
+                    "external_id": "party:30",
+                    "canonical_name": "Invalid Active Successor",
+                    "roles": ["customer"],
+                    "status": "active",
+                    "successor_party_id": successor_id,
+                }
+            ],
+        },
+    )
+    assert active_with_successor.status_code == 409
+    assert "active party cannot have a successor" in active_with_successor.json()["detail"]
+
+    another = {
+        "external_id": "party:40",
+        "canonical_name": "Another Customer",
+        "roles": ["customer"],
+        "status": "active",
+    }
+    assert import_records(api, "party", source_id, [another])["applied_count"] == 1
+    another_id = api(
+        "get",
+        "/api/external-records",
+        params={"source_id": source_id, "resource_type": "party", "limit": 10},
+    ).json()["items"][-1]["entity_id"]
+    wrong_owner = api(
+        "post",
+        "/api/imports/json/preview",
+        json={
+            "resource": "party_alias",
+            "source_id": source_id,
+            "records": [
+                {
+                    "external_id": "party_alias:20",
+                    "party_id": another_id,
+                    "alias": "Former Customer Name",
+                    "status": "active",
+                }
+            ],
+        },
+    )
+    assert wrong_owner.status_code == 409
+    assert "different canonical resource" in wrong_owner.json()["detail"]
 
 
 def test_external_mapping_readback_requires_authentication(client):

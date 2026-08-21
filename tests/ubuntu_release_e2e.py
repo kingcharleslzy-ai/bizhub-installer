@@ -157,6 +157,12 @@ def assert_reconciled_master_data(api: Api) -> None:
     assert mapping["entity_id"] == party["id"]
     assert len(mapping["payload_digest"]) == 64
 
+    successor = next(item for item in catalog["parties"] if item["canonical_name"] == "Current E2E Successor")
+    predecessor = next(item for item in catalog["parties"] if item["canonical_name"] == "Former E2E Identity")
+    assert predecessor["status"] == "deprecated"
+    assert predecessor["successor_party_id"] == successor["id"]
+    assert successor["aliases"] == [{"id": 1, "alias": "Former E2E Identity", "status": "active"}]
+
 
 def exercise_master_data_reconcile(api: Api) -> None:
     source_id = "e2e-master-data"
@@ -230,6 +236,72 @@ def exercise_master_data_reconcile(api: Api) -> None:
     )
     assert replay["status"] == "already_satisfied"
     assert replay["changes"] == []
+
+    current = [{
+        "external_id": "party-successor",
+        "canonical_name": "Current E2E Successor",
+        "roles": ["customer"],
+        "status": "active",
+    }]
+    current_preview = api.call(
+        "/api/imports/json/preview",
+        {"resource": "party", "source_id": source_id, "records": current},
+    )
+    api.call(
+        "/api/imports/apply",
+        {
+            "resource": "party",
+            "source_id": source_id,
+            "records": current,
+            "preview_token": current_preview["preview_token"],
+            "review_note": "confirmed synthetic successor",
+        },
+    )
+    mappings = api.call(
+        "/api/external-records?source_id=e2e-master-data&resource_type=party&limit=10"
+    )["items"]
+    successor_id = next(item["entity_id"] for item in mappings if item["external_id"] == "party-successor")
+    predecessor = [{
+        "external_id": "party-predecessor",
+        "canonical_name": "Former E2E Identity",
+        "roles": ["customer"],
+        "status": "deprecated",
+        "successor_party_id": successor_id,
+    }]
+    predecessor_preview = api.call(
+        "/api/imports/json/preview",
+        {"resource": "party", "source_id": source_id, "records": predecessor},
+    )
+    api.call(
+        "/api/imports/apply",
+        {
+            "resource": "party",
+            "source_id": source_id,
+            "records": predecessor,
+            "preview_token": predecessor_preview["preview_token"],
+            "review_note": "confirmed synthetic predecessor",
+        },
+    )
+    alias = [{
+        "external_id": "party-alias-predecessor",
+        "party_id": successor_id,
+        "alias": "Former E2E Identity",
+        "status": "active",
+    }]
+    alias_preview = api.call(
+        "/api/imports/json/preview",
+        {"resource": "party_alias", "source_id": source_id, "records": alias},
+    )
+    api.call(
+        "/api/imports/apply",
+        {
+            "resource": "party_alias",
+            "source_id": source_id,
+            "records": alias,
+            "preview_token": alias_preview["preview_token"],
+            "review_note": "confirmed synthetic predecessor alias",
+        },
+    )
     assert_reconciled_master_data(api)
 
 

@@ -42,6 +42,7 @@ def _current_payload(
             "legal_name": readback["legal_name"],
             "roles": readback["roles"],
             "status": readback["status"],
+            "successor_party_id": readback["successor_party_id"],
         }
     elif resource == "unit":
         readback = unit_readback(conn, entity_id)

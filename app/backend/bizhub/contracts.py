@@ -27,6 +27,7 @@ class CreateParty(ExternalIdentity):
     legal_name: str = Field(default="", max_length=240)
     roles: list[Literal["customer", "supplier"]] = Field(min_length=1, max_length=2)
     status: Literal["active", "deprecated"] | None = None
+    successor_party_id: int | None = Field(default=None, gt=0)
 
     @field_validator("roles")
     @classmethod

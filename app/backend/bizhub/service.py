@@ -194,6 +194,8 @@ def _validate_fulfillment(conn: sqlite3.Connection, model: Any, order_type: str)
 
 def _validate_action(conn: sqlite3.Connection, action: str, model: StrictModel) -> None:
     if action == "create_party":
+        status = model.status or "active"
+        _validate_party_successor(conn, status, model.successor_party_id)
         _validate_canonical_value(
             conn,
             table="parties",
@@ -201,6 +203,7 @@ def _validate_action(conn: sqlite3.Connection, action: str, model: StrictModel) 
             alias_table="party_aliases",
             value=model.canonical_name,
             label="party",
+            permitted_alias_owner_id=model.successor_party_id if status == "deprecated" else None,
         )
         return
     if action == "create_party_alias":
@@ -291,7 +294,9 @@ def _validate_alias_owner(
     if not normalized:
         raise ValueError("alias must contain visible text")
     if table == "party_aliases":
-        canonical_rows = conn.execute("SELECT id,canonical_name FROM parties").fetchall()
+        canonical_rows = conn.execute(
+            "SELECT id,canonical_name,status,successor_party_id FROM parties"
+        ).fetchall()
         canonical_columns = ("canonical_name",)
     elif table == "unit_aliases":
         canonical_rows = conn.execute("SELECT id,code,display_name FROM units").fetchall()
@@ -302,6 +307,14 @@ def _validate_alias_owner(
         if any(normalize_alias(str(row[column])) == normalized for column in canonical_columns):
             if int(row["id"]) == owner_id:
                 raise ValueError("alias duplicates its canonical resource identity")
+            if (
+                table == "party_aliases"
+                and (status or "active") == "active"
+                and row["status"] == "deprecated"
+                and row["successor_party_id"] is not None
+                and int(row["successor_party_id"]) == owner_id
+            ):
+                continue
             raise ValueError("alias conflicts with a different canonical resource")
     parameters: list[Any] = [normalized]
     where = "normalized_alias=?"
@@ -327,6 +340,7 @@ def _validate_canonical_value(
     value: str,
     label: str,
     exclude_entity_id: int | None = None,
+    permitted_alias_owner_id: int | None = None,
 ) -> None:
     normalized = normalize_alias(value)
     if not normalized:
@@ -336,11 +350,40 @@ def _validate_canonical_value(
             continue
         if normalize_alias(str(row[column])) == normalized:
             raise ValueError(f"{label} canonical identity already exists")
-    if conn.execute(
-        f"SELECT 1 FROM {alias_table} WHERE normalized_alias=? LIMIT 1",
+    alias_owner_column = "party_id" if alias_table == "party_aliases" else "unit_id"
+    alias_rows = conn.execute(
+        f"SELECT {alias_owner_column},status FROM {alias_table} WHERE normalized_alias=?",
         (normalized,),
-    ).fetchone():
-        raise ValueError(f"{label} canonical identity conflicts with an existing alias")
+    ).fetchall()
+    if alias_rows:
+        permitted = (
+            alias_table == "party_aliases"
+            and permitted_alias_owner_id is not None
+            and all(int(row[alias_owner_column]) == permitted_alias_owner_id for row in alias_rows)
+        )
+        if not permitted:
+            raise ValueError(f"{label} canonical identity conflicts with an existing alias")
+
+
+def _validate_party_successor(
+    conn: sqlite3.Connection,
+    status: str,
+    successor_party_id: int | None,
+    *,
+    entity_id: int | None = None,
+) -> None:
+    if status == "active" and successor_party_id is not None:
+        raise ValueError("an active party cannot have a successor")
+    if successor_party_id is None:
+        return
+    if entity_id is not None and successor_party_id == entity_id:
+        raise ValueError("a party cannot succeed itself")
+    successor = conn.execute(
+        "SELECT status FROM parties WHERE id=?",
+        (successor_party_id,),
+    ).fetchone()
+    if successor is None or successor["status"] != "active":
+        raise ValueError("party successor must be an active existing party")
 
 
 def validate_master_data_reconcile(
@@ -351,6 +394,13 @@ def validate_master_data_reconcile(
 ) -> None:
     if resource == "party":
         current = _require_existing_row(conn, "parties", entity_id, "party")
+        status = model.status or "active"
+        _validate_party_successor(
+            conn,
+            status,
+            model.successor_party_id,
+            entity_id=entity_id,
+        )
         _validate_canonical_value(
             conn,
             table="parties",
@@ -359,6 +409,7 @@ def validate_master_data_reconcile(
             value=model.canonical_name,
             label="party",
             exclude_entity_id=entity_id,
+            permitted_alias_owner_id=model.successor_party_id if status == "deprecated" else None,
         )
         current_roles = {
             str(row[0]) for row in conn.execute("SELECT role_key FROM party_roles WHERE party_id=?", (entity_id,))
@@ -372,7 +423,7 @@ def validate_master_data_reconcile(
             "SELECT 1 FROM purchase_orders WHERE supplier_id=? LIMIT 1", (entity_id,)
         ).fetchone():
             raise ValueError("supplier role cannot be removed after purchase use")
-        if (model.status or "active") == "deprecated" and current["status"] != "deprecated":
+        if status == "deprecated" and current["status"] != "deprecated":
             has_open_sales = conn.execute(
                 "SELECT 1 FROM sales_orders WHERE customer_id=? AND status IN ('confirmed','partially_fulfilled') LIMIT 1",
                 (entity_id,),
@@ -438,8 +489,15 @@ def execute_master_data_reconcile(
     now = utc_now()
     if resource == "party":
         conn.execute(
-            "UPDATE parties SET canonical_name=?,legal_name=?,status=?,updated_at=? WHERE id=?",
-            (model.canonical_name.strip(), model.legal_name.strip(), model.status or "active", now, entity_id),
+            "UPDATE parties SET canonical_name=?,legal_name=?,status=?,successor_party_id=?,updated_at=? WHERE id=?",
+            (
+                model.canonical_name.strip(),
+                model.legal_name.strip(),
+                model.status or "active",
+                model.successor_party_id,
+                now,
+                entity_id,
+            ),
         )
         current_roles = {
             str(row[0]) for row in conn.execute("SELECT role_key FROM party_roles WHERE party_id=?", (entity_id,))
@@ -550,8 +608,15 @@ def _audit(
 def _create_party(conn: sqlite3.Connection, model: Any) -> tuple[str, int, dict[str, Any]]:
     now = utc_now()
     cursor = conn.execute(
-        "INSERT INTO parties(canonical_name,legal_name,status,created_at,updated_at) VALUES(?,?,?,?,?)",
-        (model.canonical_name.strip(), model.legal_name.strip(), model.status or "active", now, now),
+        "INSERT INTO parties(canonical_name,legal_name,status,successor_party_id,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+        (
+            model.canonical_name.strip(),
+            model.legal_name.strip(),
+            model.status or "active",
+            model.successor_party_id,
+            now,
+            now,
+        ),
     )
     entity_id = int(cursor.lastrowid)
     for role in model.roles:
@@ -850,7 +915,15 @@ def party_readback(conn: sqlite3.Connection, entity_id: int) -> dict[str, Any]:
         "SELECT id,alias,status FROM party_aliases WHERE party_id=? ORDER BY normalized_alias,id",
         (entity_id,),
     )]
-    return {"id": row["id"], "canonical_name": row["canonical_name"], "legal_name": row["legal_name"], "roles": roles, "aliases": aliases, "status": row["status"]}
+    return {
+        "id": row["id"],
+        "canonical_name": row["canonical_name"],
+        "legal_name": row["legal_name"],
+        "roles": roles,
+        "aliases": aliases,
+        "status": row["status"],
+        "successor_party_id": row["successor_party_id"],
+    }
 
 
 def alias_readback(conn: sqlite3.Connection, resource: str, entity_id: int) -> dict[str, Any]:

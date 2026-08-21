@@ -9,7 +9,7 @@ on:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.5.0-preview.1
+        default: v0.5.0-preview.2
 
 permissions:
   contents: write
@@ -127,7 +127,7 @@ jobs:
               --verify-tag \
               --prerelease \
               --title "BizHub $release_tag" \
-              --notes "Implementation preview $release_version for explicit external master-data identity readback and preview-gated party, unit, and alias reconcile, while retaining the bounded customer-private read-only extension and resource-limit contracts. Ubuntu 24.04 install, kernel resource readback, reconcile, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
+              --notes "Implementation preview $release_version for explicit external master-data identity readback, preview-gated reconcile, and exact deprecated-party successor identity, while retaining the bounded customer-private read-only extension and resource-limit contracts. Ubuntu 24.04 install, kernel resource readback, successor/reconcile, business-flow, plugin/MCP, backup/restore, idempotency, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
           fi
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease,tagName,url \
             --jq ". | select(.isPrerelease == true and .tagName == \"$release_tag\") | .url"
