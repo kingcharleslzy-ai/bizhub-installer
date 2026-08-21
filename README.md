@@ -13,9 +13,8 @@ database.
 
 > **Current development preview: `v0.5.0-preview.1`.** It adds stable external
 > identity readback plus explicit preview-gated reconcile for changed parties,
-> units, and their aliases. Its tag workflow must pass on a disposable Ubuntu
-> 24.04 runner before the GitHub Release page is created, and it does not replace
-> the stable default.
+> units, and their aliases. Its fixed-tag workflow and fresh-Agent forward test
+> passed; it remains a prerelease and does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -113,9 +112,11 @@ surface is unchanged. A separate reconcile contract now accepts changed party,
 unit, party-alias, and unit-alias records only when their external identity
 already exists. It previews exact field diffs, binds them to the current state
 generation and signed token, applies one atomic batch, appends audit, and verifies
-resource plus mapping readback. Before its Release page is created, the fixed-tag
-workflow must repeat these contracts on a disposable Ubuntu 24.04 host. This
-candidate has not received customer data or changed the reference deployment.
+resource plus mapping readback. The fixed-tag workflow repeated these contracts
+on a disposable Ubuntu 24.04 host before creating the Release page, and a fresh
+Agent directly called the installed MCP. This candidate has not received
+customer data or changed the reference deployment. See the
+[v0.5.0-preview.1 release record](docs/verification/v050-preview1-release-e2e-2026-08-21.md).
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
