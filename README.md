@@ -15,7 +15,8 @@ database.
 > dependency-aware party master-data bundle: successor and alias-owner
 > references resolve by `source_id + external_id`, while the complete input,
 > dependency graph, operation set, state generation, and exact readback remain
-> preview-gated. It remains a prerelease and does not replace the stable default.
+> preview-gated. Its fixed-tag Ubuntu workflow passed; it remains a prerelease
+> and does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -137,6 +138,8 @@ an apply. Apply rechecks the same analysis under one SQLite transaction, creates
 resources, external mappings and audit rows atomically, and returns exact
 relationship/mapping/state/audit readback. Any mid-bundle failure rolls back to
 zero writes; exact replay is a no-op with no extra audit or state generation.
+The exact gates and release identities are recorded in the
+[v0.6.0-preview.1 release record](docs/verification/v060-preview1-dependency-bundle-release-e2e-2026-08-21.md).
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
