@@ -14,7 +14,8 @@ database.
 > **Current development preview: `v0.5.0-preview.2`.** It adds stable external
 > identity readback, explicit preview-gated reconcile, and an explicit successor
 > link for deprecated parties whose old name remains an alias of the active
-> successor. It remains a prerelease and does not replace the stable default.
+> successor. Its fixed-tag Ubuntu workflow passed; it remains a prerelease and
+> does not replace the stable default.
 
 ## Give the release to an Agent
 
@@ -118,9 +119,10 @@ successor, while every missing, self-referential, inactive, or mismatched link
 still fails closed. This contract came from a real private Shadow snapshot and
 preserves retired identity instead of deleting history or guessing by name.
 This candidate has not received customer data or changed the reference
-deployment. The previous fixed-tag workflow evidence remains in the
-[v0.5.0-preview.1 release record](docs/verification/v050-preview1-release-e2e-2026-08-21.md);
-preview.2 requires its own release gate before use.
+deployment. Its fixed-tag workflow repeated the complete Ubuntu install,
+successor/reconcile, business-flow, plugin/MCP, backup/restore and retain-data
+uninstall gates. See the
+[v0.5.0-preview.2 release record](docs/verification/v050-preview2-party-successor-release-e2e-2026-08-21.md).
 
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
