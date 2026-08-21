@@ -1,12 +1,22 @@
 # Data import contracts
 
-Supported resources are `party`, `product`, `unit`, `location`,
+Supported CSV resources are `party`, `product`, `unit`, `location`,
 `opening_inventory`, `sales_order`, and `purchase_order`. Download the exact
-CSV header from `/api/imports/template/{resource}` or use JSON records.
+CSV header from `/api/imports/template/{resource}`. JSON accepts those resources
+plus `party_alias` and `unit_alias`.
 
 Every record must contain a customer-chosen `external_id`; every batch has one
 `source_id`. Their pair is the permanent idempotency identity. Reusing the pair
 with changed content is rejected.
+
+Party and unit JSON records may include `status: active|deprecated`. Alias JSON
+records use `alias`, the same status values, and the canonical owner's integer
+`party_id` or `unit_id`. An adapter first imports the canonical resource, then
+queries authenticated `GET /api/external-records?source_id=...&resource_type=...`
+to resolve its external ID to the BizHub entity ID before previewing aliases.
+The endpoint is cursor-paginated with `after_id` and a maximum `limit` of 500;
+the existing `bizhub_resource_query(resource=external_mappings)` tool exposes
+the same bounded readback.
 
 The fixed flow is:
 
@@ -22,6 +32,11 @@ Unknown fields, unknown references, non-positive order quantities, unit
 mismatch, insufficient inventory, changed input, expired/stale tokens, and
 concurrent catalog changes fail closed. Correct imported formal history with a
 new reversing movement; do not delete or edit movement rows.
+
+The current contract is create-or-replay only. There is no update/reconcile
+action for an existing external identity: a changed name, status, role, owner,
+dimension, or alias payload is rejected and must not be worked around by
+inventing a second external ID.
 
 Sales and purchase CSV lines use `lines_json`, for example:
 

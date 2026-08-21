@@ -104,6 +104,16 @@ handlers, undeclared paths, missing dependencies, duplicate capabilities and
 extension-owned durable entities. This remains a preview and does not change
 the supported `v0.3.0` production path.
 
+The unreleased Phase 3A synthetic candidate adds the next small master-data
+contract: a checksum-verified SQLite migration ledger, active/deprecated status
+for parties and units, party/unit aliases with one canonical owner, and bounded
+authenticated external-identity mapping readback. JSON imports can create these
+aliases after resolving their owner IDs through the mapping readback; the CSV
+surface is unchanged. Existing `(source_id, external_id)` records with changed
+content still fail closed because reconcile preview/apply is not implemented.
+This candidate has only synthetic cross-repository tests: it has not received
+customer data, changed the reference deployment, or become a published release.
+
 The exact development commit passed an isolated base-image plus derived-image
 E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
 readback, business flow, backup/restore, restart and MCP path; it is not yet the

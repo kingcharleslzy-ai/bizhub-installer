@@ -66,6 +66,9 @@ design proposal and does not generate executable production code.
 A mapping or collector must:
 
 - emit `source_id + external_id` for every external record;
+- resolve imported parent identities through bounded external-mapping readback
+  before emitting child records such as party or unit aliases; never guess a
+  core integer ID from a name or source-system ID;
 - retain a cursor or replay boundary outside formal business tables;
 - preserve raw evidence by reference and digest when required;
 - transform into an existing JSON/import/action contract;
@@ -74,6 +77,11 @@ A mapping or collector must:
 - be safe to replay without duplicate facts;
 - never write SQLite, invent a missing relation, or silently coerce an unknown
   unit, party, product or date.
+
+The current public import contract has create/replay semantics only. If the same
+external identity arrives with changed content, the Agent must stop and report
+that reconcile is unavailable; it must not create a replacement identity to
+simulate an update.
 
 ## Customer Skill contract
 

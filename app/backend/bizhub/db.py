@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import company_profile_digest, database_path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+BASELINE_VERSION = 1
 
 
 SCHEMA_SQL = """
@@ -20,6 +23,13 @@ CREATE TABLE IF NOT EXISTS app_state (
     state_version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bizhub_migration_ledger (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -205,6 +215,62 @@ BEFORE DELETE ON audit_events BEGIN SELECT RAISE(ABORT, 'audit events are immuta
 """
 
 
+@dataclass(frozen=True)
+class Migration:
+    version: int
+    name: str
+    statements: tuple[str, ...]
+
+    @property
+    def checksum(self) -> str:
+        payload = "\n-- statement --\n".join(statement.strip() for statement in self.statements)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+BASELINE_CHECKSUM = hashlib.sha256(b"bizhub.schema.v1").hexdigest()
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        version=2,
+        name="master_data_aliases_and_external_record_updates",
+        statements=(
+            """
+            CREATE TABLE party_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                party_id INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+                alias TEXT NOT NULL,
+                normalized_alias TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deprecated')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (party_id, normalized_alias)
+            )
+            """,
+            """
+            CREATE UNIQUE INDEX ux_party_aliases_active_name
+            ON party_aliases(normalized_alias) WHERE status='active'
+            """,
+            """
+            CREATE TABLE unit_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                unit_id INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                alias TEXT NOT NULL,
+                normalized_alias TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deprecated')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (unit_id, normalized_alias)
+            )
+            """,
+            """
+            CREATE UNIQUE INDEX ux_unit_aliases_active_name
+            ON unit_aliases(normalized_alias) WHERE status='active'
+            """,
+            "ALTER TABLE external_records ADD COLUMN updated_at TEXT",
+        ),
+    ),
+)
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -244,18 +310,78 @@ def initialize_database(path: Path | None = None) -> None:
         if row is None:
             conn.execute(
                 "INSERT INTO app_state(id,schema_version,profile_digest,state_version,created_at,updated_at) VALUES(1,?,?,?,?,?)",
-                (SCHEMA_VERSION, digest, 0, now, now),
+                (BASELINE_VERSION, digest, 0, now, now),
             )
-        elif row["schema_version"] != SCHEMA_VERSION:
+            row = conn.execute("SELECT * FROM app_state WHERE id=1").fetchone()
+        elif int(row["schema_version"]) < BASELINE_VERSION or int(row["schema_version"]) > SCHEMA_VERSION:
             raise RuntimeError("database schema version is unsupported")
         elif row["profile_digest"] != digest:
             raise RuntimeError("company profile does not match the database binding")
+        _apply_migrations(conn, int(row["schema_version"]), now)
         quick = conn.execute("PRAGMA quick_check").fetchone()[0]
         if quick != "ok":
             raise RuntimeError(f"SQLite quick_check failed: {quick}")
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             raise RuntimeError(f"SQLite foreign_key_check failed: {violations[:3]}")
+
+
+def _apply_migrations(conn: sqlite3.Connection, current_version: int, now: str) -> None:
+    baseline = conn.execute(
+        "SELECT checksum FROM bizhub_migration_ledger WHERE version=?",
+        (BASELINE_VERSION,),
+    ).fetchone()
+    if baseline is None:
+        if current_version != BASELINE_VERSION:
+            raise RuntimeError("database migration ledger is incomplete")
+        conn.execute(
+            "INSERT INTO bizhub_migration_ledger(version,name,checksum,applied_at) VALUES(?,?,?,?)",
+            (BASELINE_VERSION, "initial_schema", BASELINE_CHECKSUM, now),
+        )
+    elif baseline["checksum"] != BASELINE_CHECKSUM:
+        raise RuntimeError("database baseline migration checksum has drifted")
+
+    user_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if user_version == 0 and current_version == BASELINE_VERSION:
+        conn.execute(f"PRAGMA user_version={BASELINE_VERSION}")
+        user_version = BASELINE_VERSION
+    if user_version != current_version:
+        raise RuntimeError("database app_state and PRAGMA user_version disagree")
+
+    for migration in MIGRATIONS:
+        existing = conn.execute(
+            "SELECT name,checksum FROM bizhub_migration_ledger WHERE version=?",
+            (migration.version,),
+        ).fetchone()
+        if migration.version <= current_version:
+            if existing is None or existing["name"] != migration.name or existing["checksum"] != migration.checksum:
+                raise RuntimeError(f"database migration {migration.version} ledger has drifted")
+            continue
+        if migration.version != current_version + 1:
+            raise RuntimeError("database migrations are not contiguous")
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for statement in migration.statements:
+                conn.execute(statement)
+            applied_at = utc_now()
+            conn.execute(
+                "INSERT INTO bizhub_migration_ledger(version,name,checksum,applied_at) VALUES(?,?,?,?)",
+                (migration.version, migration.name, migration.checksum, applied_at),
+            )
+            conn.execute(
+                "UPDATE app_state SET schema_version=?,updated_at=? WHERE id=1",
+                (migration.version, applied_at),
+            )
+            conn.execute(f"PRAGMA user_version={migration.version}")
+            conn.execute("COMMIT")
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        current_version = migration.version
+
+    if current_version != SCHEMA_VERSION:
+        raise RuntimeError("database schema migration did not reach the supported version")
 
 
 def state_version(conn: sqlite3.Connection) -> int:

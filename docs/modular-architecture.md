@@ -178,6 +178,17 @@ writers, migrations, pages, jobs, hot installation and production migration are
 not yet enabled. Until later gates pass, the stable release remains the
 self-contained single-company application described in the root README.
 
+An unreleased Phase 3A synthetic candidate now implements the first master-data
+parity slice without widening that runtime seam. The public database can upgrade
+from schema v1 through a checksum migration ledger; parties and units preserve
+active/deprecated status; party and unit aliases have explicit external identity
+and one canonical owner; and authenticated API/MCP readback exposes bounded
+external mappings. The private reference repository has a separately tested,
+query-only snapshot exporter whose output validates against these public JSON
+contracts. This proves a cross-repository contract with synthetic fixtures only.
+It does not import customer data, deploy to Shadow, switch a reader or writer,
+or implement changed-record reconcile.
+
 The first derived-image runtime proof is recorded in
 [read-only extension Ubuntu E2E](verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
 It ran on an existing shared VPS, so it closes the runtime seam but not the

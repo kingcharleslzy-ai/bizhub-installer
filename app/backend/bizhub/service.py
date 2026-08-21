@@ -6,6 +6,7 @@ import hmac
 import json
 import sqlite3
 import time
+import unicodedata
 from decimal import Decimal
 from typing import Any
 
@@ -25,6 +26,11 @@ def canonical_json(value: Any) -> str:
 
 def payload_digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def normalize_alias(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value)
+    return " ".join(normalized.split()).casefold()
 
 
 def decimal_text(value: Decimal | str | int | float) -> str:
@@ -100,6 +106,15 @@ def _require_row(conn: sqlite3.Connection, table: str, entity_id: int, label: st
     row = conn.execute(f"SELECT * FROM {table} WHERE id=? AND status='active'", (entity_id,)).fetchone()
     if row is None:
         raise ValueError(f"active {label} does not exist")
+    return row
+
+
+def _require_existing_row(conn: sqlite3.Connection, table: str, entity_id: int, label: str) -> sqlite3.Row:
+    if table not in {"parties", "units"}:
+        raise RuntimeError("unsupported alias owner table")
+    row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"{label} does not exist")
     return row
 
 
@@ -179,11 +194,35 @@ def _validate_fulfillment(conn: sqlite3.Connection, model: Any, order_type: str)
 
 def _validate_action(conn: sqlite3.Connection, action: str, model: StrictModel) -> None:
     if action == "create_party":
+        _validate_canonical_value(
+            conn,
+            table="parties",
+            column="canonical_name",
+            alias_table="party_aliases",
+            value=model.canonical_name,
+            label="party",
+        )
+        return
+    if action == "create_party_alias":
+        _require_existing_row(conn, "parties", model.party_id, "party")
+        _validate_alias_owner(conn, "party_aliases", "party_id", model.party_id, model.alias, model.status)
         return
     if action == "create_product":
         _require_row(conn, "units", model.unit_id, "unit")
         return
     if action == "create_unit":
+        _validate_canonical_value(
+            conn,
+            table="units",
+            column="code",
+            alias_table="unit_aliases",
+            value=model.code,
+            label="unit",
+        )
+        return
+    if action == "create_unit_alias":
+        _require_existing_row(conn, "units", model.unit_id, "unit")
+        _validate_alias_owner(conn, "unit_aliases", "unit_id", model.unit_id, model.alias, model.status)
         return
     if action == "create_location":
         return
@@ -239,6 +278,62 @@ def _validate_action(conn: sqlite3.Connection, action: str, model: StrictModel) 
     raise ValueError("unsupported action")
 
 
+def _validate_alias_owner(
+    conn: sqlite3.Connection,
+    table: str,
+    owner_column: str,
+    owner_id: int,
+    alias: str,
+    status: str | None,
+) -> None:
+    normalized = normalize_alias(alias)
+    if not normalized:
+        raise ValueError("alias must contain visible text")
+    if table == "party_aliases":
+        canonical_rows = conn.execute("SELECT id,canonical_name FROM parties").fetchall()
+        canonical_columns = ("canonical_name",)
+    elif table == "unit_aliases":
+        canonical_rows = conn.execute("SELECT id,code,display_name FROM units").fetchall()
+        canonical_columns = ("code", "display_name")
+    else:
+        raise RuntimeError("unsupported alias table")
+    for row in canonical_rows:
+        if any(normalize_alias(str(row[column])) == normalized for column in canonical_columns):
+            if int(row["id"]) == owner_id:
+                raise ValueError("alias duplicates its canonical resource identity")
+            raise ValueError("alias conflicts with a different canonical resource")
+    rows = conn.execute(
+        f"SELECT {owner_column},status FROM {table} WHERE normalized_alias=?",
+        (normalized,),
+    ).fetchall()
+    if any(int(row[owner_column]) == owner_id for row in rows):
+        raise ValueError("alias already exists for the canonical resource")
+    if (status or "active") == "active" and any(row["status"] == "active" for row in rows):
+        raise ValueError("active alias already belongs to a different canonical resource")
+
+
+def _validate_canonical_value(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    column: str,
+    alias_table: str,
+    value: str,
+    label: str,
+) -> None:
+    normalized = normalize_alias(value)
+    if not normalized:
+        raise ValueError(f"{label} canonical identity must contain visible text")
+    for row in conn.execute(f"SELECT {column} FROM {table}"):
+        if normalize_alias(str(row[column])) == normalized:
+            raise ValueError(f"{label} canonical identity already exists")
+    if conn.execute(
+        f"SELECT 1 FROM {alias_table} WHERE normalized_alias=? LIMIT 1",
+        (normalized,),
+    ).fetchone():
+        raise ValueError(f"{label} canonical identity conflicts with an existing alias")
+
+
 def preview_action(conn: sqlite3.Connection, action: str, data: dict[str, Any]) -> dict[str, Any]:
     model = _validated(action, data)
     normalized = _payload(model)
@@ -282,9 +377,10 @@ def _record_external(
     identity = _external_identity(model)
     if not identity:
         return
+    now = utc_now()
     conn.execute(
-        "INSERT INTO external_records(source_id,external_id,resource_type,entity_id,payload_digest,created_at) VALUES(?,?,?,?,?,?)",
-        (*identity, resource_type, entity_id, payload_digest(normalized), utc_now()),
+        "INSERT INTO external_records(source_id,external_id,resource_type,entity_id,payload_digest,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        (*identity, resource_type, entity_id, payload_digest(normalized), now, now),
     )
 
 
@@ -317,8 +413,8 @@ def _audit(
 def _create_party(conn: sqlite3.Connection, model: Any) -> tuple[str, int, dict[str, Any]]:
     now = utc_now()
     cursor = conn.execute(
-        "INSERT INTO parties(canonical_name,legal_name,status,created_at,updated_at) VALUES(?,?,'active',?,?)",
-        (model.canonical_name.strip(), model.legal_name.strip(), now, now),
+        "INSERT INTO parties(canonical_name,legal_name,status,created_at,updated_at) VALUES(?,?,?,?,?)",
+        (model.canonical_name.strip(), model.legal_name.strip(), model.status or "active", now, now),
     )
     entity_id = int(cursor.lastrowid)
     for role in model.roles:
@@ -339,8 +435,8 @@ def _create_simple(conn: sqlite3.Connection, action: str, model: Any) -> tuple[s
         resource = "product"
     elif action == "create_unit":
         cursor = conn.execute(
-            "INSERT INTO units(code,display_name,dimension,status,created_at,updated_at) VALUES(?,?,?,'active',?,?)",
-            (model.code, model.display_name.strip(), model.dimension, now, now),
+            "INSERT INTO units(code,display_name,dimension,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            (model.code, model.display_name.strip(), model.dimension, model.status or "active", now, now),
         )
         resource = "unit"
     else:
@@ -351,6 +447,20 @@ def _create_simple(conn: sqlite3.Connection, action: str, model: Any) -> tuple[s
         resource = "location"
     entity_id = int(cursor.lastrowid)
     return resource, entity_id, simple_readback(conn, resource, entity_id)
+
+
+def _create_alias(conn: sqlite3.Connection, action: str, model: Any) -> tuple[str, int, dict[str, Any]]:
+    now = utc_now()
+    if action == "create_party_alias":
+        table, owner_column, owner_id, resource = "party_aliases", "party_id", model.party_id, "party_alias"
+    else:
+        table, owner_column, owner_id, resource = "unit_aliases", "unit_id", model.unit_id, "unit_alias"
+    cursor = conn.execute(
+        f"INSERT INTO {table}({owner_column},alias,normalized_alias,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+        (owner_id, model.alias.strip(), normalize_alias(model.alias), model.status or "active", now, now),
+    )
+    entity_id = int(cursor.lastrowid)
+    return resource, entity_id, alias_readback(conn, resource, entity_id)
 
 
 def _create_order(conn: sqlite3.Connection, order_type: str, model: Any) -> tuple[str, int, dict[str, Any]]:
@@ -515,6 +625,8 @@ def _cancel(conn: sqlite3.Connection, model: Any) -> tuple[str, int, dict[str, A
 def _execute(conn: sqlite3.Connection, action: str, model: StrictModel) -> tuple[str, int, dict[str, Any]]:
     if action == "create_party":
         return _create_party(conn, model)
+    if action in {"create_party_alias", "create_unit_alias"}:
+        return _create_alias(conn, action, model)
     if action in {"create_product", "create_unit", "create_location"}:
         return _create_simple(conn, action, model)
     if action == "create_sales_order":
@@ -597,10 +709,36 @@ def apply_action(
 def party_readback(conn: sqlite3.Connection, entity_id: int) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM parties WHERE id=?", (entity_id,)).fetchone()
     roles = [item[0] for item in conn.execute("SELECT role_key FROM party_roles WHERE party_id=? ORDER BY role_key", (entity_id,))]
-    return {"id": row["id"], "canonical_name": row["canonical_name"], "legal_name": row["legal_name"], "roles": roles, "status": row["status"]}
+    aliases = [dict(item) for item in conn.execute(
+        "SELECT id,alias,status FROM party_aliases WHERE party_id=? ORDER BY normalized_alias,id",
+        (entity_id,),
+    )]
+    return {"id": row["id"], "canonical_name": row["canonical_name"], "legal_name": row["legal_name"], "roles": roles, "aliases": aliases, "status": row["status"]}
+
+
+def alias_readback(conn: sqlite3.Connection, resource: str, entity_id: int) -> dict[str, Any]:
+    table = {"party_alias": "party_aliases", "unit_alias": "unit_aliases"}[resource]
+    row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"{resource} does not exist")
+    return dict(row)
+
+
+def unit_readback(conn: sqlite3.Connection, entity_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM units WHERE id=?", (entity_id,)).fetchone()
+    if row is None:
+        raise ValueError("unit does not exist")
+    result = dict(row)
+    result["aliases"] = [dict(item) for item in conn.execute(
+        "SELECT id,alias,status FROM unit_aliases WHERE unit_id=? ORDER BY normalized_alias,id",
+        (entity_id,),
+    )]
+    return result
 
 
 def simple_readback(conn: sqlite3.Connection, resource: str, entity_id: int) -> dict[str, Any]:
+    if resource == "unit":
+        return unit_readback(conn, entity_id)
     table = {"product": "products", "unit": "units", "location": "locations"}[resource]
     row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
     return dict(row)
@@ -634,8 +772,39 @@ def catalog(conn: sqlite3.Connection) -> dict[str, Any]:
         "state_version": state_version(conn),
         "parties": parties,
         "products": [dict(row) for row in conn.execute("SELECT * FROM products ORDER BY canonical_name")],
-        "units": [dict(row) for row in conn.execute("SELECT * FROM units ORDER BY code")],
+        "units": [unit_readback(conn, int(row[0])) for row in conn.execute("SELECT id FROM units ORDER BY code")],
         "locations": [dict(row) for row in conn.execute("SELECT * FROM locations ORDER BY code")],
+    }
+
+
+def external_mappings(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str,
+    resource_type: str | None,
+    after_id: int,
+    limit: int,
+) -> dict[str, Any]:
+    params: list[Any] = [source_id, after_id]
+    where = "source_id=? AND id>?"
+    if resource_type:
+        where += " AND resource_type=?"
+        params.append(resource_type)
+    bounded = min(max(int(limit), 1), 500)
+    params.append(bounded + 1)
+    rows = conn.execute(
+        f"SELECT id,source_id,external_id,resource_type,entity_id,payload_digest,created_at,"
+        f"COALESCE(updated_at,created_at) AS updated_at FROM external_records WHERE {where} ORDER BY id LIMIT ?",
+        tuple(params),
+    ).fetchall()
+    has_more = len(rows) > bounded
+    visible = rows[:bounded]
+    return {
+        "schema_version": "bizhub.external-mapping-readback.v1",
+        "source_id": source_id,
+        "resource_type": resource_type,
+        "items": [dict(row) for row in visible],
+        "next_after_id": int(visible[-1]["id"]) if has_more and visible else None,
     }
 
 

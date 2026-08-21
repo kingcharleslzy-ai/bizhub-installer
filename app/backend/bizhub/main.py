@@ -34,7 +34,7 @@ from .security import (
     record_login_failure,
     revoke_session,
 )
-from .service import apply_action, audit_events, catalog, inventory_projection, list_orders, preview_action
+from .service import apply_action, audit_events, catalog, external_mappings, inventory_projection, list_orders, preview_action
 
 
 SESSION_COOKIE = "bizhub_session"
@@ -206,6 +206,24 @@ def me(user: User) -> dict[str, str]:
 @app.get("/api/resources/catalog")
 def resources(conn: Db, _: User) -> dict[str, Any]:
     return catalog(conn)
+
+
+@app.get("/api/external-records")
+def external_record_readback(
+    conn: Db,
+    _: User,
+    source_id: str = Query(min_length=1, max_length=80),
+    resource_type: str | None = Query(default=None, min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]*$"),
+    after_id: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, Any]:
+    return external_mappings(
+        conn,
+        source_id=source_id,
+        resource_type=resource_type,
+        after_id=after_id,
+        limit=limit,
+    )
 
 
 @app.get("/api/orders/{order_type}")

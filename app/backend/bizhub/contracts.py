@@ -26,6 +26,7 @@ class CreateParty(ExternalIdentity):
     canonical_name: str = Field(min_length=1, max_length=200)
     legal_name: str = Field(default="", max_length=240)
     roles: list[Literal["customer", "supplier"]] = Field(min_length=1, max_length=2)
+    status: Literal["active", "deprecated"] | None = None
 
     @field_validator("roles")
     @classmethod
@@ -50,11 +51,24 @@ class CreateUnit(ExternalIdentity):
     code: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
     display_name: str = Field(min_length=1, max_length=60)
     dimension: Literal["count", "weight", "volume", "length", "area", "package", "other"]
+    status: Literal["active", "deprecated"] | None = None
 
     @field_validator("code")
     @classmethod
     def normalize_code(cls, value: str) -> str:
         return value.strip().lower()
+
+
+class CreatePartyAlias(ExternalIdentity):
+    party_id: int = Field(gt=0)
+    alias: str = Field(min_length=1, max_length=200)
+    status: Literal["active", "deprecated"] | None = None
+
+
+class CreateUnitAlias(ExternalIdentity):
+    unit_id: int = Field(gt=0)
+    alias: str = Field(min_length=1, max_length=60)
+    status: Literal["active", "deprecated"] | None = None
 
 
 class CreateLocation(ExternalIdentity):
@@ -144,8 +158,10 @@ class CancelOrder(ExternalIdentity):
 
 ActionName = Literal[
     "create_party",
+    "create_party_alias",
     "create_product",
     "create_unit",
+    "create_unit_alias",
     "create_location",
     "create_sales_order",
     "create_purchase_order",
@@ -159,8 +175,10 @@ ActionName = Literal[
 
 ACTION_MODELS: dict[str, type[StrictModel]] = {
     "create_party": CreateParty,
+    "create_party_alias": CreatePartyAlias,
     "create_product": CreateProduct,
     "create_unit": CreateUnit,
+    "create_unit_alias": CreateUnitAlias,
     "create_location": CreateLocation,
     "create_sales_order": CreateSalesOrder,
     "create_purchase_order": CreatePurchaseOrder,
@@ -184,6 +202,19 @@ class ActionApplyRequest(ActionPreviewRequest):
 
 ImportResource = Literal[
     "party",
+    "party_alias",
+    "product",
+    "unit",
+    "unit_alias",
+    "location",
+    "opening_inventory",
+    "sales_order",
+    "purchase_order",
+]
+
+
+CsvImportResource = Literal[
+    "party",
     "product",
     "unit",
     "location",
@@ -205,6 +236,6 @@ class ImportApplyRequest(ImportPreviewRequest):
 
 
 class CsvImportPreviewRequest(StrictModel):
-    resource: ImportResource
+    resource: CsvImportResource
     source_id: str = Field(min_length=1, max_length=80)
     csv_text: str = Field(min_length=1, max_length=10_000_000)

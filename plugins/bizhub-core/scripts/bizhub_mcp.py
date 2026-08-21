@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 SERVER_INFO = {"name": "bizhub-mcp", "version": "0.4.0-preview.4"}
@@ -21,7 +21,7 @@ REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
 RELEASE_TAG = "v0.4.0-preview.4"
 PROTOCOL_VERSION = "2024-11-05"
 ACTION_NAMES = [
-    "create_party", "create_product", "create_unit", "create_location",
+    "create_party", "create_party_alias", "create_product", "create_unit", "create_unit_alias", "create_location",
     "create_sales_order", "create_purchase_order", "receive_purchase", "ship_sale",
     "post_inventory_adjustment", "reverse_movement", "cancel_order",
 ]
@@ -73,7 +73,7 @@ TOOLS = [
     {"name": "bizhub_bootstrap_questions", "description": "Return one short stage of the BizHub setup interview.", "inputSchema": {"type": "object", "properties": {"stage": {"type": "string", "enum": list(QUESTION_STAGES)}}, "required": ["stage"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_target_preflight", "description": "Return non-sensitive facts about this host before running bizhubctl preflight on the deployment target.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_instance_health", "description": "Read health from the one BizHub instance configured in the MCP environment.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection or the effective module map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit", "system_map"]}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection, external identity mapping, or the effective module map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit", "system_map", "external_mappings"]}, "source_id": {"type": "string", "minLength": 1, "maxLength": 80}, "resource_type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "after_id": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_action_preview", "description": "Validate and preview one supported business action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed action to the configured instance, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
 ]
@@ -198,10 +198,15 @@ def handle_tool_call(params: Any) -> dict[str, Any]:
             error = validate_arguments(arguments, set())
             return error or tool_result(instance_client().request("/api/health", authenticate=False))
         if name == "bizhub_resource_query":
-            error = validate_arguments(arguments, {"resource"}, {"resource"})
+            error = validate_arguments(arguments, {"resource", "source_id", "resource_type", "after_id", "limit"}, {"resource"})
             if error:
                 return error
             endpoints = {"catalog": "/api/resources/catalog", "sales": "/api/orders/sale", "purchases": "/api/orders/purchase", "inventory": "/api/inventory", "audit": "/api/audit?limit=200", "system_map": "/api/system/modules"}
+            if arguments["resource"] == "external_mappings":
+                if not arguments.get("source_id"):
+                    return error_result("missing_arguments", fields=["source_id"])
+                query = {key: arguments[key] for key in ("source_id", "resource_type", "after_id", "limit") if key in arguments}
+                return tool_result(instance_client().request(f"/api/external-records?{urlencode(query)}"))
             endpoint = endpoints.get(arguments["resource"])
             return tool_result(instance_client().request(endpoint)) if endpoint else error_result("unknown_resource")
         if name in {"bizhub_action_preview", "bizhub_action_apply"}:

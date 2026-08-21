@@ -22,6 +22,7 @@ from .service import (
     _validate_action,
     _validated,
     canonical_json,
+    normalize_alias,
     payload_digest,
 )
 from .config import secret_key
@@ -29,8 +30,10 @@ from .config import secret_key
 
 RESOURCE_ACTIONS = {
     "party": "create_party",
+    "party_alias": "create_party_alias",
     "product": "create_product",
     "unit": "create_unit",
+    "unit_alias": "create_unit_alias",
     "location": "create_location",
     "opening_inventory": "post_inventory_adjustment",
     "sales_order": "create_sales_order",
@@ -197,6 +200,8 @@ def preview_import(
 
 
 def _natural_key(resource: str, payload: dict[str, Any]) -> tuple[str, str]:
+    if resource in {"party_alias", "unit_alias"}:
+        return resource, normalize_alias(str(payload["alias"]))
     fields = {
         "party": "canonical_name",
         "product": "sku",
