@@ -1,48 +1,48 @@
 # BizHub
 
-BizHub is a small, private business system that a customer's Agent can install
-from one fixed public GitHub release. Each company receives one independent
-instance, one administrator account, one application container, and one SQLite
-database.
+BizHub is an Agent-installed, single-company business system for private
+deployment. Each customer gets one independent application container, one
+administrator account, and one SQLite database.
 
-> **Current stable release: `v0.3.0`.** This exact release passed its Ubuntu
-> 24.04 clean-host install, Docker business-flow test, backup/restore rehearsal,
-> sensitive-information scan, and fresh-Agent plugin forward test. Each customer
-> deployment must still verify its final private TLS, domain, or Cloudflare
-> Tunnel access path before real customer data enters.
+The system covers master data, sales, purchasing, inventory, controlled data
+imports, audit, backup, restore, and health readback. It is intentionally small:
+it is not a multi-tenant ERP platform or a self-modifying Agent runtime.
 
-> **Current development preview: `v0.6.0-preview.1`.** It adds one atomic,
-> dependency-aware party master-data bundle: successor and alias-owner
-> references resolve by `source_id + external_id`, while the complete input,
-> dependency graph, operation set, state generation, and exact readback remain
-> preview-gated. Its fixed-tag Ubuntu workflow passed; it remains a prerelease
-> and does not replace the stable default.
+## Choose a fixed release
+
+Never install from `main` or another moving branch.
+
+| Channel | Fixed release | Commit | Use |
+| --- | --- | --- | --- |
+| Stable | [`v0.3.0`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0) | `1782417f4b05bb8abf657066f217453410128b92` | Supported single-company deployment |
+| Preview | [`v0.6.0-preview.1`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.6.0-preview.1) | `ad2455c76cecf0185c2de60b39e00752c57e22d3` | Synthetic evaluation of the latest extension and master-data contracts |
+
+The stable release passed a clean Ubuntu 24.04 installation, business-flow
+test, backup/restore rehearsal, sensitive-information scan, and fresh-Agent
+plugin test. Each real deployment must still verify its private TLS, domain, or
+Cloudflare Tunnel before customer data enters.
+
+The preview is a prerelease. It does not replace the stable default and does not
+authorize customer-data migration, a production writer switch, or deployment
+into an existing private system.
 
 ## Give the release to an Agent
 
-Use the immutable release URL once the tag is published:
+Give the Agent one fixed release URL from the table above and ask it to:
 
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0`
+1. resolve the tag to its verified 40-character commit;
+2. verify [`install/CHECKSUMS.sha256`](install/CHECKSUMS.sha256) and inspect
+   [`install/bootstrap.yaml`](install/bootstrap.yaml);
+3. show every plugin, MCP, target-host, network, and filesystem change;
+4. install exactly one `bizhub-core` plugin pinned to that commit;
+5. start a new task with exactly one `bizhub-bootstrap` Skill and one
+   `bizhub-mcp`;
+6. run preflight and show the generated plan;
+7. mutate the target only after the exact plan hash is approved;
+8. verify the running instance, backup, and business readback; preview releases
+   also verify their declared resource limits.
 
-Once the dependency-aware master-data bundle preview tag is published and
-verified, use:
-
-`https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.6.0-preview.1`
-
-Ask the Agent to verify the release and checksums, install the repository's one
-plugin, load its one `bizhub-bootstrap` Skill, and follow the staged interview.
-The Agent will ask about the Ubuntu target, access mode, company profile,
-administrator username, and first data source. Enter the administrator password
-only in the target host's interactive TTY.
-
-The Agent must show the generated plan and receive approval for its exact hash
-before running installation. A repository link, README, or GitHub signature is
-provenance—not permission to change a machine.
-
-After resolving the release tag to its verified 40-character commit, the Agent
-may use the host-native Codex plugin commands below. It must show these host
-changes and obtain approval before running them; `<VERIFIED_COMMIT>` is never a
-moving branch or an unverified tag:
+After verification, the host-native Codex plugin flow is:
 
 ```bash
 codex plugin marketplace add kingcharleslzy-ai/bizhub-installer \
@@ -52,15 +52,19 @@ codex plugin list --json
 ```
 
 The final readback must show exactly one enabled `bizhub-core` from
-`bizhub-public`, at the version declared by the fixed release. Start a new Agent
-task before using its Skill or MCP tools. If the host does not expose these CLI
-commands, use its Plugins directory to add the same pinned repository source
-and install `bizhub-core`; do not copy files into a global Skill directory or
-register a second MCP as a workaround.
+`bizhub-public`, at the version declared by the fixed release. If the host
+does not expose these CLI commands, use its Plugins directory to add the same
+pinned repository source. Do not copy files into a global Skill directory or
+register a second MCP.
 
-## Product boundary
+Enter the administrator password only in the target host's interactive TTY.
+Never send passwords, private keys, tokens, cookies, customer exports, or
+databases through chat.
 
-Included:
+A release URL, README, checksum, or GitHub signature proves provenance. None of
+them grants permission to change a machine.
+
+## What is included
 
 - company legal/display name, brand, timezone, and default currency;
 - one Argon2-protected administrator with a secure HttpOnly session;
@@ -69,111 +73,97 @@ Included:
 - immutable inventory movements, non-negative stock, and reversal corrections;
 - CSV/JSON staging, validation, preview, idempotent apply, and readback;
 - audit history, online SQLite backup, verified restore, and system health;
-- one FastAPI + built Vue application container;
+- one FastAPI plus built Vue application container;
 - one `bizhub-mcp` and one `bizhub-bootstrap` Skill.
 
 Not included:
 
 - multi-tenancy, RBAC, employee applications, SSO, or MFA;
-- invoices, payment, receivables, accounting, manufacturing, logistics, or
+- invoices, payments, receivables, accounting, manufacturing, logistics, or
   employee task management;
-- a general connector SDK or any company-specific collection logic;
-- PostgreSQL or a claim of automatic migration from an arbitrary legacy ERP.
+- PostgreSQL or automatic migration from an arbitrary legacy ERP;
+- a general connector SDK or company-specific collection logic;
+- runtime-generated SQL, hot-installed business code, or direct Agent access to
+  SQLite.
 
-Customer-specific mapping remains in the customer's private environment. The
-documentation-only [extension guide](docs/customer-skill-extension.md) explains
-when a customer's Agent may add one narrow Skill later.
+Customer-specific mappings, credentials, source adapters, and private modules
+stay in the customer's private environment.
 
-## Modular development direction
+## Safety model
 
-The long-term deployment shape is one stable public kernel plus build-time
-customer-private modules. The private reference deployment must eventually run
-the same pinned public core artifact, so its daily business use continuously
-tests the generic product. Similar copied code does not count as adoption.
+```text
+fixed release + checksums
+          │
+          ▼
+one plugin / one Skill / one MCP
+          │
+          ▼
+preflight → immutable plan → exact-hash approval
+          │
+          ▼
+bizhubctl install or update
+          │
+          ▼
+health + business + backup readback
+```
 
-The unreleased modular contract keeps authentication, SQLite transactions,
-audit, migrations, action approval and readback in the kernel. Customer modules
-may add business entities and owners but cannot replace those boundaries or
-self-install in production. See [modular architecture](docs/modular-architecture.md),
-[Agent evolution](docs/agent-evolution.md), the implemented
-[read-only extension boundary](docs/read-only-extension.md), and the machine-readable
-[module manifest schema](schemas/module-manifest.v1.schema.json).
+The kernel owns authentication, SQLite transactions, migrations, audit,
+preview tokens, apply authorization, idempotency, backup/restore, and readback.
+Every formal record type has one writer. An Agent or module may propose an
+action, but it cannot replace or bypass those boundaries.
 
-The `v0.4.0-preview.4` candidate implemented the first deliberately narrow
-adoption step: an immutable derived image may load reviewed customer-private
-**read-only** routers by fixed Python import name. The core rejects mutation
-routes, lifecycle handlers, undeclared paths, missing dependencies, duplicate
-capabilities and extension-owned durable entities. That contract remains part
-of the preview line and does not change the supported `v0.3.0` production path.
+All formal writes follow:
 
-The `v0.5.0-preview.2` Phase 3A candidate adds the next small master-data
-contract: a checksum-verified SQLite migration ledger, active/deprecated status
-for parties and units, party/unit aliases with one canonical owner, and bounded
-authenticated external-identity mapping readback. JSON imports can create these
-aliases after resolving their owner IDs through the mapping readback; the CSV
-surface is unchanged. A separate reconcile contract now accepts changed party,
-unit, party-alias, and unit-alias records only when their external identity
-already exists. It previews exact field diffs, binds them to the current state
-generation and signed token, applies one atomic batch, appends audit, and verifies
-resource plus mapping readback. A deprecated party may also retain one explicit
-active successor; the old canonical name can be an active alias of that exact
-successor, while every missing, self-referential, inactive, or mismatched link
-still fails closed. This contract came from a real private Shadow snapshot and
-preserves retired identity instead of deleting history or guessing by name.
-This candidate has not received customer data or changed the reference
-deployment. Its fixed-tag workflow repeated the complete Ubuntu install,
-successor/reconcile, business-flow, plugin/MCP, backup/restore and retain-data
-uninstall gates. See the
-[v0.5.0-preview.2 release record](docs/verification/v050-preview2-party-successor-release-e2e-2026-08-21.md).
+`preview → explicit approval → apply → exact readback`
 
-The `v0.6.0-preview.1` candidate closes the next real-snapshot gate without a
-connector framework or customer-specific rule. One strict party bundle accepts
-deprecated-party `successor_party_external_id` and party-alias
-`party_external_id` references under the same source. Preview covers the
-complete normalized bundle, dependency graph/topological order, input and
-operation digests, and current state generation. Cycles, missing owners,
-duplicate or cross-resource identities, canonical/alias collisions, inactive
-successors, and content/state drift all fail closed before a token can authorize
-an apply. Apply rechecks the same analysis under one SQLite transaction, creates
-resources, external mappings and audit rows atomically, and returns exact
-relationship/mapping/state/audit readback. Any mid-bundle failure rolls back to
-zero writes; exact replay is a no-op with no extra audit or state generation.
-The exact gates and release identities are recorded in the
-[v0.6.0-preview.1 release record](docs/verification/v060-preview1-dependency-bundle-release-e2e-2026-08-21.md).
+A changed input, dependency, mapping, state generation, or preview token fails
+closed and requires a new preview.
 
-The exact development commit passed an isolated base-image plus derived-image
-E2E on an existing Ubuntu 24.04 VPS. This proves the extension seam, identity
-readback, business flow, backup/restore, restart and MCP path; it is not yet the
-clean-host installer/release gate. See the
-[verification record](docs/verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
+## Preview capabilities
 
-A later development candidate also passed the narrowed private Git-whitelist
-bundle and immutable-image plan lifecycle: install, repeated install no-op,
-backup/restore, update, repeated update no-op, verify, and retain-data uninstall.
-The preview then passed its clean Ubuntu release workflow and fresh-Agent
-bootstrap forward test; the stable promotion gate deliberately remains closed.
-See the
-[derived-image lifecycle record](docs/verification/derived-image-lifecycle-ubuntu-e2e-2026-08-15.md)
-and the
-[preview.1 release record](docs/verification/v040-preview1-release-e2e-2026-08-16.md).
-The preview.2 loopback and resource-limit candidate also passed a synthetic
-[Ubuntu Docker E2E](docs/verification/v040-preview2-loopback-resource-e2e-2026-08-16.md);
-its immutable tag workflow then failed closed before host installation because
-the workflow still expected the preview.1 plugin version. The
-[failure record](docs/verification/v040-preview2-release-gate-failure-2026-08-16.md)
-is retained; preview.3 derives release identity from the tag and manifest.
+The current preview line adds bounded contracts without turning BizHub into a
+general plugin runtime:
+
+- `v0.4`: immutable customer-private derived images may add reviewed,
+  authenticated read-only routers; mutation routes, lifecycle hooks,
+  undeclared paths, durable extension entities, and dependency drift are
+  rejected.
+- `v0.5`: master-data status, aliases, external-identity mapping readback,
+  explicit reconcile, and deprecated-party successor identity are
+  preview-gated and audited.
+- `v0.6`: one atomic party bundle resolves successor and alias-owner
+  references by `source_id + external_id`; preview binds the complete bundle,
+  dependency graph, operations, and state generation. Cycles, unknown owners,
+  identity conflicts, content drift, and mid-bundle failure produce zero
+  partial writes. Exact replay is idempotent.
+
+These are implementation previews tested with synthetic data. Detailed evidence:
+
+- [`v0.6.0-preview.1` dependency-bundle release](docs/verification/v060-preview1-dependency-bundle-release-e2e-2026-08-21.md)
+- [`v0.5.0-preview.2` successor release](docs/verification/v050-preview2-party-successor-release-e2e-2026-08-21.md)
+- [`v0.4.0-preview.1` clean-host release baseline](docs/verification/v040-preview1-release-e2e-2026-08-16.md)
+- [`v0.4` loopback and resource-limit E2E](docs/verification/v040-preview2-loopback-resource-e2e-2026-08-16.md)
+- [retained failed release gate](docs/verification/v040-preview2-release-gate-failure-2026-08-16.md)
+
+See [modular architecture](docs/modular-architecture.md),
+[Agent evolution](docs/agent-evolution.md), and the executable
+[read-only extension boundary](docs/read-only-extension.md) for the longer-term
+build-time module rules. A manifest describes a module; it does not authorize
+installation or business writes.
 
 ## Supported deployment
 
-The first supported target is Ubuntu 24.04 with Docker Engine. Run the CLI on
-the target through the user's approved SSH session:
+The supported target is Ubuntu 24.04 with Docker Engine. Run the `bizhubctl`
+from the selected fixed release on the target through the user's approved SSH
+session. This example uses the stable `v0.3.0` contract:
 
 ```bash
 sudo ./bizhubctl preflight
 
 sudo ./bizhubctl plan \
-  --access loopback \
+  --access domain \
   --bind-address 127.0.0.1 \
+  --hostname bizhub.example.com \
   --profile-id example-company \
   --legal-name "Example Company Ltd." \
   --display-name "Example Company" \
@@ -181,56 +171,28 @@ sudo ./bizhubctl plan \
   --timezone Asia/Shanghai \
   --currency CNY \
   --admin-username admin \
-  --memory-mib 1024 \
-  --swap-mib 512 \
-  --cpu-millicores 1000 \
-  --pids-limit 256 \
   --output /tmp/bizhub-install-plan.json
 
 sudo ./bizhubctl install \
   --plan /tmp/bizhub-install-plan.json \
   --approve EXACT_PLAN_HASH
+
 sudo ./bizhubctl verify
 sudo ./bizhubctl backup --label initial-restore-test
 ```
 
-For a reviewed customer-private read-only image, the Agent first builds both
-images on the target and supplies their local references while planning:
+`domain` and `cloudflare` keep the application on loopback behind HTTPS.
+`private` requires an explicit private IP; plain HTTP also requires the
+conspicuous `--allow-http-private` plan flag.
 
-```bash
-sudo ./bizhubctl plan \
-  ...same company and access arguments... \
-  --candidate-core-image sha256:<PUBLIC_CORE_IMAGE_ID> \
-  --candidate-image sha256:<PRIVATE_DERIVED_IMAGE_ID> \
-  --output /tmp/bizhub-private-plan.json
-```
+The preview line additionally supports `loopback` access for SSH forwarding
+or bounded Shadow runs and plan-bound memory, additional swap, CPU, and PID
+limits. Preview verification checks both Docker metadata and the running
+container's cgroup v2 values; an unlimited, unreadable, malformed, or
+mismatched kernel value fails closed. Always read `bizhubctl --help` from the
+fixed release instead of borrowing flags from `main`.
 
-Both references are resolved immediately to immutable image IDs. Planning and
-apply reject a false/missing full commit, layer ancestry drift, changed core
-command/health/user/port metadata, invalid extension import name, or a private
-runtime identity that differs from its image label. The two local images must
-remain available until install/update finishes; a tag alone is never stored as
-deployment authority.
-
-`loopback` access binds only to `127.0.0.1`, creates no reverse-proxy step, and
-is intended for SSH port-forwarded administration or a bounded shadow run. For
-`domain` and `cloudflare` access, the application also binds only to loopback;
-the approved Agent configures HTTPS using the examples in `deploy/`. For
-`private` access, the plan requires an explicit private IP. Plain HTTP is
-possible only with the conspicuous `--allow-http-private` plan flag and should
-be limited to a trusted private network.
-
-Every plan records memory, additional swap, CPU, and PID limits. Install,
-update, no-op, status, and verify compare both Docker metadata and the running
-container's Linux cgroup v2 `memory.max`, `memory.swap.max`, `cpu.max`, and
-`pids.max` values. An unlimited, unreadable, malformed, or mismatched kernel
-value fails closed even if Docker metadata looks correct. The defaults are
-1024 MiB memory, 512 MiB additional swap, 1000 millicores, and 256 PIDs; a
-smaller host may use explicitly reviewed values within the CLI's bounded
-ranges. Docker's `--memory-swap` receives the combined 1536 MiB ceiling while
-the kernel must report the additional 512 MiB swap ceiling.
-
-The CLI uses these fixed host paths:
+Fixed host paths:
 
 - configuration: `/etc/bizhub`;
 - database and install state: `/var/lib/bizhub`;
@@ -238,36 +200,62 @@ The CLI uses these fixed host paths:
 
 Repeated install/update is a no-op when the approved state is already active.
 Updates create a verified online backup first. `uninstall` removes only the
-container and intentionally retains configuration, data, state, and backups.
-There is no purge command.
+container and retains configuration, data, state, and backups. There is no
+purge command.
 
-See [operations](docs/operations.md) and [data import](docs/data-import.md) for
-the bounded procedures.
+See [operations](docs/operations.md) for update, rollback, restore, private
+derived-image, and uninstall procedures.
 
-## Local development verification
+## Data import
 
-These commands execute reviewed repository code and are for maintainers:
+Supported CSV resources are `party`, `product`, `unit`, `location`,
+`opening_inventory`, `sales_order`, and `purchase_order`. JSON also
+supports the preview-line master-data contracts documented in
+[data import](docs/data-import.md).
+
+Every imported record uses `source_id + external_id` as its permanent
+idempotency identity. Reusing that identity with changed content is rejected
+unless the resource has an explicit reconcile contract.
+
+## Documentation
+
+| Topic | Document |
+| --- | --- |
+| Target operations, backup, restore, update, rollback, uninstall | [Operations](docs/operations.md) |
+| Import resources, identity, bundle and reconcile contracts | [Data import](docs/data-import.md) |
+| Kernel, modules, capabilities and extraction direction | [Modular architecture](docs/modular-architecture.md) |
+| How a customer's Agent chooses config, mapping, Skill, or module | [Agent evolution](docs/agent-evolution.md) |
+| Executable private read-only extension boundary | [Read-only extension](docs/read-only-extension.md) |
+| Documentation-only customer Skill guidance | [Customer Skill extension](docs/customer-skill-extension.md) |
+| Vulnerability reporting and supported versions | [Security policy](SECURITY.md) |
+| Immutable release evidence | [Verification records](docs/verification/) |
+
+## Maintainer verification
+
+These commands execute reviewed repository code:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r app/backend/requirements-dev.lock
+uv pip install --python .venv/bin/python \
+  -r app/backend/requirements-dev.lock
+
+python scripts/update_checksums.py
+python scripts/verify_checksums.py
 PYTHONPATH=app/backend .venv/bin/pytest -q app/backend/tests tests
 
-cd app/frontend
-npm ci
-npm run build
-npm audit --audit-level=high
+npm --prefix app/frontend ci
+npm --prefix app/frontend run build
+npm --prefix app/frontend audit --audit-level=high
 ```
 
-Docker verification must use a clean environment without the private product
-repository on `PYTHONPATH`. The release evidence must distinguish implemented,
+Docker verification must use a clean environment without a customer-private
+repository on `PYTHONPATH`. Release evidence must distinguish implemented,
 locally tested, and clean-Ubuntu-tested facts.
 
 ## Licensing
 
 The bootstrap, Agent integration, documentation, and plugin paths listed in
 [LICENSE](LICENSE) use MIT. The application core, deployment templates, and
-`bizhubctl` use the source-available BizHub Core Private Deployment License,
-which permits internal deployment and modification but not redistribution,
-resale, or hosted/managed service. The repository owner confirmed this license
-text for the `v0.3.0` stable release on 2026-08-15.
+`bizhubctl` use the source-available BizHub Core Private Deployment License.
+It permits internal deployment and modification but not redistribution, resale,
+or hosted/managed service.
