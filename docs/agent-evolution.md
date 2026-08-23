@@ -20,11 +20,12 @@ Do not create a Skill for a single form, a module for a field mapping, or a new
 MCP server for a customer workflow. Reuse the one BizHub MCP and its stable
 server-side permissions.
 
-The current executable extension seam supports only a subset of level 3:
-authenticated, read-only projections in a derived image. If a request needs a
-new writer, migration, scheduled job or UI bundle, the Agent produces a design
-and tests in the private repository but must not activate it through the current
-loader.
+The current release proves build-time composition for the reviewed private reference
+Profile: its derived image inherits the exact public image and common artifact,
+then adds a non-overlapping private Runtime layer. This does not authorize a
+customer Agent to generate and activate a new writer, migration, scheduled job,
+or UI bundle. Those changes still require a private source review, module tests,
+an immutable image, and a separately approved deployment plan.
 
 ## Discovery questions
 
@@ -32,8 +33,8 @@ Before generating anything, the Agent asks only the questions needed for the
 current level:
 
 1. What user outcome repeats, and who owns the resulting business fact?
-2. Is the target already represented by an existing entity, import resource or
-   action in `GET /api/system/modules`?
+2. Is the target already represented by an existing entity or action in
+   authenticated `GET /api/system-map`?
 3. What is the source of truth, its stable external id, and its evidence?
 4. Is this configuration, transformation, or genuinely new business behavior?
 5. What must preview show before approval?
@@ -65,32 +66,26 @@ design proposal and does not generate executable production code.
 
 A mapping or collector must:
 
-- emit `source_id + external_id` for every external record;
-- use the dependency-aware party bundle when successors or party-alias owners
-  are expressed by external identity; for contracts outside that bundle,
-  resolve imported parent identities through bounded external-mapping readback
-  before emitting child records; never guess a core integer ID from a name or
-  source-system ID;
+- emit the stable resource and idempotency identities required by the selected
+  typed common Owner action;
+- resolve party, product, unit, and location references through the approved
+  master-data catalog; never guess an internal identity from a name;
 - retain a cursor or replay boundary outside formal business tables;
 - preserve raw evidence by reference and digest when required;
-- transform into an existing JSON/import/action contract;
-- call preview, present errors and counts, then apply with the returned token;
+- transform into an existing `master_data`, `inventory`, `procurement`, or
+  `sales` action contract;
+- call preview, present the complete planned action, then apply that exact
+  preview;
 - read back the owning module and audit result;
 - be safe to replay without duplicate facts;
 - never write SQLite, invent a missing relation, or silently coerce an unknown
   unit, party, product or date.
 
-The ordinary import contract has create/replay semantics only. For a changed
-party, unit, party alias, or unit alias, the Agent may call the dedicated
-reconcile preview, show its exact field diffs, and apply only with the returned
-token and explicit approval. Other resource types still have no reconcile
-contract: the Agent must stop and must not create a replacement external ID to
-simulate an update.
-
-The party bundle is also create/replay only. Its one preview binds all parties,
-aliases, external-reference edges, operation digests, and the current state
-generation. The Agent cannot split an approved bundle into sequential writes or
-reuse its token after any input, dependency, mapping, or state change.
+The separate batch-import, reconcile, and dependency-aware party-bundle
+endpoints remain historical `v0.5`/`v0.6` preview contracts and are not active
+in `v0.7`. If a customer needs them, move the generic contract into the
+canonical common source and publish a new artifact; do not add the behavior to
+the retained legacy public directory.
 
 ## Customer Skill contract
 
@@ -127,10 +122,10 @@ A generated private module is incomplete unless it has:
 Runtime hot-install, hot-unload, generated SQL, and production code mutation are
 out of scope. A module update is an ordinary reviewed software release.
 
-For the currently implemented read-only subset, follow the smaller executable
-contract in [read-only-extension.md](read-only-extension.md). Do not claim that
-the larger checklist is runtime-supported merely because the manifest schema
-can describe future module forms.
+For the historical read-only extension seam, see
+[read-only-extension.md](read-only-extension.md). Do not claim that the larger
+module checklist is automatically available to arbitrary customers merely
+because the reviewed private reference Profile can be assembled at build time.
 
 ## Generic promotion test
 

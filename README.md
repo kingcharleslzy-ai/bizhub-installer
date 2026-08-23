@@ -12,10 +12,10 @@ it is not a multi-tenant ERP platform or a self-modifying Agent runtime.
 
 Never install from `main` or another moving branch.
 
-| Channel | Fixed release | Commit | Use |
+| Channel | Fixed release | Identity | Use |
 | --- | --- | --- | --- |
 | Stable | [`v0.3.0`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0) | `1782417f4b05bb8abf657066f217453410128b92` | Supported single-company deployment |
-| Preview | [`v0.6.0-preview.1`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.6.0-preview.1) | `ad2455c76cecf0185c2de60b39e00752c57e22d3` | Synthetic evaluation of the latest extension and master-data contracts |
+| Preview | [`v0.7.0-preview.1`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1) | Resolve and verify the fixed tag | Same `bizhub-common` artifact used by Generic and the private reference derived-image proof |
 
 The stable release passed a clean Ubuntu 24.04 installation, business-flow
 test, backup/restore rehearsal, sensitive-information scan, and fresh-Agent
@@ -73,7 +73,7 @@ them grants permission to change a machine.
 - immutable inventory movements, non-negative stock, and reversal corrections;
 - CSV/JSON staging, validation, preview, idempotent apply, and readback;
 - audit history, online SQLite backup, verified restore, and system health;
-- one FastAPI plus built Vue application container;
+- one FastAPI container with a minimal static shell;
 - one `bizhub-mcp` and one `bizhub-bootstrap` Skill.
 
 Not included:
@@ -121,8 +121,10 @@ closed and requires a new preview.
 
 ## Preview capabilities
 
-The current preview line adds bounded contracts without turning BizHub into a
-general plugin runtime:
+The preview history adds bounded contracts without turning BizHub into a
+general plugin runtime. `v0.4`–`v0.6` remain immutable historical previews;
+`v0.7` starts the same-source common-artifact line and does not carry their
+separate legacy `/api/imports/*` implementation:
 
 - `v0.4`: immutable customer-private derived images may add reviewed,
   authenticated read-only routers; mutation routes, lifecycle hooks,
@@ -136,9 +138,16 @@ general plugin runtime:
   dependency graph, operations, and state generation. Cycles, unknown owners,
   identity conflicts, content drift, and mid-bundle failure produce zero
   partial writes. Exact replay is idempotent.
+- `v0.7`: the public image consumes one deterministic `bizhub-common` artifact
+  exported from the canonical dual-Profile source. The private reference image
+  uses the exact same artifact and public image layers, then adds a non-overlapping
+  private layer. The installer binds the artifact digest into the plan and adds
+  verified rollback alongside install, update, backup/restore, and retained-data
+  uninstall.
 
 These are implementation previews tested with synthetic data. Detailed evidence:
 
+- [`v0.7.0-preview.1` common-artifact release](docs/verification/v070-preview1-common-artifact-release-e2e-2026-08-23.md)
 - [`v0.6.0-preview.1` dependency-bundle release](docs/verification/v060-preview1-dependency-bundle-release-e2e-2026-08-21.md)
 - [`v0.5.0-preview.2` successor release](docs/verification/v050-preview2-party-successor-release-e2e-2026-08-21.md)
 - [`v0.4.0-preview.1` clean-host release baseline](docs/verification/v040-preview1-release-e2e-2026-08-16.md)
@@ -199,33 +208,36 @@ Fixed host paths:
 - backups: `/var/backups/bizhub`.
 
 Repeated install/update is a no-op when the approved state is already active.
-Updates create a verified online backup first. `uninstall` removes only the
+Updates create a verified online backup and rollback point first. `rollback`
+requires the exact current plan hash and restores the verified previous image,
+plan, resource limits, and database backup. `uninstall` removes only the
 container and retains configuration, data, state, and backups. There is no
 purge command.
 
 See [operations](docs/operations.md) for update, rollback, restore, private
 derived-image, and uninstall procedures.
 
-## Data import
+## Data and adapters
 
-Supported CSV resources are `party`, `product`, `unit`, `location`,
-`opening_inventory`, `sales_order`, and `purchase_order`. JSON also
-supports the preview-line master-data contracts documented in
-[data import](docs/data-import.md).
-
-Every imported record uses `source_id + external_id` as its permanent
-idempotency identity. Reusing that identity with changed content is rejected
-unless the resource has an explicit reconcile contract.
+The current common-artifact preview accepts typed master-data, inventory,
+procurement, and sales Owner actions. Customer CSV, JSON, ERP, mail, and browser
+adapters stay outside the server and must use preview/apply/readback; they do not
+receive SQLite access. The older batch-import and dependency-bundle endpoints
+remain available only in their immutable `v0.5`/`v0.6` tags. See
+[data and action contracts](docs/data-import.md).
 
 ## Documentation
 
 | Topic | Document |
 | --- | --- |
 | Target operations, backup, restore, update, rollback, uninstall | [Operations](docs/operations.md) |
-| Import resources, identity, bundle and reconcile contracts | [Data import](docs/data-import.md) |
+| Current typed Owner actions and historical import boundary | [Data and action contracts](docs/data-import.md) |
 | Kernel, modules, capabilities and extraction direction | [Modular architecture](docs/modular-architecture.md) |
 | How a customer's Agent chooses config, mapping, Skill, or module | [Agent evolution](docs/agent-evolution.md) |
 | Executable private read-only extension boundary | [Read-only extension](docs/read-only-extension.md) |
+| Common artifact identity and two-Profile image boundary | [Common artifact delivery](docs/common-artifact-delivery.md) |
+| Retained legacy public core retirement conditions | [Legacy core retirement](docs/legacy-core-retirement.md) |
+| CP-5 public delivery review object and gates | [CP-5 public delivery report](docs/cp-5-public-delivery-report.md) |
 | Documentation-only customer Skill guidance | [Customer Skill extension](docs/customer-skill-extension.md) |
 | Vulnerability reporting and supported versions | [Security policy](SECURITY.md) |
 | Immutable release evidence | [Verification records](docs/verification/) |

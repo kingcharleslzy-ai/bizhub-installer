@@ -28,11 +28,11 @@ Primary references:
 ## Runtime shape
 
 ```text
-public BizHub kernel release (fixed commit and image digest)
-+ built-in business modules from the same release
-+ customer-private module package (fixed commit and package digest)
-+ one reviewed deployment profile
-= one customer image and one effective system map
+canonical source + explicit allowlist
+        -> one bizhub-common artifact @ sha256:C
+        -> public Generic image uses C
+        -> customer-private derived image uses the same public layers and C
+           plus a reviewed, non-overlapping private layer
 ```
 
 The customer image is assembled before deployment. Production does not install,
@@ -165,39 +165,24 @@ not count.
 
 ## Current implementation status
 
-The built-in system map, manifest schema, core source identity and first
-external loading boundary are implemented on the development branch. The
-loader accepts only reviewed customer-private read-only routers already present
-in an immutable derived image. It rejects writes, lifecycle hooks, undeclared
-routes, arbitrary file paths and dependency/capability drift; every route is
-protected by core administrator authentication. See
-[read-only extension boundary](read-only-extension.md).
+The canonical source now builds a private reference Profile and `generic-kernel-smoke`
+through one explicit Registry. Generic owns customer-neutral master data,
+inventory, procurement, and sales contracts; the reference Profile adds private modules and
+keeps its existing private writers until separately approved adoption.
 
-This is an adoption seam, not a general plugin runtime. Customer business
-writers, migrations, pages, jobs, hot installation and production migration are
-not yet enabled. Until later gates pass, the stable release remains the
-self-contained single-company application described in the root README.
+CP-5 exports the exact Generic implementation as one deterministic
+`bizhub-common` artifact. The public image verifies and extracts that artifact;
+the private reference validation image inherits every public layer and appends a private
+layer with zero common-path overlap. Both image identities read back the same
+`core_artifact_digest`. See [common artifact delivery](common-artifact-delivery.md).
 
-An unreleased Phase 3A synthetic candidate now implements the first master-data
-parity slice without widening that runtime seam. The public database can upgrade
-from schema v1 through a checksum migration ledger; parties and units preserve
-active/deprecated status; party and unit aliases have explicit external identity
-and one canonical owner; and authenticated API/MCP readback exposes bounded
-external mappings. The private reference repository has a separately tested,
-query-only snapshot exporter whose output validates against these public JSON
-contracts. The same candidate now implements explicit changed-record reconcile
-for parties, units, and their aliases with field-diff preview, signed generation
-binding, atomic apply, audit, idempotency, and entity/mapping readback. Two
-successive private synthetic snapshots pass the public create then reconcile
-contracts. The next bounded contract accepts parties and party aliases as one
-dependency-aware create/replay bundle. Successor and owner references resolve
-only through the same source's external identities; preview binds the complete
-input, dependency graph, expected operations, and state generation; apply is
-one transaction with exact resource/mapping/relationship/audit readback and
-zero writes on failure. This does not create a connector SDK, import customer
-data, deploy to Shadow, or switch a reader or writer.
+The public delivery adapter owns authentication, company configuration,
+installation identity, and delegation into the common Owners. It does not copy
+or recreate the business writers. The former public business directory is
+retained but inactive under the explicit
+[retirement plan](legacy-core-retirement.md).
 
-The first derived-image runtime proof is recorded in
-[read-only extension Ubuntu E2E](verification/read-only-extension-ubuntu-e2e-2026-08-15.md).
-It ran on an existing shared VPS, so it closes the runtime seam but not the
-independent clean-host installer or stable-release gates.
+This remains build-time composition, not a general plugin runtime. Production
+does not hot-install modules or Agent-generated code. The common-artifact preview
+does not deploy or switch the private reference production system; that requires a
+separate staging and production-adoption checkpoint.

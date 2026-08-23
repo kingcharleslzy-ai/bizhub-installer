@@ -26,6 +26,23 @@ def test_vendored_common_artifact_matches_manifest_and_has_safe_paths() -> None:
     assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
 
 
+def test_current_common_and_delivery_runtime_contain_no_private_profile_identity() -> None:
+    findings: list[str] = []
+    with tarfile.open(ROOT / "app/vendor/bizhub-common.tar.gz", "r:gz") as archive:
+        for member in archive.getmembers():
+            if not member.isfile():
+                continue
+            extracted = archive.extractfile(member)
+            assert extracted is not None
+            text = extracted.read().decode("utf-8")
+            if "daz" + "heng" in text.casefold():
+                findings.append(member.name)
+    for path in sorted((ROOT / "app/runtime").rglob("*.py")):
+        if "daz" + "heng" in path.read_text(encoding="utf-8").casefold():
+            findings.append(str(path.relative_to(ROOT)))
+    assert findings == []
+
+
 def test_public_delivery_runs_the_vendored_common_owner(tmp_path: Path) -> None:
     common = tmp_path / "common"
     common.mkdir()

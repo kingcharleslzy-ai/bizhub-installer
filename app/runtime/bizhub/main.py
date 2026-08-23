@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from importlib import import_module
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -208,17 +209,17 @@ def selected_runtime_app() -> FastAPI:
     profile_id = os.getenv("BIZHUB_RUNTIME_PROFILE_ID", "generic-kernel-smoke").strip()
     if profile_id == "generic-kernel-smoke":
         return create_app()
-    if profile_id == "dazheng":
-        from backend.main import app as dazheng_app
-
-        dazheng_app.add_api_route(
-            "/api/core-identity",
-            runtime_identity,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-        return dazheng_app
-    raise RuntimeError("runtime_profile_id_invalid")
+    runtime_identity()
+    private_app = getattr(import_module("backend.private_runtime"), "app", None)
+    if not isinstance(private_app, FastAPI):
+        raise RuntimeError("private_runtime_app_invalid")
+    private_app.add_api_route(
+        "/api/core-identity",
+        runtime_identity,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    return private_app
 
 
 app = selected_runtime_app()
