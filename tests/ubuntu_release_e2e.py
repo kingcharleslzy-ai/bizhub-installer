@@ -497,23 +497,28 @@ def main() -> None:
     host = urlparse(args.instance_url).hostname
     assert host
     original_plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    company = original_plan["company_profile"]
     update_plan = Path("/tmp/bizhub-update-plan.json")
-    run([
+    update_command = [
         str(args.repo / "bizhubctl"), "plan",
-        "--access", "private",
-        "--bind-address", host,
-        "--allow-http-private",
-        "--profile-id", "github-e2e",
-        "--legal-name", "GitHub E2E Synthetic Company",
-        "--display-name", "BizHub E2E",
-        "--brand-mark", "E2E",
-        "--timezone", "UTC",
-        "--currency", "USD",
-        "--admin-username", "admin",
+        "--access", original_plan["instance"]["access"],
+        "--bind-address", original_plan["instance"]["bind_address"],
+        "--profile-id", company["profile_id"],
+        "--legal-name", company["legal_name"],
+        "--display-name", company["display_name"],
+        "--brand-mark", company["brand_mark"],
+        "--timezone", company["timezone"],
+        "--currency", company["currency"],
+        "--admin-username", original_plan["administrator"]["username"],
         "--port", str(original_plan["instance"]["port"]),
         "--memory-mib", "768",
         "--output", str(update_plan),
-    ], cwd=args.repo)
+    ]
+    if original_plan["instance"]["access"] == "private" and not original_plan["instance"]["cookie_secure"]:
+        update_command.append("--allow-http-private")
+    if original_plan["instance"]["hostname"]:
+        update_command.extend(["--hostname", original_plan["instance"]["hostname"]])
+    run(update_command, cwd=args.repo)
     update_hash = json.loads(update_plan.read_text(encoding="utf-8"))["plan_hash"]
     updated = json.loads(run([
         str(args.repo / "bizhubctl"), "update",
