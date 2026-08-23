@@ -4,7 +4,7 @@ status: implementation_preview
 repository:
   id: github://kingcharleslzy-ai/bizhub-installer
   url: https://github.com/kingcharleslzy-ai/bizhub-installer
-  release_tag: v0.6.0-preview.1
+  release_tag: v0.7.0-preview.1
   checksums_path: install/CHECKSUMS.sha256
 
 delivery:

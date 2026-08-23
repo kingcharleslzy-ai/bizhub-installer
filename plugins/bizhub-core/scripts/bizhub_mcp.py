@@ -13,19 +13,14 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-SERVER_INFO = {"name": "bizhub-mcp", "version": "0.6.0-preview.1"}
+SERVER_INFO = {"name": "bizhub-mcp", "version": "0.7.0-preview.1"}
 REPOSITORY_URL = "https://github.com/kingcharleslzy-ai/bizhub-installer"
-RELEASE_TAG = "v0.6.0-preview.1"
+RELEASE_TAG = "v0.7.0-preview.1"
 PROTOCOL_VERSION = "2024-11-05"
-ACTION_NAMES = [
-    "create_party", "create_party_alias", "create_product", "create_unit", "create_unit_alias", "create_location",
-    "create_sales_order", "create_purchase_order", "receive_purchase", "ship_sale",
-    "post_inventory_adjustment", "reverse_movement", "cancel_order", "reconcile_master_data",
-    "import_master_data_bundle",
-]
+ACTION_NAMES = ["master_data", "inventory", "procurement", "sales"]
 STATUS = {
     "maturity": "implementation_preview",
     "repository": REPOSITORY_URL,
@@ -74,9 +69,9 @@ TOOLS = [
     {"name": "bizhub_bootstrap_questions", "description": "Return one short stage of the BizHub setup interview.", "inputSchema": {"type": "object", "properties": {"stage": {"type": "string", "enum": list(QUESTION_STAGES)}}, "required": ["stage"], "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_target_preflight", "description": "Return non-sensitive facts about this host before running bizhubctl preflight on the deployment target.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
     {"name": "bizhub_instance_health", "description": "Read health from the one BizHub instance configured in the MCP environment.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_resource_query", "description": "Read one bounded resource projection, external identity mapping, or the effective module map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["catalog", "sales", "purchases", "inventory", "audit", "system_map", "external_mappings"]}, "source_id": {"type": "string", "minLength": 1, "maxLength": 80}, "resource_type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}, "after_id": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_action_preview", "description": "Validate and preview one supported business or master-data reconcile action without writing formal state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
-    {"name": "bizhub_action_apply", "description": "Apply exactly the previously previewed business or master-data reconcile action, then return server readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}, "preview_token": {"type": "string", "minLength": 70}, "review_note": {"type": "string", "minLength": 3, "maxLength": 1000}}, "required": ["action", "data", "preview_token", "review_note"], "additionalProperties": False}, "annotations": annotations(False)},
+    {"name": "bizhub_resource_query", "description": "Read one bounded common-core projection or identity map from the configured BizHub instance.", "inputSchema": {"type": "object", "properties": {"resource": {"type": "string", "enum": ["locations", "sales", "procurement", "inventory", "system_map", "profile"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}, "required": ["resource"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_action_preview", "description": "Preview one typed common-core Owner action without writing state.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "data": {"type": "object"}}, "required": ["action", "data"], "additionalProperties": False}, "annotations": annotations(True)},
+    {"name": "bizhub_action_apply", "description": "Apply exactly one typed common-core preview and return Owner readback.", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ACTION_NAMES}, "preview": {"type": "object"}}, "required": ["action", "preview"], "additionalProperties": False}, "annotations": annotations(False)},
 ]
 
 
@@ -199,44 +194,36 @@ def handle_tool_call(params: Any) -> dict[str, Any]:
             error = validate_arguments(arguments, set())
             return error or tool_result(instance_client().request("/api/health", authenticate=False))
         if name == "bizhub_resource_query":
-            error = validate_arguments(arguments, {"resource", "source_id", "resource_type", "after_id", "limit"}, {"resource"})
+            error = validate_arguments(arguments, {"resource", "limit"}, {"resource"})
             if error:
                 return error
-            endpoints = {"catalog": "/api/resources/catalog", "sales": "/api/orders/sale", "purchases": "/api/orders/purchase", "inventory": "/api/inventory", "audit": "/api/audit?limit=200", "system_map": "/api/system/modules"}
-            if arguments["resource"] == "external_mappings":
-                if not arguments.get("source_id"):
-                    return error_result("missing_arguments", fields=["source_id"])
-                query = {key: arguments[key] for key in ("source_id", "resource_type", "after_id", "limit") if key in arguments}
-                return tool_result(instance_client().request(f"/api/external-records?{urlencode(query)}"))
+            limit = int(arguments.get("limit", 100))
+            endpoints = {
+                "locations": "/api/master-data/locations",
+                "sales": f"/api/sales/orders?limit={limit}",
+                "procurement": f"/api/procurement/orders?limit={limit}",
+                "inventory": f"/api/inventory/movements?limit={limit}",
+                "system_map": "/api/system-map",
+                "profile": "/api/profile",
+            }
             endpoint = endpoints.get(arguments["resource"])
             return tool_result(instance_client().request(endpoint)) if endpoint else error_result("unknown_resource")
         if name in {"bizhub_action_preview", "bizhub_action_apply"}:
-            required = {"action", "data"} if name.endswith("preview") else {"action", "data", "preview_token", "review_note"}
+            required = {"action", "data"} if name.endswith("preview") else {"action", "preview"}
             error = validate_arguments(arguments, required, required)
             if error:
                 return error
-            if arguments["action"] not in ACTION_NAMES or not isinstance(arguments["data"], dict):
+            body_key = "data" if name.endswith("preview") else "preview"
+            if arguments["action"] not in ACTION_NAMES or not isinstance(arguments[body_key], dict):
                 return error_result("invalid_action_input")
-            if arguments["action"] == "reconcile_master_data":
-                path = "/api/imports/reconcile/preview" if name.endswith("preview") else "/api/imports/reconcile/apply"
-                payload = dict(arguments["data"])
-                if name.endswith("apply"):
-                    payload["preview_token"] = arguments["preview_token"]
-                    payload["review_note"] = arguments["review_note"]
-                return tool_result(instance_client().request(path, payload))
-            if arguments["action"] == "import_master_data_bundle":
-                path = (
-                    "/api/imports/master-data-bundle/preview"
-                    if name.endswith("preview")
-                    else "/api/imports/master-data-bundle/apply"
-                )
-                payload = dict(arguments["data"])
-                if name.endswith("apply"):
-                    payload["preview_token"] = arguments["preview_token"]
-                    payload["review_note"] = arguments["review_note"]
-                return tool_result(instance_client().request(path, payload))
-            path = "/api/actions/preview" if name.endswith("preview") else "/api/actions/apply"
-            return tool_result(instance_client().request(path, arguments))
+            bases = {
+                "master_data": "/api/master-data/catalog",
+                "inventory": "/api/inventory",
+                "procurement": "/api/procurement",
+                "sales": "/api/sales",
+            }
+            suffix = "preview" if name.endswith("preview") else "apply"
+            return tool_result(instance_client().request(f"{bases[arguments['action']]}/{suffix}", arguments[body_key]))
         return error_result("unknown_tool", requested_tool=name, allowed_tools=[tool["name"] for tool in TOOLS])
     except (KeyError, TypeError, ValueError) as exc:
         return error_result("operation_failed", detail=str(exc))

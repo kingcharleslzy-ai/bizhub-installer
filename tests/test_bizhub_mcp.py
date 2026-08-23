@@ -62,20 +62,16 @@ class FakeBizHub(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            return self._json(200, {"status": "ok", "version": "0.6.0-preview.1"})
+            return self._json(200, {"status": "ok", "version": "0.7.0-preview.1", "core_artifact_digest": "sha256:" + "a" * 64})
         if self.headers.get("Cookie") != "bizhub_session=test":
             return self._json(401, {"detail": "authentication required"})
         endpoints = {
-            "/api/resources/catalog": {"products": []},
-            "/api/orders/sale": [],
-            "/api/orders/purchase": [],
-            "/api/inventory": {"balances": []},
-            "/api/audit?limit=200": [],
-            "/api/system/modules": {"schema_version": "bizhub.system-map.v1", "modules": []},
-            "/api/external-records?source_id=synthetic-master-v1&resource_type=party&limit=10": {
-                "schema_version": "bizhub.external-mapping-readback.v1",
-                "items": [{"external_id": "party:1", "entity_id": 7}],
-            },
+            "/api/master-data/locations": {"items": []},
+            "/api/sales/orders?limit=100": {"items": []},
+            "/api/procurement/orders?limit=100": {"items": []},
+            "/api/inventory/movements?limit=10": {"items": [{"movement_id": "movement-1"}]},
+            "/api/system-map": {"profile_id": "generic-kernel-smoke", "core_artifact_digest": "sha256:" + "a" * 64},
+            "/api/profile": {"runtime_profile_id": "generic-kernel-smoke"},
         }
         return self._json(200, endpoints.get(self.path, {}))
 
@@ -86,18 +82,10 @@ class FakeBizHub(BaseHTTPRequestHandler):
             return self._json(200, {"username": "admin"}, cookie=True)
         if self.headers.get("X-BizHub-Request") != "1" or self.headers.get("Cookie") != "bizhub_session=test":
             return self._json(403, {"detail": "rejected"})
-        if self.path == "/api/actions/preview":
-            return self._json(200, {"status": "ready", "preview_token": "x" * 80})
-        if self.path == "/api/actions/apply":
-            return self._json(200, {"status": "applied", "readback": {"id": 1}})
-        if self.path == "/api/imports/reconcile/preview":
-            return self._json(200, {"status": "ready", "preview_token": "r" * 80, "changes": [{"entity_id": 7}]})
-        if self.path == "/api/imports/reconcile/apply":
-            return self._json(200, {"status": "applied", "entities": [{"entity_id": 7}]})
-        if self.path == "/api/imports/master-data-bundle/preview":
-            return self._json(200, {"status": "ready", "preview_token": "b" * 80, "dependency_graph": {"edges": []}})
-        if self.path == "/api/imports/master-data-bundle/apply":
-            return self._json(200, {"status": "applied", "readback": [{"entity_id": 8}]})
+        if self.path == "/api/master-data/catalog/preview":
+            return self._json(200, {"schema_version": "bizhub.master-data-catalog-preview.v1", "state_generation": "s", "drafts": body["drafts"], "preview_digest": "d" * 64})
+        if self.path == "/api/master-data/catalog/apply":
+            return self._json(200, {"disposition": "applied", "owner_ref": "master_data:catalog-owner"})
         return self._json(404, {"detail": "missing"})
 
 
@@ -143,31 +131,24 @@ class BizHubMcpTests(unittest.TestCase):
             }
             with McpSession(env) as session:
                 health = session.tool(1, "bizhub_instance_health")["structuredContent"]
-                catalog = session.tool(2, "bizhub_resource_query", {"resource": "catalog"})["structuredContent"]
+                locations = session.tool(2, "bizhub_resource_query", {"resource": "locations"})["structuredContent"]
                 system_map = session.tool(3, "bizhub_resource_query", {"resource": "system_map"})["structuredContent"]
-                mappings = session.tool(4, "bizhub_resource_query", {"resource": "external_mappings", "source_id": "synthetic-master-v1", "resource_type": "party", "limit": 10})["structuredContent"]
-                preview = session.tool(5, "bizhub_action_preview", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}})["structuredContent"]
-                applied = session.tool(6, "bizhub_action_apply", {"action": "create_unit", "data": {"code": "pcs", "display_name": "Pieces", "dimension": "count"}, "preview_token": preview["preview_token"], "review_note": "confirmed in test"})["structuredContent"]
-                reconcile_data = {"resource": "party", "source_id": "synthetic-master-v1", "records": [{"external_id": "party:1", "canonical_name": "Renamed", "roles": ["customer"], "status": "active"}]}
-                reconcile_preview = session.tool(7, "bizhub_action_preview", {"action": "reconcile_master_data", "data": reconcile_data})["structuredContent"]
-                reconciled = session.tool(8, "bizhub_action_apply", {"action": "reconcile_master_data", "data": reconcile_data, "preview_token": reconcile_preview["preview_token"], "review_note": "confirmed reconcile"})["structuredContent"]
-                bundle_data = {"source_id": "synthetic-master-v1", "resources": {"parties": [], "party_aliases": [{"external_id": "party_alias:1", "party_external_id": "party:1", "alias": "Alias", "status": "active"}]}}
-                bundle_preview = session.tool(9, "bizhub_action_preview", {"action": "import_master_data_bundle", "data": bundle_data})["structuredContent"]
-                bundle_applied = session.tool(10, "bizhub_action_apply", {"action": "import_master_data_bundle", "data": bundle_data, "preview_token": bundle_preview["preview_token"], "review_note": "confirmed bundle"})["structuredContent"]
+                movements = session.tool(4, "bizhub_resource_query", {"resource": "inventory", "limit": 10})["structuredContent"]
+                data = {"drafts": [{"resource_kind": "unit", "resource_id": "pcs", "canonical_name": "Pieces"}]}
+                preview = session.tool(5, "bizhub_action_preview", {"action": "master_data", "data": data})["structuredContent"]
+                applied = session.tool(6, "bizhub_action_apply", {"action": "master_data", "preview": preview})["structuredContent"]
         server.shutdown(); server.server_close(); thread.join(timeout=2)
         self.assertEqual(health["status"], "ok")
-        self.assertEqual(catalog, {"products": []})
-        self.assertEqual(system_map["schema_version"], "bizhub.system-map.v1")
-        self.assertEqual(mappings["items"][0]["external_id"], "party:1")
-        self.assertEqual(applied["status"], "applied")
-        self.assertEqual(reconciled["entities"][0]["entity_id"], 7)
-        self.assertEqual(bundle_applied["readback"][0]["entity_id"], 8)
-        self.assertEqual([call[0] for call in FakeBizHub.calls], ["/api/auth/login", "/api/actions/preview", "/api/actions/apply", "/api/imports/reconcile/preview", "/api/imports/reconcile/apply", "/api/imports/master-data-bundle/preview", "/api/imports/master-data-bundle/apply"])
-        self.assertEqual(FakeBizHub.calls[-4][1], reconcile_data)
-        self.assertEqual(FakeBizHub.calls[-3][1]["preview_token"], "r" * 80)
-        self.assertEqual(FakeBizHub.calls[-2][1], bundle_data)
-        self.assertEqual(FakeBizHub.calls[-1][1]["preview_token"], "b" * 80)
-        self.assertNotIn("correct horse", json.dumps([health, catalog, preview, applied, reconcile_preview, reconciled, bundle_preview, bundle_applied]))
+        self.assertEqual(locations, {"items": []})
+        self.assertEqual(system_map["profile_id"], "generic-kernel-smoke")
+        self.assertEqual(movements["items"][0]["movement_id"], "movement-1")
+        self.assertEqual(applied["owner_ref"], "master_data:catalog-owner")
+        self.assertEqual([call[0] for call in FakeBizHub.calls], [
+            "/api/auth/login", "/api/master-data/catalog/preview", "/api/master-data/catalog/apply",
+        ])
+        self.assertEqual(FakeBizHub.calls[-2][1], data)
+        self.assertEqual(FakeBizHub.calls[-1][1], preview)
+        self.assertNotIn("correct horse", json.dumps([health, locations, system_map, movements, preview, applied]))
 
     def test_missing_or_public_http_configuration_fails_closed(self):
         cases = [
@@ -176,7 +157,7 @@ class BizHubMcpTests(unittest.TestCase):
         ]
         for env in cases:
             with self.subTest(env=env), patch.dict(os.environ, env, clear=True), McpSession(env) as session:
-                result = session.tool(1, "bizhub_resource_query", {"resource": "catalog"})
+                result = session.tool(1, "bizhub_resource_query", {"resource": "locations"})
                 self.assertTrue(result["isError"])
 
 

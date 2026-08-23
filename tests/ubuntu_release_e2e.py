@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
@@ -77,9 +78,28 @@ class Api:
 
 
 def inventory_quantity(api: Api) -> str:
-    balances = api.call("/api/inventory")["balances"]
-    assert len(balances) == 1
-    return balances[0]["quantity"]
+    return api.call(
+        "/api/inventory/balance?product_id=product-1&unit_id=kg&location_id=warehouse-1"
+    )["quantity"]
+
+
+def apply_inventory_inbound(api: Api, key: str, quantity: str) -> dict:
+    command = {
+        "action": "inbound",
+        "idempotency_key": key,
+        "product_id": "product-1",
+        "unit_id": "kg",
+        "quantity": quantity,
+        "from_location_id": None,
+        "to_location_id": "warehouse-1",
+        "target_movement_id": None,
+        "actual_quantity": None,
+        "occurred_at": "2026-08-23T13:00:00+00:00",
+        "source_ref": f"synthetic:{key}",
+        "reason": "synthetic lifecycle mutation",
+    }
+    preview = api.call("/api/inventory/preview", command)
+    return api.call("/api/inventory/apply", preview)
 
 
 def assert_effective_cgroup_limits(plan: Path) -> None:
@@ -104,43 +124,56 @@ def assert_effective_cgroup_limits(plan: Path) -> None:
 
 
 def exercise_business_flow(api: Api) -> None:
-    supplier = api.apply("create_party", {"canonical_name": "Supplier E2E", "roles": ["supplier"]})["entity_id"]
-    customer = api.apply("create_party", {"canonical_name": "Customer E2E", "roles": ["customer"]})["entity_id"]
-    unit = api.apply("create_unit", {"code": "pcs", "display_name": "Pieces", "dimension": "count"})["entity_id"]
-    second_unit = api.apply("create_unit", {"code": "kg", "display_name": "Kilogram", "dimension": "weight"})["entity_id"]
-    product = api.apply("create_product", {"canonical_name": "Widget", "sku": "WIDGET-1", "unit_id": unit})["entity_id"]
-    location = api.apply("create_location", {"code": "MAIN", "display_name": "Main Warehouse"})["entity_id"]
+    drafts = [
+        {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
+        {"resource_kind": "party", "resource_id": "customer-1", "canonical_name": "Customer One"},
+        {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},
+        {"resource_kind": "unit", "resource_id": "kg", "canonical_name": "Kilogram"},
+        {"resource_kind": "location", "resource_id": "warehouse-1", "canonical_name": "Warehouse One"},
+    ]
+    catalog_preview = api.call("/api/master-data/catalog/preview", {"drafts": drafts})
+    catalog = api.call("/api/master-data/catalog/apply", catalog_preview)
+    assert catalog["owner_ref"] == "master_data:catalog-owner"
+    assert api.call("/api/master-data/catalog/apply", catalog_preview)["disposition"] == "idempotent_noop"
 
-    purchase = api.apply("create_purchase_order", {"source_id": "e2e", "external_id": "po-1", "order_no": "PO-1", "supplier_id": supplier, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": unit, "quantity": "10"}]})
-    purchase_line = purchase["readback"]["lines"][0]["id"]
-    receipt = api.apply("receive_purchase", {"source_id": "e2e", "external_id": "receipt-1", "order_id": purchase["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": purchase_line, "quantity": "6"}]})
-    assert receipt["readback"]["lines"][0]["remaining_quantity"] == "4"
+    def apply_typed(path: str, command: dict) -> tuple[dict, dict]:
+        preview = api.call(f"{path}/preview", command)
+        return preview, api.call(f"{path}/apply", preview)
 
-    sale = api.apply("create_sales_order", {"source_id": "e2e", "external_id": "so-1", "order_no": "SO-1", "customer_id": customer, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": unit, "quantity": "4"}]})
-    sale_line = sale["readback"]["lines"][0]["id"]
-    shipment = api.apply("ship_sale", {"source_id": "e2e", "external_id": "shipment-1", "order_id": sale["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": sale_line, "quantity": "3"}]})
-    assert shipment["readback"]["lines"][0]["remaining_quantity"] == "1"
-    assert inventory_quantity(api) == "3"
+    _, purchase = apply_typed("/api/procurement", {
+        "action": "create", "idempotency_key": "po-create", "order_id": "po-1",
+        "supplier_party_id": "supplier-1", "ordered_at": "2026-08-23T08:00:00+00:00",
+        "lines": [{"line_id": "po-line-1", "product_id": "product-1", "unit_id": "kg", "quantity": "10", "receive_location_id": "warehouse-1"}],
+        "source_ref": "synthetic:procurement", "evidence_refs": ["evidence:po-1"],
+    })
+    assert purchase["owner_ref"] == "procurement:order-owner"
+    _, received = apply_typed("/api/procurement", {
+        "action": "receive", "idempotency_key": "po-receive", "order_id": "po-1",
+        "target_line_id": "po-line-1", "quantity": "10", "occurred_at": "2026-08-23T09:00:00+00:00",
+        "source_ref": "synthetic:procurement", "evidence_refs": ["evidence:po-1"],
+    })
+    assert received["order"]["status"] == "received"
 
-    api.call("/api/actions/preview", {"action": "create_sales_order", "data": {"order_no": "BAD-UNIT", "customer_id": customer, "order_date": "2026-08-15", "lines": [{"product_id": product, "unit_id": second_unit, "quantity": "1"}]}}, expected=409)
-    api.call("/api/actions/preview", {"action": "ship_sale", "data": {"order_id": sale["entity_id"], "location_id": location, "business_date": "2026-08-15", "lines": [{"line_id": sale_line, "quantity": "99"}]}}, expected=409)
-    api.call("/api/imports/csv/preview", {"resource": "unit", "source_id": "bad", "csv_text": "code,display_name\npcs,Pieces\n"}, expected=409)
-
-    pending = {"canonical_name": "Pending Product", "sku": "PENDING", "unit_id": unit}
-    token = api.call("/api/actions/preview", {"action": "create_product", "data": pending})["preview_token"]
-    api.call("/api/actions/apply", {"action": "create_product", "data": {**pending, "sku": "TAMPERED"}, "preview_token": token, "review_note": "tampered"}, expected=409)
-    api.apply("create_location", {"code": "SECOND", "display_name": "Second Warehouse"})
-    api.call("/api/actions/apply", {"action": "create_product", "data": pending, "preview_token": token, "review_note": "stale"}, expected=409)
-
-    records = [{"external_id": "unit-box", "code": "box", "display_name": "Box", "dimension": "package"}]
-    preview = api.call("/api/imports/json/preview", {"resource": "unit", "source_id": "e2e-import", "records": records})
-    applied = api.call("/api/imports/apply", {"resource": "unit", "source_id": "e2e-import", "records": records, "preview_token": preview["preview_token"], "review_note": "confirmed synthetic import"})
-    assert applied["applied_count"] == 1
-    replay = api.call("/api/imports/json/preview", {"resource": "unit", "source_id": "e2e-import", "records": records})
-    assert replay["already_satisfied_count"] == 1
-
-    movement_id = shipment["readback"]["movement_ids"][0]
-    api.apply("reverse_movement", {"movement_id": movement_id, "business_date": "2026-08-15", "note": "reverse synthetic shipment"})
+    _, sale = apply_typed("/api/sales", {
+        "action": "create", "idempotency_key": "so-create", "order_id": "so-1",
+        "customer_party_id": "customer-1", "ordered_at": "2026-08-23T10:00:00+00:00",
+        "lines": [{"line_id": "so-line-1", "product_id": "product-1", "unit_id": "kg", "quantity": "10", "ship_from_location_id": "warehouse-1"}],
+        "source_ref": "synthetic:sales", "evidence_refs": ["evidence:so-1"],
+    })
+    assert sale["owner_ref"] == "sales:order-owner"
+    shipped_preview, shipped = apply_typed("/api/sales", {
+        "action": "fulfill", "idempotency_key": "so-ship", "order_id": "so-1",
+        "target_line_id": "so-line-1", "quantity": "6", "occurred_at": "2026-08-23T11:00:00+00:00",
+        "source_ref": "synthetic:sales", "evidence_refs": ["evidence:so-1"],
+    })
+    assert shipped["order"]["status"] == "partially_fulfilled"
+    _, returned = apply_typed("/api/sales", {
+        "action": "return", "idempotency_key": "so-return", "order_id": "so-1",
+        "target_line_id": "so-line-1", "quantity": "2", "occurred_at": "2026-08-23T12:00:00+00:00",
+        "source_ref": "synthetic:sales", "evidence_refs": ["evidence:so-1"],
+    })
+    assert returned["order"]["status"] == "partially_returned"
+    assert api.call("/api/sales/apply", shipped_preview)["disposition"] == "idempotent_noop"
     assert inventory_quantity(api) == "6"
 
 
@@ -415,7 +448,8 @@ def exercise_mcp(repo: Path, instance_url: str, password_file: Path) -> None:
     process = subprocess.run(["python3", str(repo / "plugins/bizhub-core/scripts/bizhub_mcp.py")], input="\n".join(json.dumps(item) for item in messages) + "\n", text=True, capture_output=True, check=True, env=environment)
     responses = [json.loads(line) for line in process.stdout.splitlines()]
     assert responses[1]["result"]["structuredContent"]["status"] == "ok"
-    assert responses[2]["result"]["structuredContent"]["balances"][0]["quantity"] == "6"
+    movements = responses[2]["result"]["structuredContent"]["items"]
+    assert len(movements) == 3
 
 
 def main() -> None:
@@ -431,26 +465,27 @@ def main() -> None:
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
     assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
+    health = api.call("/api/health")
+    common_manifest = json.loads(
+        (args.repo / "app/vendor/bizhub-common-manifest.json").read_text(encoding="utf-8")
+    )
+    assert health["core_artifact_digest"] == common_manifest["core_artifact_digest"]
     exercise_business_flow(api)
-    exercise_master_data_reconcile(api)
-    exercise_master_data_bundle(api)
 
     backup_result = json.loads(run([str(args.repo / "bizhubctl"), "backup", "--label", "e2e-restore"], cwd=args.repo).stdout)
     backup_path = Path(backup_result["host_path"])
-    api.apply("post_inventory_adjustment", {"product_id": 1, "unit_id": 1, "location_id": 1, "quantity_delta": "2", "business_date": "2026-08-15", "note": "post-backup synthetic change"})
+    backup_manifest = Path(backup_result["manifest_host_path"])
+    assert backup_manifest.is_file()
+    apply_inventory_inbound(api, "post-backup", "2")
     assert inventory_quantity(api) == "8"
     run([str(args.repo / "bizhubctl"), "restore", "--backup", str(backup_path)], cwd=args.repo)
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
-    assert_reconciled_master_data(api)
-    assert_bundled_master_data(api)
     run(["docker", "restart", "bizhub"])
     run([str(args.repo / "bizhubctl"), "verify"], cwd=args.repo)
     assert_effective_cgroup_limits(args.plan.resolve())
     api = Api(args.instance_url, "admin", password)
     assert inventory_quantity(api) == "6"
-    assert_reconciled_master_data(api)
-    assert_bundled_master_data(api)
 
     password_file = Path("/tmp/bizhub-e2e-mcp-password")
     password_file.write_text(password + "\n", encoding="utf-8"); password_file.chmod(0o600)
@@ -458,6 +493,46 @@ def main() -> None:
         exercise_mcp(args.repo, args.instance_url, password_file)
     finally:
         password_file.unlink(missing_ok=True)
+
+    host = urlparse(args.instance_url).hostname
+    assert host
+    original_plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    update_plan = Path("/tmp/bizhub-update-plan.json")
+    run([
+        str(args.repo / "bizhubctl"), "plan",
+        "--access", "private",
+        "--bind-address", host,
+        "--allow-http-private",
+        "--profile-id", "github-e2e",
+        "--legal-name", "GitHub E2E Synthetic Company",
+        "--display-name", "BizHub E2E",
+        "--brand-mark", "E2E",
+        "--timezone", "UTC",
+        "--currency", "USD",
+        "--admin-username", "admin",
+        "--port", str(original_plan["instance"]["port"]),
+        "--memory-mib", "768",
+        "--output", str(update_plan),
+    ], cwd=args.repo)
+    update_hash = json.loads(update_plan.read_text(encoding="utf-8"))["plan_hash"]
+    updated = json.loads(run([
+        str(args.repo / "bizhubctl"), "update",
+        "--plan", str(update_plan),
+        "--approve", update_hash,
+    ], cwd=args.repo).stdout)
+    assert updated["status"] == "updated"
+    api = Api(args.instance_url, "admin", password)
+    assert inventory_quantity(api) == "6"
+    apply_inventory_inbound(api, "post-update", "1")
+    assert inventory_quantity(api) == "7"
+    rolled_back = json.loads(run([
+        str(args.repo / "bizhubctl"), "rollback",
+        "--approve", f"rollback:{update_hash}",
+    ], cwd=args.repo).stdout)
+    assert rolled_back["status"] == "rolled_back"
+    api = Api(args.instance_url, "admin", password)
+    assert inventory_quantity(api) == "6"
+    assert_effective_cgroup_limits(args.plan.resolve())
 
     no_op = json.loads(run([str(args.repo / "bizhubctl"), "install", "--plan", str(args.plan), "--approve", args.plan_hash], cwd=args.repo).stdout)
     assert no_op["status"] == "no_op"
@@ -467,6 +542,7 @@ def main() -> None:
     assert removed["status"] == "uninstalled_data_retained"
     assert Path("/var/lib/bizhub/data/bizhub.db").is_file()
     assert backup_path.is_file()
+    assert backup_manifest.is_file()
     connection = sqlite3.connect("/var/lib/bizhub/data/bizhub.db")
     try:
         assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
