@@ -9,6 +9,17 @@
     "test_port": 18485
   },
   "pre_release_source_commit": "0e738d124dca87df4ca452bf1ee7717f0c6eb659",
+  "fixed_tag_release": {
+    "tag": "v0.7.0-preview.1",
+    "release_commit": "eb36f218977d084817846958909d3c70faff151b",
+    "workflow_run_id": 32644597225,
+    "workflow_url": "https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32644597225",
+    "workflow_conclusion": "success",
+    "release_url": "https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-08-23T14:11:20Z"
+  },
   "plan_hash": "35df485a57aba4cb643cad5a3f0373200e357a3549293e0f03361a8393187738",
   "common_artifact": {
     "file_count": 41,
@@ -41,5 +52,5 @@
   },
   "data_classification": "synthetic_only",
   "private_production_accessed": false,
-  "disposition": "passed_pre_release_rehearsal_fixed_tag_workflow_required"
+  "disposition": "passed_pre_release_rehearsal_and_fixed_tag_release"
 }

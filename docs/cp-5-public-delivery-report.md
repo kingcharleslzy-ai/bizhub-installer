@@ -41,7 +41,13 @@ artifact digest.
 - real update plus explicit verified rollback: passed;
 - install/update replay no-op: passed;
 - retain-data uninstall and SQLite quick check: passed;
-- fixed-tag GitHub Ubuntu workflow: required before release publication.
+- fixed-tag GitHub Ubuntu workflow: passed on release commit
+  `eb36f218977d084817846958909d3c70faff151b`;
+- published prerelease: `v0.7.0-preview.1` (`draft=false`,
+  `prerelease=true`).
+
+The immutable release evidence is [workflow run 32644597225](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32644597225)
+and the published [v0.7.0-preview.1 prerelease](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1).
 
 Detailed evidence is in
 [`v070-preview1-common-artifact-release-e2e-2026-08-23.md`](verification/v070-preview1-common-artifact-release-e2e-2026-08-23.md)

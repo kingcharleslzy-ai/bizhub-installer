@@ -49,5 +49,12 @@ bounded MCP tools, clean-host installation, the complete synthetic business
 flow, resource limits, backup/restore, update/rollback, idempotency, and
 retain-data uninstall before creating the prerelease.
 
+The gate completed successfully as
+[workflow run 32644597225](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32644597225),
+bound to release commit
+`eb36f218977d084817846958909d3c70faff151b`. It published the non-draft
+[v0.7.0-preview.1 prerelease](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1)
+at `2026-08-23T14:11:20Z`.
+
 Stable remains `v0.3.0`. This preview does not authorize customer-data migration
 or private production adoption.
