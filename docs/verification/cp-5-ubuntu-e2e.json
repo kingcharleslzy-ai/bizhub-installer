@@ -1,0 +1,56 @@
+{
+  "schema_version": "bizhub.cp5-ubuntu-e2e.v1",
+  "environment": {
+    "os": "Ubuntu 24.04.4 LTS",
+    "docker": "29.1.3",
+    "cgroup_version": 2,
+    "target_fingerprint": "3905bb57590a8b7e0cc82e4b00fe7a42b4d5ee003bfbcf8888c16fd09db124e9",
+    "preexisting_bizhub_state": false,
+    "test_port": 18485
+  },
+  "pre_release_source_commit": "0e738d124dca87df4ca452bf1ee7717f0c6eb659",
+  "fixed_tag_release": {
+    "tag": "v0.7.0-preview.1",
+    "release_commit": "eb36f218977d084817846958909d3c70faff151b",
+    "workflow_run_id": 32644597225,
+    "workflow_url": "https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32644597225",
+    "workflow_conclusion": "success",
+    "release_url": "https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-08-23T14:11:20Z"
+  },
+  "plan_hash": "35df485a57aba4cb643cad5a3f0373200e357a3549293e0f03361a8393187738",
+  "common_artifact": {
+    "file_count": 41,
+    "allowlist_tree_digest": "3c2770526b509439f4a1a3b2226066b3b86456b7595f462fead848e8ae98211d",
+    "core_artifact_digest": "sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72",
+    "private_scan_violation_count": 0
+  },
+  "gates": {
+    "preflight": "passed",
+    "install": "passed",
+    "effective_resource_limits": "passed",
+    "generic_business_flow": "passed",
+    "mcp_readback": "passed",
+    "backup_restore": "passed",
+    "restart_readback": "passed",
+    "update": "passed",
+    "explicit_rollback": "passed",
+    "install_replay_noop": "passed",
+    "update_replay_noop": "passed",
+    "retain_data_uninstall": "passed"
+  },
+  "readback": {
+    "inventory_quantity_after_restore": "6",
+    "inventory_quantity_after_rollback": "6",
+    "backup_manifest_pair_count": 4,
+    "container_exists_after_uninstall": false,
+    "database_retained": true,
+    "database_quick_check": "ok",
+    "final_state_status": "uninstalled_data_retained"
+  },
+  "data_classification": "synthetic_only",
+  "private_production_accessed": false,
+  "disposition": "passed_pre_release_rehearsal_and_fixed_tag_release"
+}

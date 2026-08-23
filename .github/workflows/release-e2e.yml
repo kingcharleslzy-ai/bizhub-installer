@@ -9,7 +9,7 @@ on:
       release_tag:
         description: Fixed BizHub preview tag to verify
         required: true
-        default: v0.6.0-preview.1
+        default: v0.7.0-preview.1
 
 permissions:
   contents: write
@@ -127,7 +127,7 @@ jobs:
               --verify-tag \
               --prerelease \
               --title "BizHub $release_tag" \
-              --notes "Implementation preview $release_version for atomic dependency-aware party master-data bundles resolved by external identity, while retaining explicit reconcile, successor identity, bounded customer-private read-only extensions, and resource-limit contracts. Ubuntu 24.04 install, kernel resource readback, bundle/successor/reconcile, business-flow, plugin/MCP, backup/restore, idempotency, atomic rollback, sensitive-boundary, and retain-data uninstall gates passed in this tag workflow. Stable remains v0.3.0."
+              --notes "Implementation preview $release_version built from the deterministic bizhub-common artifact shared by Generic and Dazheng derived images. Ubuntu 24.04 install, exact artifact identity, generic procurement/inventory/sales flow, plugin/MCP, resource readback, backup/restore, explicit rollback, idempotency, public-boundary scan, and retain-data uninstall gates passed in this tag workflow. This release does not switch or deploy the private production system. Stable remains v0.3.0."
           fi
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease,tagName,url \
             --jq ". | select(.isPrerelease == true and .tagName == \"$release_tag\") | .url"

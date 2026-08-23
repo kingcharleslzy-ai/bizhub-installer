@@ -22,7 +22,10 @@ def load_cli():
 def test_cli_has_only_bounded_lifecycle_commands():
     cli = load_cli()
     choices = cli.parser()._subparsers._group_actions[0].choices
-    assert set(choices) == {"preflight", "plan", "install", "verify", "status", "backup", "restore", "update", "uninstall"}
+    assert set(choices) == {
+        "preflight", "plan", "install", "verify", "status", "backup",
+        "restore", "update", "rollback", "uninstall",
+    }
     assert "purge" not in choices
 
 
@@ -235,10 +238,11 @@ def test_build_image_binds_the_planned_core_commit(monkeypatch):
     commands = []
     monkeypatch.setattr(cli, "run", lambda command, **_: commands.append(command))
     commit = "a" * 40
+    common = cli.common_artifact_identity()
     assert cli.build_image(
         {
             "source": {"commit": commit},
-            "deployment_image": {"mode": "build_public_source", "core_revision": commit},
+            "deployment_image": {"mode": "build_public_source", "core_revision": commit, **common},
         }
     ) == f"bizhub:{commit[:12]}"
     build_arg = commands[0].index("--build-arg")
@@ -246,16 +250,25 @@ def test_build_image_binds_the_planned_core_commit(monkeypatch):
 
 
 def image_fixture(*, derived=False):
+    cli = load_cli()
+    common_digest = cli.common_artifact_identity()["core_artifact_digest"]
     core_revision = "a" * 40
     private_revision = "b" * 40
-    labels = {"org.opencontainers.image.revision": core_revision}
-    environment = [f"BIZHUB_CORE_COMMIT={core_revision}"]
+    labels = {
+        "org.opencontainers.image.revision": core_revision,
+        "com.bizhub.core.artifact.digest": common_digest,
+    }
+    environment = [
+        f"BIZHUB_CORE_COMMIT={core_revision}",
+        f"BIZHUB_CORE_ARTIFACT_DIGEST={common_digest}",
+    ]
     layers = ["sha256:" + "1" * 64, "sha256:" + "2" * 64]
     if derived:
         labels = {
             "org.opencontainers.image.base.revision": core_revision,
             "org.opencontainers.image.revision": private_revision,
             "com.bizhub.extension.mode": "read-only-reference",
+            "com.bizhub.core.artifact.digest": common_digest,
         }
         environment.extend(
             [
@@ -298,6 +311,7 @@ def test_derived_image_plan_binds_immutable_ids_layers_and_revisions(monkeypatch
         "private_revision": "b" * 40,
         "extension_mode": "read-only-reference",
         "extension_modules": ["customer_reference"],
+        **cli.common_artifact_identity(),
     }
 
 
@@ -328,6 +342,7 @@ def test_build_image_uses_only_the_approved_derived_image_id(monkeypatch):
         "private_revision": "b" * 40,
         "extension_mode": "read-only-reference",
         "extension_modules": ["customer_reference"],
+        **cli.common_artifact_identity(),
     }
     monkeypatch.setattr(cli, "deployment_image_plan", lambda **_: deployment)
     monkeypatch.setattr(cli, "run", lambda *_args, **_kwargs: pytest.fail("derived apply must not build an image"))

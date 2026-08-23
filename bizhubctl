@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.6.0-preview.1"
+VERSION = "0.7.0-preview.1"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"
@@ -90,6 +90,27 @@ def file_digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def common_artifact_identity() -> dict[str, str]:
+    root = repository_root()
+    artifact = root / "app/vendor/bizhub-common.tar.gz"
+    manifest_path = root / "app/vendor/bizhub-common-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    digest = file_digest(artifact)
+    if manifest.get("schema_version") != "bizhub.common-artifact-manifest.v1":
+        raise RuntimeError("bizhub-common manifest contract is invalid")
+    if manifest.get("artifact_id") != "bizhub-common" or manifest.get("artifact_sha256") != digest:
+        raise RuntimeError("bizhub-common artifact differs from its manifest")
+    source_commit = str(manifest.get("source_commit") or "")
+    if not COMMIT_PATTERN.fullmatch(source_commit):
+        raise RuntimeError("bizhub-common source commit is invalid")
+    return {
+        "artifact_id": "bizhub-common",
+        "core_artifact_digest": f"sha256:{digest}",
+        "core_source_commit": source_commit,
+        "allowlist_tree_digest": str(manifest["allowlist_tree_digest"]),
+    }
 
 
 def application_digest() -> str:
@@ -271,10 +292,15 @@ def image_environment(image: dict[str, Any]) -> dict[str, str]:
 def deployment_image_plan(
     *, candidate_core_image: str | None, candidate_image: str | None, core_revision: str
 ) -> dict[str, Any]:
+    common = common_artifact_identity()
     if bool(candidate_core_image) != bool(candidate_image):
         raise ValueError("candidate core and derived image references must be supplied together")
     if not candidate_image:
-        return {"mode": "build_public_source", "core_revision": core_revision}
+        return {
+            "mode": "build_public_source",
+            "core_revision": core_revision,
+            **common,
+        }
     if not COMMIT_PATTERN.fullmatch(core_revision):
         raise ValueError("core revision must be a full Git commit")
 
@@ -292,6 +318,10 @@ def deployment_image_plan(
         raise ValueError("candidate core image revision does not match the planned public source")
     if core_environment.get("BIZHUB_CORE_COMMIT") != core_revision:
         raise ValueError("candidate core image runtime identity does not match the planned public source")
+    if core_labels.get("com.bizhub.core.artifact.digest") != common["core_artifact_digest"]:
+        raise ValueError("candidate core image artifact digest does not match the public manifest")
+    if core_environment.get("BIZHUB_CORE_ARTIFACT_DIGEST") != common["core_artifact_digest"]:
+        raise ValueError("candidate core runtime artifact digest does not match the public manifest")
     if derived_labels.get("org.opencontainers.image.base.revision") != core_revision:
         raise ValueError("derived image base revision does not match the planned public source")
     if not COMMIT_PATTERN.fullmatch(private_revision):
@@ -304,6 +334,10 @@ def deployment_image_plan(
         raise ValueError("derived image expected core identity does not match the planned public source")
     if derived_environment.get("BIZHUB_PRIVATE_EXTENSION_COMMIT") != private_revision:
         raise ValueError("derived image private runtime identity does not match its revision label")
+    if derived_labels.get("com.bizhub.core.artifact.digest") != common["core_artifact_digest"]:
+        raise ValueError("derived image artifact digest differs from the public core")
+    if derived_environment.get("BIZHUB_CORE_ARTIFACT_DIGEST") != common["core_artifact_digest"]:
+        raise ValueError("derived runtime artifact digest differs from the public core")
 
     extension_modules = tuple(
         item.strip() for item in derived_environment.get("BIZHUB_EXTENSION_MODULES", "").split(",") if item.strip()
@@ -329,6 +363,7 @@ def deployment_image_plan(
         "private_revision": private_revision,
         "extension_mode": DERIVED_EXTENSION_MODE,
         "extension_modules": list(extension_modules),
+        **common,
     }
 
 
@@ -380,7 +415,11 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
         "contract": PLAN_CONTRACT,
         "created_at": now(),
         "operation": "install",
-        "source": {**source, "application_sha256": application_digest()},
+        "source": {
+            **source,
+            "application_sha256": application_digest(),
+            "common_artifact": common_artifact_identity(),
+        },
         "deployment_image": deployment_image,
         "target": {
             "fingerprint": target_fingerprint(),
@@ -445,7 +484,11 @@ def require_apply_environment(plan: dict[str, Any]) -> None:
         )
         if observed != deployment_image:
             raise RuntimeError("approved derived image identity has changed")
-    elif deployment_image != {"mode": "build_public_source", "core_revision": source["commit"]}:
+    elif deployment_image != {
+        "mode": "build_public_source",
+        "core_revision": source["commit"],
+        **common_artifact_identity(),
+    }:
         raise RuntimeError("plan deployment image contract is invalid")
 
 
@@ -499,6 +542,7 @@ def build_image(plan: dict[str, Any]) -> str:
     run([
         "docker", "build", "--pull",
         "--build-arg", f"BIZHUB_CORE_COMMIT={plan['source']['commit']}",
+        "--build-arg", f"BIZHUB_CORE_ARTIFACT_DIGEST={deployment_image['core_artifact_digest']}",
         "--label", f"org.opencontainers.image.revision={plan['source']['commit']}",
         "-t", image, "-f", str(repository_root() / "app/Dockerfile"), str(repository_root() / "app"),
     ])
@@ -752,7 +796,13 @@ def backup_instance(label: str = "manual") -> dict[str, Any]:
     result = run(["docker", "exec", CONTAINER, "python", "-m", "bizhub.manage", "backup", "--output", f"/backups/{name}"])
     payload = json.loads(result.stdout)
     host = BACKUPS / name
-    payload.update({"sha256": file_digest(host), "host_path": str(host)})
+    manifest_host = host.with_suffix(host.suffix + ".manifest.json")
+    payload.update({
+        "sha256": file_digest(host),
+        "host_path": str(host),
+        "manifest_host_path": str(manifest_host),
+        "manifest_sha256": file_digest(manifest_host),
+    })
     return payload
 
 
@@ -773,6 +823,15 @@ def restore_instance(path: Path) -> dict[str, Any]:
     source = path.resolve()
     if source.parent != BACKUPS.resolve() or not source.is_file():
         raise ValueError("restore source must be a regular file directly inside the BizHub backup directory")
+    manifest = source.with_suffix(source.suffix + ".manifest.json")
+    if not manifest.is_file():
+        raise ValueError("restore source manifest is missing")
+    run([
+        "docker", "exec", CONTAINER,
+        "python", "-m", "bizhub.manage", "validate-backup",
+        "--backup", f"/backups/{source.name}",
+        "--manifest", f"/backups/{manifest.name}",
+    ])
     safety = backup_instance("before-restore")
     run(["docker", "stop", CONTAINER])
     destination = APP_DATA / "bizhub.db"
@@ -835,9 +894,96 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
         start_container({"instance": rollback_instance}, old_image)
         wait_healthy({"instance": previous["instance"]})
         raise
-    updated = {**previous, "status": "installed", "updated_at": now(), "plan_hash": plan["plan_hash"], "source": plan["source"], "instance": plan["instance"], "image": image, "health": health, "resources": resources}
+    rollback_point = {
+        "plan_hash": previous["plan_hash"],
+        "source": previous["source"],
+        "instance": previous["instance"],
+        "image": old_image,
+        "backup": backup,
+    }
+    updated = {
+        **previous,
+        "status": "installed",
+        "updated_at": now(),
+        "plan_hash": plan["plan_hash"],
+        "source": plan["source"],
+        "instance": plan["instance"],
+        "image": image,
+        "health": health,
+        "resources": resources,
+        "rollback_point": rollback_point,
+    }
     write_state(updated)
     return {"status": "updated", "backup": backup, "health": health, "resources": resources}
+
+
+def rollback_instance(args: argparse.Namespace) -> dict[str, Any]:
+    current = current_state()
+    if not current or not container_running():
+        raise RuntimeError("BizHub container is not running")
+    point = current.get("rollback_point")
+    if not isinstance(point, dict):
+        raise RuntimeError("no verified rollback point is available")
+    expected = f"rollback:{current['plan_hash']}"
+    supplied = args.approve or input(f"Type {expected} to restore the previous release: ").strip()
+    if not secrets.compare_digest(expected, supplied):
+        raise RuntimeError("rollback confirmation did not match")
+    source = Path(str((point.get("backup") or {}).get("host_path") or "")).resolve()
+    manifest = source.with_suffix(source.suffix + ".manifest.json")
+    if source.parent != BACKUPS.resolve() or not source.is_file() or not manifest.is_file():
+        raise RuntimeError("verified rollback backup is unavailable")
+    run([
+        "docker", "exec", CONTAINER,
+        "python", "-m", "bizhub.manage", "validate-backup",
+        "--backup", f"/backups/{source.name}",
+        "--manifest", f"/backups/{manifest.name}",
+    ])
+    safety = backup_instance("before-rollback")
+    run(["docker", "stop", CONTAINER])
+    destination = APP_DATA / "bizhub.db"
+    for sidecar in (APP_DATA / "bizhub.db-wal", APP_DATA / "bizhub.db-shm"):
+        sidecar.unlink(missing_ok=True)
+    temporary = APP_DATA / "bizhub.db.rollback"
+    shutil.copy2(source, temporary)
+    os.chown(temporary, 10001, 10001)
+    os.chmod(temporary, 0o600)
+    temporary.replace(destination)
+    try:
+        start_container({"instance": point["instance"]}, str(point["image"]))
+        health = wait_healthy({"instance": point["instance"]})
+        resources = require_container_resources(point["instance"])
+    except Exception:
+        if container_exists():
+            run(["docker", "rm", "-f", CONTAINER], check=False)
+        shutil.copy2(Path(safety["host_path"]), destination)
+        os.chown(destination, 10001, 10001)
+        os.chmod(destination, 0o600)
+        start_container({"instance": current["instance"]}, str(current["image"]))
+        wait_healthy({"instance": current["instance"]})
+        raise
+    restored = {
+        **current,
+        "status": "installed",
+        "updated_at": now(),
+        "plan_hash": point["plan_hash"],
+        "source": point["source"],
+        "instance": point["instance"],
+        "image": point["image"],
+        "health": health,
+        "resources": resources,
+        "rolled_back_from": current["plan_hash"],
+        "rollback_safety_backup": safety,
+    }
+    restored.pop("rollback_point", None)
+    write_state(restored)
+    return {
+        "status": "rolled_back",
+        "plan_hash": restored["plan_hash"],
+        "restored_backup": str(source),
+        "safety_backup": safety,
+        "health": health,
+        "resources": resources,
+    }
 
 
 def uninstall(args: argparse.Namespace) -> dict[str, Any]:
@@ -901,6 +1047,8 @@ def parser() -> argparse.ArgumentParser:
     backup.add_argument("--label", default="manual")
     restore = commands.add_parser("restore")
     restore.add_argument("--backup", type=Path, required=True)
+    rollback = commands.add_parser("rollback")
+    rollback.add_argument("--approve")
     uninstall_parser = commands.add_parser("uninstall")
     uninstall_parser.add_argument("--approve")
     return root
@@ -937,6 +1085,8 @@ def main() -> None:
             result = restore_instance(args.backup)
         elif args.command == "update":
             result = update_instance(args)
+        elif args.command == "rollback":
+            result = rollback_instance(args)
         else:
             result = uninstall(args)
         emit(result)

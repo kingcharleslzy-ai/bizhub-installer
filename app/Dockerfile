@@ -1,26 +1,37 @@
-FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS web
-WORKDIR /build/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --ignore-scripts
-COPY frontend/ ./
-RUN npm run build
-
 FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS runtime
+
 ARG BIZHUB_CORE_COMMIT=development
+ARG BIZHUB_CORE_ARTIFACT_DIGEST
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    BIZHUB_DATABASE_PATH=/data/bizhub.db \
+    BIZHUB_GENERIC_DATABASE_PATH=/data/bizhub.db \
+    BIZHUB_ADMIN_CONFIG=/data/admin.json \
     BIZHUB_COMPANY_CONFIG=/config/company.json \
     BIZHUB_SECRET_KEY_FILE=/config/secret-key \
-    BIZHUB_STATIC_DIR=/opt/bizhub/bizhub/static \
-    BIZHUB_CORE_COMMIT=${BIZHUB_CORE_COMMIT}
-LABEL org.opencontainers.image.revision=${BIZHUB_CORE_COMMIT}
+    BIZHUB_COMMON_ROOT=/opt/bizhub \
+    BIZHUB_COMMON_MANIFEST=/opt/bizhub/bizhub-common-manifest.json \
+    BIZHUB_CORE_COMMIT=${BIZHUB_CORE_COMMIT} \
+    BIZHUB_CORE_ARTIFACT_DIGEST=${BIZHUB_CORE_ARTIFACT_DIGEST}
+
+LABEL org.opencontainers.image.revision=${BIZHUB_CORE_COMMIT} \
+      com.bizhub.core.artifact.digest=${BIZHUB_CORE_ARTIFACT_DIGEST} \
+      com.bizhub.runtime.profile=generic-kernel-smoke
+
 WORKDIR /opt/bizhub
 RUN groupadd --gid 10001 bizhub && useradd --uid 10001 --gid bizhub --no-create-home --shell /usr/sbin/nologin bizhub
 COPY backend/requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
-COPY backend/bizhub ./bizhub
-COPY --from=web /build/backend/bizhub/static ./bizhub/static
+
+COPY vendor/bizhub-common.tar.gz /tmp/bizhub-common.tar.gz
+COPY vendor/bizhub-common-manifest.json ./bizhub-common-manifest.json
+RUN expected="${BIZHUB_CORE_ARTIFACT_DIGEST#sha256:}" \
+    && test -n "$expected" \
+    && echo "$expected  /tmp/bizhub-common.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/bizhub-common.tar.gz -C /opt/bizhub \
+    && rm /tmp/bizhub-common.tar.gz
+
+COPY runtime/bizhub ./bizhub
 RUN mkdir -p /data /config /backups && chown -R bizhub:bizhub /opt/bizhub /data /config /backups
 USER 10001:10001
 EXPOSE 8080

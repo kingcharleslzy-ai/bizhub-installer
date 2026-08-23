@@ -35,16 +35,15 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 7. Configure this one MCP with `BIZHUB_INSTANCE_URL`,
    `BIZHUB_ADMIN_USERNAME`, and a local `BIZHUB_ADMIN_PASSWORD_FILE`. Never put
    the password in MCP arguments, repository files, plans, logs, or chat.
-8. Map the first customer source to a built-in CSV/JSON contract. When party
-   successors or party-alias owners are expressed by `source_id + external_id`,
-   use the dependency-aware master-data bundle action so one preview binds the
-   complete input, dependency graph, state generation, and expected operations.
-   Present errors and counts, obtain confirmation, apply with the returned
-   token, and read back resources, mappings, relationships, state, and audit.
-9. When a later source record keeps the same `source_id + external_id` but its
-   party, unit, or alias fields change, use the explicit master-data reconcile
-   preview/apply contract. Never turn a changed record into a second identity or
-   bypass a missing/conflicting mapping.
+8. Map the first customer source outside the server into one existing typed
+   `master_data`, `inventory`, `procurement`, or `sales` Owner action. Present
+   the full preview, obtain confirmation, apply that exact preview, and read
+   back the owning resource and action receipt. Never give an adapter SQLite,
+   arbitrary shell, or arbitrary URL access.
+9. The separate `v0.5`/`v0.6` batch-import, reconcile, and dependency-bundle
+   endpoints are historical preview contracts and are not active in `v0.7`.
+   If a source needs one of them, stop and require a new reviewed common-artifact
+   release instead of reviving the retained legacy public core.
 
 ## Boundaries
 
@@ -56,6 +55,8 @@ Use the repository's `bizhubctl` as the deployment authority and the single
   readback`. A stale or changed preview must be generated again.
 - `uninstall` retains config, data, and backups. This release provides no purge
   operation.
+- `rollback` is allowed only when `status` exposes a verified rollback point
+  and the user approves `rollback:<current_plan_hash>` exactly.
 - Create no additional generic BizHub Skills. If a repeated customer workflow
   needs one later, point the customer's Agent to the documentation-only
   `docs/customer-skill-extension.md` in the same fixed release.

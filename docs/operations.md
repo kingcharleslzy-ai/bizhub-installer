@@ -51,13 +51,25 @@ sudo ./bizhubctl update --plan next-plan.json --approve EXACT_PLAN_HASH
 If health fails, the CLI restores the previous database backup and previous
 image. Never delete the prior image or backup before verification.
 
+A successful update keeps one verified rollback point. To deliberately restore
+the exact previous image, plan, resource limits, and pre-update database, read
+the current plan hash from `bizhubctl status` and run:
+
+```bash
+sudo ./bizhubctl rollback --approve rollback:CURRENT_PLAN_HASH
+```
+
+Rollback first validates the stored backup manifest and creates a safety backup
+of the current state. If the previous release fails health or resource readback,
+the CLI recovers the state that existed immediately before rollback. A rollback
+point is single-use and is not inferred from a tag or filename.
+
 ## Prebuilt customer-private image
 
-The first extension stage separates build authority from deployment authority.
-A customer-owned tool may create a reviewed derived image, but `bizhubctl` does
-not accept its source directory, Dockerfile path, registry tag, or arbitrary
-build command. `plan` accepts only a local public-core image plus its local
-derived image:
+A reviewed customer-owned build may create a derived image from the exact
+public image, but `bizhubctl` does not accept an arbitrary source directory,
+Dockerfile, registry tag, or build command. `plan` accepts only a local public
+image plus its local derived image:
 
 ```bash
 sudo ./bizhubctl plan \
@@ -68,12 +80,13 @@ sudo ./bizhubctl plan \
 ```
 
 The plan binds both immutable image IDs, the public and private full commits,
-extension mode and fixed import names. It also proves that the derived root
-filesystem starts with every public-core layer and adds at least one private
-layer, while preserving the core entrypoint, command, healthcheck, user and
-exposed ports. Install and update repeat the same inspection immediately before
-apply. Supplying only one image, pruning either image between plan and apply,
-or retagging a different image fails closed.
+the exact `bizhub-common` digest, extension mode, runtime Profile, and fixed
+import names. It proves that the derived root filesystem starts with every
+public layer and adds at least one private layer, while preserving the public
+entrypoint, command, healthcheck, user, and exposed ports. Install and update
+repeat the inspection immediately before apply. Supplying only one image,
+changing the common digest, pruning either image, or retagging a different image
+fails closed.
 
 ## Uninstall
 
