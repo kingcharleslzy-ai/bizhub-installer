@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted; Desktop-D1 implementation candidate, not released
+Status: accepted; Desktop-D2 local Generic implementation candidate, not released
 
 Date: 2026-08-25
 
@@ -23,10 +23,11 @@ Cloud business behavior comes from the cloud Runtime. Local business behavior
 comes from one fixed Generic Runtime built from the canonical public artifact.
 Electron and Vue connect to a backend API; they never open SQLite.
 
-Desktop-D0 was approved on 2026-08-25. The current authorization covers only
-the Desktop-D1 customer-neutral cloud-shell implementation and local unsigned
-packaging proof. It does not authorize Desktop-D2, installation, publication,
-production access, migration, or a writer switch.
+Desktop-D0 and Desktop-D1 were approved on 2026-08-25. Desktop-D2 was separately
+authorized after D1 merged. The current implementation authorization covers the
+macOS arm64 Generic local technical proof with synthetic data. It does not
+authorize installation on a business machine, publication, production access,
+customer-private Runtime, migration, synchronization, or a writer switch.
 
 ## Installer
 
@@ -142,9 +143,11 @@ Each checkpoint requires separate authorization:
    prove the public shell can open an approved cloud Runtime without starting
    Python or creating SQLite. See the
    [local verification record](verification/desktop-d1-cloud-shell-2026-08-25.md).
-3. **Desktop-D2:** on macOS arm64 with synthetic data, prove Generic local setup,
+3. **Desktop-D2:** locally completed as an implementation candidate on 2026-08-25;
+   on macOS arm64 with synthetic data, proves Generic local setup,
    authentication, Owner preview/apply/readback, idempotent replay, restart,
-   backup, and failure-zero-write behavior.
+   backup, and failure-zero-write behavior. See the
+   [verification record](verification/desktop-d2-local-generic-2026-08-25.md).
 4. **Desktop-D3:** repeat the fixed release on Windows x64 with signing and
    installer evidence.
 5. **Desktop-D4/D5:** background service or private cloud-to-local cutover only

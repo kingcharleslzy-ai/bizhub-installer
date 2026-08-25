@@ -1,55 +1,74 @@
-# BizHub Desktop D1 cloud shell
+# BizHub Desktop D2 local Generic candidate
 
-This directory contains the Desktop-D1 implementation candidate. It is a
-customer-neutral Electron shell for loading one signed, exact-origin HTTPS
-BizHub connection in an isolated `WebContentsView`.
+This directory contains the Desktop-D1 cloud shell plus the Desktop-D2 macOS
+arm64 local-runtime implementation candidate. One customer-neutral Electron
+shell now exposes two explicit paths:
 
-Desktop-D1 does not package or start Python, create SQLite, authenticate a
-business account, or contain a customer-private Profile. The target cloud
-Runtime owns its login, permissions, UI, API, formal Owner, and database.
+```text
+signed enterprise connection -> enterprise HTTPS Runtime
+explicit local setup/login    -> fixed Generic Python Runtime -> local SQLite
+```
 
-The checked-in trust store is intentionally empty. Tests create an ephemeral
-Ed25519 key pair. A real trusted public key and signed customer connection file
-require a separately reviewed instance-configuration checkpoint.
+The local Runtime is a PyInstaller `onedir` built from the existing public
+delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
+not reimplement master data, inventory, procurement, or sales. Formal writes
+remain inside the existing Generic Owners.
 
-The signed connection file is a D1 Workspace bootstrap, not the final account
-discovery model. Account-driven Workspace discovery and a unified membership
-control plane are not implemented.
+The checked-in enterprise trust store remains empty. D2 contains no customer
+private Profile, rule, endpoint, account, credential, production data, model,
+collector, synchronization, background service, automatic update, or authority
+switch.
 
-## Local verification
+## Local lifecycle
 
-Use Node 22:
+No local database is created by installation, cloud failure, or an unknown
+username. The first local instance is created only after the user explicitly
+submits the local setup form. Initialization runs in a staging directory with a
+one-use bootstrap token and is atomically promoted only after database, first
+administrator, artifact identity, and Owner readback succeed. Failure removes
+the staging state and leaves the formal local-instance path absent.
+
+Each launch:
+
+- verifies the fixed Runtime release manifest and every onedir file;
+- verifies the original `bizhub-common` tar digest and every extracted common
+  file again inside the Python process;
+- starts only on a random `127.0.0.1` port with a per-launch cookie token;
+- uses an isolated sandboxed `WebContentsView` with exact-origin network rules;
+- stops the Runtime when local mode or the application is stopped;
+- lets the Python Owner create and validate online SQLite backups.
+
+## Maintainer verification
+
+Use Node 22 and Python 3.12 on macOS arm64:
 
 ```bash
-npm ci
+uv venv --python /opt/homebrew/bin/python3.12 .runtime-venv
+uv pip sync --python .runtime-venv/bin/python \
+  --require-hashes runtime/requirements-build.lock
+
 npm test
 npm run verify:boundary
 npm run audit:runtime
-npm run build
-npm run smoke:cloud
-npm run package -- --platform=darwin --arch=arm64
+npm run build:runtime
+npm run smoke:local
+npm run smoke:local-shell
+npm run make
 npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
-npm run smoke:packaged -- \
-  --packaged-executable "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/MacOS/BizHub Desktop" \
-  --packaged-trust-store "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/Resources/trusted-connection-keys.json"
 ```
 
-`smoke:cloud` creates a temporary Ed25519 key and connection file, opens the
-public `https://example.com` origin through the real Electron process, and
-deletes the temporary material. It does not contact a BizHub deployment.
+The local smoke uses temporary synthetic state. It proves explicit bootstrap,
+authentication, Profile/data/writer identity, Generic Owner preview/apply/
+readback, idempotent replay, tamper failure with zero write, backup validation,
+restart readback, and zero residual Runtime processes. The packaged cloud smoke
+continues to use only `https://example.com` and never creates a local instance.
 
-The packaged runtime currently has no npm runtime dependencies. The pinned
-Forge development tree still reports upstream build-tool audit findings, so D1
-is not a release candidate until that build-chain risk is resolved or formally
-accepted. See the
-[dependency reachability record](../docs/verification/desktop-d1-build-dependency-reachability-2026-08-25.md).
+See the [D2 verification record](../docs/verification/desktop-d2-local-generic-2026-08-25.md).
 
-The public
-[`desktop-d1-windows.yml`](../.github/workflows/desktop-d1-windows.yml)
-workflow repeats clean installation, tests, development and packaged HTTPS
-smokes, artifact scanning, residual-process checks, ZIP hashing, and artifact
-upload on Windows x64. It does not sign or publish a release.
+## Release status
 
-The packaged prototype is unsigned and is not a release. Automatic update,
-Windows packaging, Generic local Runtime, and private cloud-to-local authority
-cutover remain later checkpoints.
+This candidate is ad-hoc/unsigned and not notarized. The pinned Forge build
+dependency tree still contains retained upstream findings even though the npm
+runtime dependency audit is clean. D2 is suitable only for internal isolated
+technical review. It is not authorized for publication, real business data,
+production trust keys, Windows local Runtime, or private cloud-to-local cutover.

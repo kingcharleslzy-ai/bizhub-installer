@@ -7,17 +7,25 @@ module.exports = {
     extendInfo: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: false,
-        NSAllowsLocalNetworking: false,
+        NSAllowsLocalNetworking: true,
       },
     },
-    extraResource: ["config/trusted-connection-keys.json"],
+    extraResource: [
+      "config/trusted-connection-keys.json",
+      "config/generic-runtime-trust.json",
+      "runtime-dist/bizhub-runtime",
+    ],
     ignore: [
+      /^\/\.runtime-venv($|\/)/,
       /^\/config($|\/)/,
       /^\/forge\.config\.cjs$/,
       /^\/node_modules($|\/)/,
       /^\/out($|\/)/,
       /^\/package-lock\.json$/,
       /^\/README\.md$/,
+      /^\/runtime($|\/)/,
+      /^\/runtime-build($|\/)/,
+      /^\/runtime-dist($|\/)/,
       /^\/scripts($|\/)/,
       /^\/shell-frontend($|\/)/,
       /^\/test($|\/)/,
@@ -27,7 +35,7 @@ module.exports = {
   makers: [
     {
       name: "@electron-forge/maker-zip",
-      platforms: ["darwin", "win32"],
+      platforms: ["darwin"],
     },
   ],
 };

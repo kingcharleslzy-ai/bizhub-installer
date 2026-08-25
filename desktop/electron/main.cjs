@@ -11,7 +11,20 @@ const { createHash } = require("node:crypto");
 const { readFile, stat } = require("node:fs/promises");
 const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
-const { remoteRequestAllowed } = require("./network-policy.cjs");
+const {
+  localRequestAllowed,
+  normalizeLocalOrigin,
+  remoteRequestAllowed,
+} = require("./network-policy.cjs");
+const {
+  RUNTIME_COOKIE,
+  backupLocalInstance,
+  bootstrapLocalInstance,
+  loadLocalInstance,
+  loginLocalRuntime,
+  startLocalRuntime,
+  stopLocalRuntime,
+} = require("./local-runtime.cjs");
 
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
@@ -30,12 +43,21 @@ let mainWindow = null;
 let workspaceView = null;
 let workspaceExpiryTimer = null;
 const remoteSessionPolicies = new WeakMap();
+const localSessionPolicies = new WeakMap();
+let localRuntime = null;
+let localRuntimeStopping = false;
+let shutdownInProgress = false;
 let workspaceState = {
+  mode: "none",
   status: "idle",
   displayName: "",
   profileId: "",
   applicationOrigin: "",
   error: "",
+  localInitialized: false,
+  localStatus: "stopped",
+  localError: "",
+  localLastBackup: "",
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -65,6 +87,30 @@ function trustStorePath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "trusted-connection-keys.json")
     : path.resolve(__dirname, "..", "config", "trusted-connection-keys.json");
+}
+
+function desktopUserDataRoot() {
+  const override = process.env.BIZHUB_DESKTOP_USER_DATA_ROOT;
+  return override ? path.resolve(override) : app.getPath("userData");
+}
+
+function localInstanceRoot() {
+  return path.join(desktopUserDataRoot(), "local-instance");
+}
+
+function localRuntimePackPath() {
+  if (!app.isPackaged && process.env.BIZHUB_DESKTOP_LOCAL_RUNTIME_DIR) {
+    return path.resolve(process.env.BIZHUB_DESKTOP_LOCAL_RUNTIME_DIR);
+  }
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "bizhub-runtime")
+    : path.resolve(__dirname, "..", "runtime-dist", "bizhub-runtime");
+}
+
+function localRuntimeTrustPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "generic-runtime-trust.json")
+    : path.resolve(__dirname, "..", "config", "generic-runtime-trust.json");
 }
 
 function publishState(next) {
@@ -149,6 +195,136 @@ function configureRemoteSession(remoteSession, allowedOrigins) {
     publishState({ error: "desktop_download_not_enabled" });
   });
   remoteSessionPolicies.set(remoteSession, policy);
+}
+
+function configureLocalSession(runtimeSession, localOrigin) {
+  const existingPolicy = localSessionPolicies.get(runtimeSession);
+  if (existingPolicy) {
+    existingPolicy.localOrigin = localOrigin;
+    return;
+  }
+  const policy = { localOrigin };
+  runtimeSession.setPermissionCheckHandler(() => false);
+  runtimeSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  runtimeSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: !localRequestAllowed(details.url, policy.localOrigin) });
+  });
+  runtimeSession.on("will-download", (event) => {
+    event.preventDefault();
+    publishState({ localError: "desktop_local_download_not_enabled" });
+  });
+  localSessionPolicies.set(runtimeSession, policy);
+}
+
+async function refreshLocalState() {
+  try {
+    const instance = await loadLocalInstance(localInstanceRoot());
+    publishState({
+      localInitialized: true,
+      localError: "",
+      ...(workspaceState.mode === "none" ? { displayName: instance.payload.display_name } : {}),
+    });
+    return instance;
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      publishState({ localInitialized: false, localError: "" });
+      return null;
+    }
+    publishState({
+      localInitialized: false,
+      localError: error instanceof Error ? error.message : "desktop_local_instance_invalid",
+    });
+    return null;
+  }
+}
+
+async function setLocalSessionCookies(runtimeSession, runtime) {
+  await runtimeSession.cookies.set({
+    url: runtime.origin,
+    name: RUNTIME_COOKIE,
+    value: runtime.token,
+    httpOnly: true,
+    secure: false,
+    sameSite: "strict",
+    path: "/",
+  });
+  if (runtime.sessionCookie) {
+    const separator = runtime.sessionCookie.indexOf("=");
+    await runtimeSession.cookies.set({
+      url: runtime.origin,
+      name: runtime.sessionCookie.slice(0, separator),
+      value: runtime.sessionCookie.slice(separator + 1),
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict",
+      path: "/",
+    });
+  }
+}
+
+async function openLocalWorkspaceView() {
+  if (!localRuntime) throw new Error("desktop_local_runtime_not_started");
+  destroyWorkspaceView();
+  const localOrigin = normalizeLocalOrigin(localRuntime.origin);
+  if (!localOrigin) throw new Error("desktop_local_runtime_origin_invalid");
+  const runtimeSession = session.fromPartition("persist:local-generic");
+  configureLocalSession(runtimeSession, localOrigin);
+  await setLocalSessionCookies(runtimeSession, localRuntime);
+  workspaceView = new WebContentsView({
+    webPreferences: {
+      allowRunningInsecureContent: false,
+      contextIsolation: true,
+      devTools: !app.isPackaged,
+      experimentalFeatures: false,
+      nodeIntegration: false,
+      sandbox: true,
+      session: runtimeSession,
+      webSecurity: true,
+    },
+  });
+  workspaceView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  workspaceView.webContents.on("will-navigate", (event, url) => {
+    if (normalizeLocalOrigin(url) !== localOrigin) event.preventDefault();
+  });
+  workspaceView.webContents.on("will-redirect", (event, url) => {
+    if (normalizeLocalOrigin(url) !== localOrigin) event.preventDefault();
+  });
+  workspaceView.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3) return;
+      destroyWorkspaceView();
+      publishState({
+        mode: "local",
+        status: "error",
+        localStatus: "error",
+        localError: `local_workspace_load_failed:${errorCode}:${errorDescription}:${validatedUrl}`,
+      });
+    },
+  );
+  workspaceView.webContents.on("did-finish-load", () => {
+    publishState({
+      mode: "local",
+      status: "connected",
+      localStatus: "connected",
+      error: "",
+      localError: "",
+    });
+    if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
+      const origin = localRuntime?.origin || "";
+      void stopLocalMode().then(() => {
+        finishSmoke({
+          status: "connected",
+          mode: "local",
+          origin,
+          residual_runtime_processes: 0,
+        }, 0);
+      });
+    }
+  });
+  mainWindow.contentView.addChildView(workspaceView);
+  setWorkspaceBounds();
+  await workspaceView.webContents.loadURL(`${localOrigin}/`);
 }
 
 function scheduleWorkspaceExpiry(expiresAt) {
@@ -237,6 +413,7 @@ async function openWorkspace(profile) {
   mainWindow.contentView.addChildView(workspaceView);
   setWorkspaceBounds();
   publishState({
+    mode: "cloud",
     status: "loading",
     displayName: profile.displayName,
     profileId: profile.profileId,
@@ -245,6 +422,161 @@ async function openWorkspace(profile) {
   });
   scheduleWorkspaceExpiry(profile.expiresAt);
   await workspaceView.webContents.loadURL(profile.applicationUrl);
+}
+
+async function startLocalMode() {
+  if (localRuntime) return localRuntime;
+  const instance = await refreshLocalState();
+  if (!instance) throw new Error("desktop_local_instance_not_initialized");
+  publishState({
+    mode: "local",
+    status: "loading",
+    displayName: instance.payload.display_name,
+    profileId: "generic-kernel-smoke",
+    applicationOrigin: "127.0.0.1",
+    error: "",
+    localStatus: "starting",
+    localError: "",
+  });
+  localRuntime = await startLocalRuntime({
+    instanceRoot: localInstanceRoot(),
+    runtimePack: localRuntimePackPath(),
+    trustPath: localRuntimeTrustPath(),
+  });
+  const started = localRuntime;
+  started.child.once("exit", (code, signalName) => {
+    if (localRuntime !== started) return;
+    localRuntime = null;
+    destroyWorkspaceView();
+    if (!localRuntimeStopping && !shutdownInProgress) {
+      publishState({
+        mode: "local",
+        status: "error",
+        localStatus: "error",
+        localError: `desktop_local_runtime_exited:${code ?? signalName ?? "unknown"}`,
+      });
+    }
+  });
+  publishState({
+    mode: "local",
+    status: "idle",
+    localStatus: "awaiting_login",
+    applicationOrigin: localRuntime.origin,
+  });
+  return localRuntime;
+}
+
+async function prepareLocalLogin() {
+  try {
+    await startLocalMode();
+  } catch (error) {
+    publishState({
+      mode: "local",
+      status: "error",
+      localStatus: "error",
+      localError: error instanceof Error ? error.message : "desktop_local_runtime_start_failed",
+    });
+  }
+  return workspaceState;
+}
+
+async function setupLocalInstance(input) {
+  if (localRuntime) throw new Error("desktop_local_runtime_already_started");
+  publishState({
+    mode: "local",
+    status: "loading",
+    localStatus: "initializing",
+    localError: "",
+  });
+  try {
+    const created = await bootstrapLocalInstance({
+      userDataRoot: desktopUserDataRoot(),
+      runtimePack: localRuntimePackPath(),
+      trustPath: localRuntimeTrustPath(),
+      input,
+    });
+    publishState({
+      localInitialized: true,
+      displayName: created.instance.display_name,
+      profileId: created.instance.profile_id,
+    });
+    await startLocalMode();
+    await loginLocalRuntime(localRuntime, input.username, input.password);
+    await openLocalWorkspaceView();
+  } catch (error) {
+    await refreshLocalState();
+    publishState({
+      mode: "local",
+      status: "error",
+      localStatus: "error",
+      localError: error instanceof Error ? error.message : "desktop_local_setup_failed",
+    });
+  }
+  return workspaceState;
+}
+
+async function authenticateLocal(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "password,username"
+  ) {
+    throw new Error("desktop_local_login_shape_invalid");
+  }
+  try {
+    await startLocalMode();
+    await loginLocalRuntime(localRuntime, String(input.username || ""), String(input.password || ""));
+    await openLocalWorkspaceView();
+  } catch (error) {
+    publishState({
+      mode: "local",
+      status: "error",
+      localStatus: "awaiting_login",
+      localError: error instanceof Error ? error.message : "desktop_local_login_failed",
+    });
+  }
+  return workspaceState;
+}
+
+async function createLocalBackup() {
+  try {
+    const result = await backupLocalInstance({
+      instanceRoot: localInstanceRoot(),
+      runtimePack: localRuntimePackPath(),
+      trustPath: localRuntimeTrustPath(),
+    });
+    publishState({ localLastBackup: result.path, localError: "" });
+  } catch (error) {
+    publishState({
+      localError: error instanceof Error ? error.message : "desktop_local_backup_failed",
+    });
+  }
+  return workspaceState;
+}
+
+async function stopLocalMode() {
+  destroyWorkspaceView();
+  const running = localRuntime;
+  localRuntime = null;
+  if (running) {
+    localRuntimeStopping = true;
+    try {
+      await stopLocalRuntime(running);
+    } finally {
+      localRuntimeStopping = false;
+    }
+  }
+  publishState({
+    mode: "none",
+    status: "idle",
+    profileId: "",
+    applicationOrigin: "",
+    error: "",
+    localStatus: "stopped",
+    localError: "",
+  });
+  await refreshLocalState();
+  return workspaceState;
 }
 
 async function chooseConnectionProfile() {
@@ -257,6 +589,7 @@ async function chooseConnectionProfile() {
   if (selection.canceled || selection.filePaths.length !== 1) return workspaceState;
   try {
     const profile = await loadConnectionProfile(selection.filePaths[0]);
+    await stopLocalMode();
     await openWorkspace(profile);
   } catch (error) {
     destroyWorkspaceView();
@@ -271,6 +604,7 @@ async function chooseConnectionProfile() {
 async function disconnectWorkspace() {
   destroyWorkspaceView();
   publishState({
+    mode: "none",
     status: "idle",
     displayName: "",
     profileId: "",
@@ -316,6 +650,26 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return disconnectWorkspace();
   });
+  ipcMain.handle("desktop:prepare-local", async (event) => {
+    requireTrustedShellSender(event);
+    return prepareLocalLogin();
+  });
+  ipcMain.handle("desktop:setup-local", async (event, input) => {
+    requireTrustedShellSender(event);
+    return setupLocalInstance(input);
+  });
+  ipcMain.handle("desktop:login-local", async (event, input) => {
+    requireTrustedShellSender(event);
+    return authenticateLocal(input);
+  });
+  ipcMain.handle("desktop:backup-local", async (event) => {
+    requireTrustedShellSender(event);
+    return createLocalBackup();
+  });
+  ipcMain.handle("desktop:stop-local", async (event) => {
+    requireTrustedShellSender(event);
+    return stopLocalMode();
+  });
 }
 
 async function createMainWindow() {
@@ -352,8 +706,24 @@ async function createMainWindow() {
   mainWindow.on("closed", () => {
     destroyWorkspaceView();
     mainWindow = null;
+    if (localRuntime) void stopLocalMode();
   });
   await mainWindow.loadURL(SHELL_URL);
+  await refreshLocalState();
+
+  if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
+    try {
+      await startLocalMode();
+      await openLocalWorkspaceView();
+    } catch (error) {
+      finishSmoke({
+        status: "error",
+        mode: "local",
+        error: error instanceof Error ? error.message : "desktop_local_smoke_failed",
+      }, 1);
+    }
+    return;
+  }
 
   const smokeProfile = process.env.BIZHUB_DESKTOP_SMOKE_PROFILE;
   if (smokeProfile) {
@@ -387,7 +757,19 @@ if (!hasSingleInstanceLock) {
     if (BrowserWindow.getAllWindows().length === 0) void createMainWindow();
   });
 
-  app.on("before-quit", destroyWorkspaceView);
+  app.on("before-quit", (event) => {
+    destroyWorkspaceView();
+    if (!localRuntime || shutdownInProgress) return;
+    event.preventDefault();
+    shutdownInProgress = true;
+    const running = localRuntime;
+    localRuntime = null;
+    localRuntimeStopping = true;
+    void stopLocalRuntime(running).finally(() => {
+      localRuntimeStopping = false;
+      app.quit();
+    });
+  });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });

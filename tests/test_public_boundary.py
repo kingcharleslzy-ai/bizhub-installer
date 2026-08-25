@@ -5,7 +5,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_PARTS = {".git", ".venv", "node_modules", "__pycache__", "static"}
+SKIP_PARTS = {
+    ".git",
+    ".runtime-venv",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "node_modules",
+    "out",
+    "runtime-build",
+    "runtime-dist",
+    "static",
+}
 
 
 def public_files():

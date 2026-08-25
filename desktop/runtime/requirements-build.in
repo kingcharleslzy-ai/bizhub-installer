@@ -1,0 +1,3 @@
+-r ../../app/backend/requirements.in
+-c ../../app/backend/requirements.lock
+pyinstaller==6.22.1

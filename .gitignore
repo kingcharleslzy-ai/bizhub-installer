@@ -5,6 +5,10 @@ __pycache__/
 node_modules/
 dist/
 out/
+desktop/.runtime-venv/
+desktop/node_modules
+desktop/runtime-build/
+desktop/runtime-dist/
 app/backend/bizhub/static/
 .pytest_cache/
 *.db

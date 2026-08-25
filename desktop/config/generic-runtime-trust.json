@@ -1,0 +1,14 @@
+{
+  "schema_version": "bizhub.desktop-runtime-trust.v1",
+  "runtime_manifest_schema": "bizhub.desktop-runtime-release.v1",
+  "runtime_id": "bizhub-generic-local",
+  "runtime_version": "0.1.0-d2",
+  "profile_id": "generic-kernel-smoke",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "artifact_id": "bizhub-common",
+  "core_artifact_digest": "sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72",
+  "core_source_commit": "0c05a44a22dc049ef4760173307a6b4af5a3dfad",
+  "allowlist_tree_digest": "3c2770526b509439f4a1a3b2226066b3b86456b7595f462fead848e8ae98211d",
+  "runtime_source_tree_digest": "943dac1b5207b36091e1754951108197e11cc5973a6ba35dee1567b13ca4a879"
+}

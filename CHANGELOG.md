@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add the Desktop-D2 macOS arm64 Generic local implementation candidate. The
+  customer-neutral Electron shell explicitly initializes one isolated local
+  instance, verifies one fixed PyInstaller onedir and the existing
+  `bizhub-common` artifact, binds a random loopback origin and per-launch token,
+  and delegates every formal write to the existing Generic Owners.
+- Add synthetic local acceptance for first-administrator authentication, Owner
+  preview/apply/readback, idempotent replay, tamper failure with zero write,
+  online backup validation, restart readback, packaged cloud/local smokes, and
+  zero residual sidecar processes. No customer-private Runtime, real data,
+  synchronization, background service, Windows local Runtime, signing, or
+  publication is authorized.
 - Document the proposed BizHub Desktop v0.1 boundary: one customer-neutral
   Electron shell, an explicit enterprise-cloud path, and one new Generic local
   instance without central IAM, customer-private code, direct SQLite access,

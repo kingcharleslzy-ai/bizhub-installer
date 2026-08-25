@@ -89,6 +89,7 @@ try {
       ...process.env,
       BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD: "1",
       BIZHUB_DESKTOP_SMOKE_PROFILE: profilePath,
+      BIZHUB_DESKTOP_USER_DATA_ROOT: path.join(temporaryRoot, "user-data"),
       ...(packagedExecutable ? {} : { BIZHUB_DESKTOP_TRUSTED_KEYS: trustStorePath }),
     },
     stdio: ["ignore", "pipe", "pipe"],

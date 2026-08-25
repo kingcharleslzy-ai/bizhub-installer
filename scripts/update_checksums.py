@@ -9,12 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "install/CHECKSUMS.sha256"
 SKIP_PARTS = {
     ".git",
+    ".runtime-venv",
     ".venv",
     ".pytest_cache",
     "__pycache__",
     "dist",
     "node_modules",
     "out",
+    "runtime-build",
+    "runtime-dist",
     "static",
 }
 
