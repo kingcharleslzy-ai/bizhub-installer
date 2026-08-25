@@ -135,6 +135,9 @@ jobs:
             '{status:"ok",commit:$commit,artifact:$artifact,bytes:$bytes,sha256:$sha256}' \
             > out/desktop-d2-macos-arm64-identity.json
           cat out/desktop-d2-macos-arm64-identity.json
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Desktop D2 product ZIP identity::commit=${{ github.sha }} artifact=$(basename "$artifact") bytes=$bytes sha256=$sha256"
 
       - name: Upload fixed D2 review Artifact
         id: upload
@@ -156,3 +159,4 @@ jobs:
             --arg artifact_digest "${{ steps.upload.outputs.artifact-digest }}" \
             --arg artifact_url "${{ steps.upload.outputs.artifact-url }}" \
             '{status:"uploaded",run_id:$run_id,artifact_id:$artifact_id,artifact_digest:$artifact_digest,artifact_url:$artifact_url}'
+          echo "::notice title=Desktop D2 Actions Artifact identity::run_id=${{ github.run_id }} artifact_id=${{ steps.upload.outputs.artifact-id }} artifact_digest=${{ steps.upload.outputs.artifact-digest }} product_bytes=${{ steps.product.outputs.bytes }} product_sha256=${{ steps.product.outputs.sha256 }}"
