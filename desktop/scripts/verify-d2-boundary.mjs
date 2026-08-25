@@ -78,6 +78,7 @@ for (const required of [
   'build_environment["SOURCE_DATE_EPOCH"]',
   'build_environment["PYTHONHASHSEED"]',
   "env=build_environment",
+  'newline="\\n"',
 ]) {
   assert.ok(windowsRuntimeBuilder.includes(required), required);
 }

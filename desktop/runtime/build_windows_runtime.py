@@ -140,6 +140,7 @@ def build(root: Path, python: Path) -> Path:
     (pack / "runtime-release-manifest.json").write_text(
         json.dumps(release, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     print(
         json.dumps(
@@ -194,12 +195,20 @@ def capture_review_input(root: Path, pack: Path) -> dict[str, Any]:
         "runtime_pack_file_count": len(manifest["files"]),
     }
     trust_path = desktop / "config" / "generic-runtime-trust.win32-x64.json"
-    trust_path.write_text(json.dumps(trust, indent=2) + "\n", encoding="utf-8")
+    trust_path.write_text(
+        json.dumps(trust, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     archive_path = desktop / "runtime" / "vendor" / ARCHIVE_NAME
     deterministic_archive(pack, archive_path)
     archive_sha256 = sha256(archive_path)
     checksum_path = archive_path.with_suffix(".sha256")
-    checksum_path.write_text(f"{archive_sha256}  {ARCHIVE_NAME}\n", encoding="utf-8")
+    checksum_path.write_text(
+        f"{archive_sha256}  {ARCHIVE_NAME}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     result = {
         "status": "captured",
         "archive": ARCHIVE_NAME,
