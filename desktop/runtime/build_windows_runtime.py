@@ -24,6 +24,10 @@ from build_local_runtime import (
 
 RUNTIME_VERSION = "0.1.0-d3"
 ARCHIVE_NAME = f"bizhub-runtime-win32-x64-{RUNTIME_VERSION}.zip"
+# The public D2 baseline commit timestamp. PyInstaller uses SOURCE_DATE_EPOCH
+# for deterministic PE headers; PYTHONHASHSEED also removes set/hash ordering
+# from generated Python archives. Keep this fixed for the D3 Runtime identity.
+REPRODUCIBLE_BUILD_EPOCH = "1787665676"
 
 
 def build(root: Path, python: Path) -> Path:
@@ -73,7 +77,15 @@ def build(root: Path, python: Path) -> Path:
         "uvicorn",
         str(desktop / "runtime" / "bizhub_runtime_entry.py"),
     ]
-    completed = subprocess.run(command, cwd=root, check=False)
+    build_environment = os.environ.copy()
+    build_environment["SOURCE_DATE_EPOCH"] = REPRODUCIBLE_BUILD_EPOCH
+    build_environment["PYTHONHASHSEED"] = "1"
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        check=False,
+        env=build_environment,
+    )
     if completed.returncode != 0:
         raise RuntimeError(f"desktop_runtime_pyinstaller_failed:{completed.returncode}")
 
