@@ -36,9 +36,11 @@ for (const name of lowerNames) {
 
 const asarFiles = files.filter((value) => path.basename(value).toLowerCase() === "app.asar");
 assert.equal(asarFiles.length, 1, "app_asar_count_invalid");
-const asarEntries = asar.listPackage(asarFiles[0]).map((value) => (
-  value.replaceAll("\\", "/").replace(/^\//, "")
-));
+const asarEntryRecords = asar.listPackage(asarFiles[0]).map((value) => ({
+  extractPath: value.replace(/^[/\\]/, ""),
+  normalizedPath: value.replaceAll("\\", "/").replace(/^\//, ""),
+}));
+const asarEntries = asarEntryRecords.map((value) => value.normalizedPath);
 const allowedAsarEntry = (value) => (
   value === "dist"
   || value === "dist/renderer"
@@ -74,13 +76,21 @@ for (const file of outerTextFiles) {
   }
   assert.ok(!text.includes("-----BEGIN PRIVATE KEY-----"), `private_key:${file}`);
 }
-for (const entry of asarEntries.filter((value) => textExtensions.has(path.extname(value).toLowerCase()))) {
-  const text = asar.extractFile(asarFiles[0], entry).toString("utf8");
+for (const entry of asarEntryRecords.filter(
+  (value) => textExtensions.has(path.extname(value.normalizedPath).toLowerCase()),
+)) {
+  const text = asar.extractFile(asarFiles[0], entry.extractPath).toString("utf8");
   const lowered = text.toLocaleLowerCase();
   for (const term of asarPrivateTerms) {
-    assert.ok(!lowered.includes(term.toLocaleLowerCase()), `private_asar_marker:${term}:${entry}`);
+    assert.ok(
+      !lowered.includes(term.toLocaleLowerCase()),
+      `private_asar_marker:${term}:${entry.normalizedPath}`,
+    );
   }
-  assert.ok(!text.includes("-----BEGIN PRIVATE KEY-----"), `private_asar_key:${entry}`);
+  assert.ok(
+    !text.includes("-----BEGIN PRIVATE KEY-----"),
+    `private_asar_key:${entry.normalizedPath}`,
+  );
 }
 
 const trustStores = files.filter((value) => path.basename(value) === "trusted-connection-keys.json");
