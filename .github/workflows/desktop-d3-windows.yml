@@ -295,7 +295,11 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe"
-          $nupkg = Get-ChildItem "out/make/squirrel.windows/x64" -Filter "*-full.nupkg" | Select-Object -Single
+          $nupkgs = @(Get-ChildItem "out/make/squirrel.windows/x64" -Filter "*-full.nupkg")
+          if ($nupkgs.Count -ne 1) {
+            throw "desktop_windows_full_nupkg_count_invalid:$($nupkgs.Count)"
+          }
+          $nupkg = $nupkgs[0]
           $releases = Get-Item "out/make/squirrel.windows/x64/RELEASES"
           $signature = Get-AuthenticodeSignature -LiteralPath $setup.FullName
           $identity = [ordered]@{

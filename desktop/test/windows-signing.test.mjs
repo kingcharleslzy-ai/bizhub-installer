@@ -76,3 +76,12 @@ test("Windows install smoke checks only the formal BizHub instance boundary", ()
   assert.match(source, /desktop_windows_install_created_local_instance/);
   assert.doesNotMatch(source, /Where-Object \{ \$_\.Extension -in/);
 });
+
+test("Windows evidence requires exactly one full Squirrel package", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/desktop-d3-windows.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /\$nupkgs\.Count -ne 1/);
+  assert.doesNotMatch(workflow, /Select-Object -Single/);
+});
