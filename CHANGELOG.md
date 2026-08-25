@@ -6,6 +6,12 @@
   Electron shell, an explicit enterprise-cloud path, and one new Generic local
   instance without central IAM, customer-private code, direct SQLite access,
   cloud/local synchronization, or an automatic writer switch.
+- Add the Desktop-D1 cloud-shell implementation candidate with a hardened
+  Electron `WebContentsView`, signed Ed25519 connection envelopes, exact HTTPS
+  request origins, isolated persistent sessions, denied permissions/downloads,
+  an empty production trust store, and macOS arm64 packaging proof. It contains
+  no Python, SQLite, customer-private material, production endpoint, or trusted
+  connection key, and it is not published or signed for distribution.
 
 ## 0.7.0-preview.1 — 2026-08-23
 

@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 node_modules/
 dist/
+out/
 app/backend/bizhub/static/
 .pytest_cache/
 *.db

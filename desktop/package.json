@@ -1,0 +1,28 @@
+{
+  "name": "bizhub-desktop",
+  "productName": "BizHub Desktop",
+  "version": "0.1.0",
+  "description": "Customer-neutral BizHub desktop shell",
+  "main": "electron/main.cjs",
+  "author": "kingcharleslzy-ai",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "private": true,
+  "scripts": {
+    "audit:runtime": "npm audit --omit=dev --audit-level=high",
+    "build": "vite build",
+    "make": "npm run build && electron-forge make",
+    "package": "npm run build && electron-forge package",
+    "smoke:cloud": "npm run build && node scripts/cloud-smoke.mjs",
+    "start": "npm run build && electron-forge start",
+    "test": "node --test test/*.test.mjs",
+    "verify:boundary": "node scripts/verify-d1-boundary.mjs"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@vitejs/plugin-vue": "6.0.8",
+    "electron": "44.0.0",
+    "vite": "8.2.2",
+    "vue": "3.5.41"
+  }
+}

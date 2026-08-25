@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: proposed, documentation-only
+Status: accepted; Desktop-D1 implementation candidate, not released
 
 Date: 2026-08-25
 
@@ -23,8 +23,10 @@ Cloud business behavior comes from the cloud Runtime. Local business behavior
 comes from one fixed Generic Runtime built from the canonical public artifact.
 Electron and Vue connect to a backend API; they never open SQLite.
 
-This decision does not authorize implementation, packaging, installation,
-migration, production access, or a writer switch.
+Desktop-D0 was approved on 2026-08-25. The current authorization covers only
+the Desktop-D1 customer-neutral cloud-shell implementation and local unsigned
+packaging proof. It does not authorize Desktop-D2, installation, publication,
+production access, migration, or a writer switch.
 
 ## Installer
 
@@ -128,9 +130,11 @@ checkpoint.
 
 Each checkpoint requires separate authorization:
 
-1. **Desktop-D0:** approve this contract; no executable change.
-2. **Desktop-D1:** prove the public shell can open an approved cloud Runtime
-   without starting Python or creating SQLite.
+1. **Desktop-D0:** accepted on 2026-08-25; no executable change.
+2. **Desktop-D1:** implementation candidate completed locally on 2026-08-25;
+   prove the public shell can open an approved cloud Runtime without starting
+   Python or creating SQLite. See the
+   [local verification record](verification/desktop-d1-cloud-shell-2026-08-25.md).
 3. **Desktop-D2:** on macOS arm64 with synthetic data, prove Generic local setup,
    authentication, Owner preview/apply/readback, idempotent replay, restart,
    backup, and failure-zero-write behavior.

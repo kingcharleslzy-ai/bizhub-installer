@@ -7,7 +7,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "install/CHECKSUMS.sha256"
-SKIP_PARTS = {".git", ".venv", ".pytest_cache", "node_modules", "__pycache__", "static"}
+SKIP_PARTS = {
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    "__pycache__",
+    "dist",
+    "node_modules",
+    "out",
+    "static",
+}
 
 
 def included(path: Path) -> bool:
