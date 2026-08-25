@@ -62,21 +62,19 @@ try {
     $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
         $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
     )
-    foreach ($storeName in @(
-        [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-        [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPublisher
-    )) {
-        $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-            $storeName,
-            [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-        )
-        try {
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($publicCertificate)
-        }
-        finally {
-            $store.Close()
-        }
+    # A hosted Windows runner is an isolated test machine. Explicitly trust the
+    # synthetic leaf only in TrustedPeople; writing a self-signed leaf to Root
+    # can invoke protected-root UI and deadlock an unattended job.
+    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+        [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
+    )
+    try {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        $store.Add($publicCertificate)
+    }
+    finally {
+        $store.Close()
     }
     [ordered]@{
         subject = $certificate.Subject

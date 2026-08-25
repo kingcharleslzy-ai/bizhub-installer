@@ -352,10 +352,8 @@ jobs:
             Remove-Item -LiteralPath "$env:BIZHUB_WINDOWS_CERTIFICATE_FILE.cer" -Force
           }
           if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) {
-            foreach ($store in "My", "Root", "TrustedPublisher") {
-              $certificate = "Cert:\CurrentUser\$store\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT"
-              if (Test-Path -LiteralPath $certificate) {
-                Remove-Item -LiteralPath $certificate -Force
-              }
+            $certificate = "Cert:\LocalMachine\TrustedPeople\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT"
+            if (Test-Path -LiteralPath $certificate) {
+              Remove-Item -LiteralPath $certificate -Force
             }
           }
