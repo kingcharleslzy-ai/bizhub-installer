@@ -88,6 +88,8 @@ jobs:
           }
           & $env:BIZHUB_RUNTIME_PYTHON runtime/build_windows_runtime.py --python $env:BIZHUB_RUNTIME_PYTHON
           $first = Read-RuntimeIdentity
+          Copy-Item -LiteralPath "runtime-dist\bizhub-runtime\runtime-release-manifest.json" `
+            -Destination (Join-Path $env:RUNNER_TEMP "bizhub-first-runtime-manifest.json")
           & $env:BIZHUB_RUNTIME_PYTHON runtime/build_windows_runtime.py --python $env:BIZHUB_RUNTIME_PYTHON
           $second = Read-RuntimeIdentity
           $firstJson = $first | ConvertTo-Json -Compress
@@ -95,7 +97,18 @@ jobs:
           Write-Output "first_runtime_identity=$firstJson"
           Write-Output "second_runtime_identity=$secondJson"
           if ($firstJson -ne $secondJson) {
-            Write-Output "::error title=Windows Runtime nondeterminism::first=$firstJson second=$secondJson"
+            $firstManifest = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "bizhub-first-runtime-manifest.json") -Raw | ConvertFrom-Json
+            $secondManifest = Get-Content -LiteralPath "runtime-dist\bizhub-runtime\runtime-release-manifest.json" -Raw | ConvertFrom-Json
+            $firstFiles = @{}
+            foreach ($record in $firstManifest.files) { $firstFiles[$record.path] = $record }
+            $differences = foreach ($record in $secondManifest.files) {
+              $before = $firstFiles[$record.path]
+              if (-not $before -or $before.sha256 -ne $record.sha256 -or $before.size -ne $record.size) {
+                "$($record.path):$($before.sha256):$($record.sha256):$($before.size):$($record.size)"
+              }
+            }
+            $differenceText = $differences -join ","
+            Write-Output "::error title=Windows Runtime nondeterminism::first=$firstJson second=$secondJson differing_files=$differenceText"
             throw "desktop_windows_runtime_build_not_deterministic"
           }
           $second | ConvertTo-Json -Compress
