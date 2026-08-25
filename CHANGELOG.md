@@ -12,6 +12,10 @@
   an empty production trust store, and macOS arm64 packaging proof. It contains
   no Python, SQLite, customer-private material, production endpoint, or trusted
   connection key, and it is not published or signed for distribution.
+- Add final-package boundary scanning, packaged HTTPS smoke support, and a
+  Windows x64 GitHub workflow that verifies the same public shell commit without
+  adding a trusted production key or publishing a release. Record the exact
+  Forge build-dependency reachability and retain it as a release blocker.
 
 ## 0.7.0-preview.1 — 2026-08-23
 

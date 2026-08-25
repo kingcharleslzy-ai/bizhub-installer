@@ -60,6 +60,13 @@ only an exact HTTPS origin, Profile ID, shell compatibility, expiry, key ID, and
 signature. It receives no password and stores no business data or account
 membership. The target Runtime remains the authentication and permission owner.
 
+The signed connection file is only the Desktop-D1 Workspace bootstrap used to
+prove the shell boundary. Desktop-D1 does not implement account-driven
+Workspace discovery, a unified Account/Workspace membership control plane, or
+automatic discovery of every company available to one account. Those remain a
+later product identity decision; the D1 file must not be renamed or presented
+as if those capabilities already existed.
+
 A failed cloud login never creates a local account or database. An unknown local
 username never self-registers. The first local setup requires explicit user
 confirmation.

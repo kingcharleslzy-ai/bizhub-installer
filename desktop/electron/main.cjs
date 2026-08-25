@@ -74,6 +74,12 @@ function publishState(next) {
   }
 }
 
+function finishSmoke(result, exitCode) {
+  const encoded = `${JSON.stringify(result)}\n`;
+  (exitCode === 0 ? process.stdout : process.stderr).write(encoded);
+  app.exit(exitCode);
+}
+
 function trustedShellSender(event) {
   try {
     const senderUrl = new URL(event.senderFrame.url);
@@ -186,8 +192,10 @@ async function openWorkspace(profile) {
   configureRemoteSession(remoteSession, profile.allowedOrigins);
   workspaceView = new WebContentsView({
     webPreferences: {
+      allowRunningInsecureContent: false,
       contextIsolation: true,
       devTools: !app.isPackaged,
+      experimentalFeatures: false,
       nodeIntegration: false,
       sandbox: true,
       session: remoteSession,
@@ -209,16 +217,18 @@ async function openWorkspace(profile) {
         status: "error",
         error: `workspace_load_failed:${errorCode}:${errorDescription}:${validatedUrl}`,
       });
-      if (!app.isPackaged && process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
-        app.exit(1);
+      if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
+        void finishSmoke({
+          status: "error",
+          error: `workspace_load_failed:${errorCode}`,
+        }, 1);
       }
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
     publishState({ status: "connected", error: "" });
-    if (!app.isPackaged && process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
-      process.stdout.write(`${JSON.stringify({ status: "connected", origin: profile.allowedOrigins[0] })}\n`);
-      app.exit(0);
+    if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
+      void finishSmoke({ status: "connected", origin: profile.allowedOrigins[0] }, 0);
     }
   });
   mainWindow.contentView.addChildView(workspaceView);
@@ -314,8 +324,10 @@ async function createMainWindow() {
     backgroundColor: "#f4f6f8",
     title: "BizHub Desktop",
     webPreferences: {
+      allowRunningInsecureContent: false,
       contextIsolation: true,
       devTools: !app.isPackaged,
+      experimentalFeatures: false,
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -340,13 +352,15 @@ async function createMainWindow() {
   });
   await mainWindow.loadURL(SHELL_URL);
 
-  const smokeProfile = !app.isPackaged && process.env.BIZHUB_DESKTOP_SMOKE_PROFILE;
+  const smokeProfile = process.env.BIZHUB_DESKTOP_SMOKE_PROFILE;
   if (smokeProfile) {
     try {
       await openWorkspace(await loadConnectionProfile(path.resolve(smokeProfile)));
     } catch (error) {
-      process.stderr.write(`${error instanceof Error ? error.message : "desktop_smoke_failed"}\n`);
-      app.exit(1);
+      finishSmoke({
+        status: "error",
+        error: error instanceof Error ? error.message : "desktop_smoke_failed",
+      }, 1);
     }
   }
 }

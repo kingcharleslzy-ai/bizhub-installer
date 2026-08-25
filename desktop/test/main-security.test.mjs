@@ -10,7 +10,9 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   for (const required of [
     "WebContentsView",
+    "allowRunningInsecureContent: false",
     "contextIsolation: true",
+    "experimentalFeatures: false",
     "nodeIntegration: false",
     "requestSingleInstanceLock",
     "sandbox: true",

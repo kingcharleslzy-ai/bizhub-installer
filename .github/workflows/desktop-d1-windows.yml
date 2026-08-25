@@ -1,0 +1,95 @@
+name: Desktop D1 Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/desktop-d1-cloud-shell
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+
+      - name: Clean install
+        run: npm ci
+
+      - name: Source tests and boundaries
+        run: |
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
+
+      - name: Development Electron smoke
+        run: npm run smoke:cloud
+
+      - name: Make unsigned Windows x64 ZIP
+        run: npm run make -- --platform=win32 --arch=x64
+
+      - name: Scan packaged artifact
+        run: npm run verify:artifact -- "out/BizHub Desktop-win32-x64"
+
+      - name: Packaged Electron HTTPS smoke
+        run: >-
+          npm run smoke:packaged --
+          --packaged-executable "out/BizHub Desktop-win32-x64/BizHub Desktop.exe"
+          --packaged-trust-store "out/BizHub Desktop-win32-x64/resources/trusted-connection-keys.json"
+
+      - name: Re-scan restored packaged artifact
+        run: npm run verify:artifact -- "out/BizHub Desktop-win32-x64"
+
+      - name: Confirm no residual Electron process
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 2
+          $root = (Resolve-Path .).Path
+          $left = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and
+            $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -and
+            ($_.Name -eq "electron.exe" -or $_.Name -eq "BizHub Desktop.exe")
+          }
+          if ($left) {
+            $left | Select-Object ProcessId, Name, ExecutablePath | Format-Table
+            throw "desktop_residual_process_detected"
+          }
+
+      - name: Record Windows artifact identity
+        shell: pwsh
+        run: |
+          $artifact = Get-Item "out/make/zip/win32/x64/BizHub Desktop-win32-x64-0.1.0.zip"
+          $hash = Get-FileHash -Algorithm SHA256 $artifact.FullName
+          [pscustomobject]@{
+            status = "ok"
+            commit = "${{ github.sha }}"
+            os = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+            architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+            artifact = $artifact.Name
+            bytes = $artifact.Length
+            sha256 = $hash.Hash.ToLowerInvariant()
+          } | ConvertTo-Json -Compress
+
+      - name: Extract and scan final Windows ZIP
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath "out/make/zip/win32/x64/BizHub Desktop-win32-x64-0.1.0.zip" -DestinationPath "out/windows-zip-artifact-review"
+          npm run verify:artifact -- "out/windows-zip-artifact-review"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-d1-windows-x64-${{ github.sha }}
+          path: desktop/out/make/zip/win32/x64/BizHub Desktop-win32-x64-0.1.0.zip
+          if-no-files-found: error
+          retention-days: 14
