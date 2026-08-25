@@ -90,7 +90,12 @@ jobs:
           $first = Read-RuntimeIdentity
           & $env:BIZHUB_RUNTIME_PYTHON runtime/build_windows_runtime.py --python $env:BIZHUB_RUNTIME_PYTHON
           $second = Read-RuntimeIdentity
-          if (($first | ConvertTo-Json -Compress) -ne ($second | ConvertTo-Json -Compress)) {
+          $firstJson = $first | ConvertTo-Json -Compress
+          $secondJson = $second | ConvertTo-Json -Compress
+          Write-Output "first_runtime_identity=$firstJson"
+          Write-Output "second_runtime_identity=$secondJson"
+          if ($firstJson -ne $secondJson) {
+            Write-Output "::error title=Windows Runtime nondeterminism::first=$firstJson second=$secondJson"
             throw "desktop_windows_runtime_build_not_deterministic"
           }
           $second | ConvertTo-Json -Compress
