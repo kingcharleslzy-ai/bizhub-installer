@@ -49,6 +49,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 app.enableSandbox();
+if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
+  app.disableHardwareAcceleration();
+}
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 function rendererRoot() {

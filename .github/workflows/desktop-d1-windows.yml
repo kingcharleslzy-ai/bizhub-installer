@@ -35,7 +35,16 @@ jobs:
           npm run audit:runtime
 
       - name: Development Electron smoke
-        run: npm run smoke:cloud
+        shell: pwsh
+        run: |
+          $output = npm run smoke:cloud 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          $output
+          if ($exitCode -ne 0) {
+            $escaped = $output.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Development Electron smoke details::$escaped"
+            exit $exitCode
+          }
 
       - name: Make unsigned Windows x64 ZIP
         run: npm run make -- --platform=win32 --arch=x64
@@ -44,10 +53,16 @@ jobs:
         run: npm run verify:artifact -- "out/BizHub Desktop-win32-x64"
 
       - name: Packaged Electron HTTPS smoke
-        run: >-
-          npm run smoke:packaged --
-          --packaged-executable "out/BizHub Desktop-win32-x64/BizHub Desktop.exe"
-          --packaged-trust-store "out/BizHub Desktop-win32-x64/resources/trusted-connection-keys.json"
+        shell: pwsh
+        run: |
+          $output = npm run smoke:packaged -- --packaged-executable "out/BizHub Desktop-win32-x64/BizHub Desktop.exe" --packaged-trust-store "out/BizHub Desktop-win32-x64/resources/trusted-connection-keys.json" 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          $output
+          if ($exitCode -ne 0) {
+            $escaped = $output.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Packaged Electron smoke details::$escaped"
+            exit $exitCode
+          }
 
       - name: Re-scan restored packaged artifact
         run: npm run verify:artifact -- "out/BizHub Desktop-win32-x64"
