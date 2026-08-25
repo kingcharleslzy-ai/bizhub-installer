@@ -1,8 +1,8 @@
-# BizHub Desktop D2 merged baseline
+# BizHub Desktop D2 baseline and D3 Windows candidate
 
 This directory contains the Desktop-D1 cloud shell plus the Desktop-D2 macOS
-arm64 local-runtime implementation candidate. One customer-neutral Electron
-shell now exposes two explicit paths:
+arm64 and Desktop-D3 Windows x64 local-runtime implementations. One
+customer-neutral Electron shell exposes two explicit paths:
 
 ```text
 signed enterprise connection -> enterprise HTTPS Runtime
@@ -19,9 +19,11 @@ private Profile, rule, endpoint, account, credential, production data, model,
 collector, synchronization, background service, automatic update, or authority
 switch.
 
-The fixed D2 review input is
+The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`40d054980ee4f8d22276f5723877e447faec72e9d743f281709dfa9c2137e7eb`).
+`40d054980ee4f8d22276f5723877e447faec72e9d743f281709dfa9c2137e7eb`) and
+`runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
+`7948cdd1fac6bb330320bd3b08cee8b00630e4e47d300ce441626c670054fb27`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
@@ -78,6 +80,9 @@ coordinated Pack tamper rejection, and zero residual Runtime processes. The pack
 continues to use only `https://example.com` and never creates a local instance.
 
 See the [D2 verification record](../docs/verification/desktop-d2-local-generic-2026-08-25.md).
+The Windows x64 equivalent runs on `windows-2022` through
+`desktop-d3-windows.yml`; see the
+[D3 verification record](../docs/verification/desktop-d3-windows-x64-2026-08-26.md).
 
 ## Release status
 
@@ -92,9 +97,10 @@ clean macOS arm64 runner. It separately rebuilds a source candidate, restores
 and verifies the fixed review Pack, then uploads an unsigned review Artifact;
 it does not sign, notarize, or publish a Release.
 
-Desktop-D3 is implemented on a separate branch. It must add a fixed Windows x64
-Runtime, Squirrel.Windows installer, bounded Squirrel lifecycle handling,
-Authenticode verification, install/local-Owner/uninstall evidence, formal-data
-preservation, and zero residual processes. An ephemeral CI certificate may be
-used only to prove the signing mechanics; it is not a production publisher
-identity and cannot produce a formal public release.
+Desktop-D3 is an external-review candidate on a separate branch. Its native
+Windows x64 workflow passed fixed Runtime rebuild/trust, Squirrel lifecycle,
+Authenticode mechanics, install/local-Owner/uninstall data preservation, and
+zero-residual-process checks. The fixed Runtime subtree remains byte-identical
+and therefore unsigned while the review Shell and installer use an ephemeral CI
+certificate. That certificate is not a production publisher identity, and the
+D3 Artifact is not a formal public release.

@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted boundary; Desktop-D2 merged to public main; Desktop-D3 authorized and in progress
+Status: accepted boundary; Desktop-D2 merged to public main; Desktop-D3 external-review candidate
 
 Date: 2026-08-25
 
@@ -157,14 +157,18 @@ Each checkpoint requires separate authorization:
    authentication, Owner preview/apply/readback, idempotent replay, restart,
    backup, failure-zero-write behavior, fixed Pack identity, single Runtime
    lifecycle, and interrupted-setup recovery. Its first external code review
-   returned three narrow lifecycle/trust fixes; the repaired head must pass a
-   repaired fixed head passed its clean macOS arm64 workflow before the project
-   Owner authorized the merge. See the
+   returned three narrow lifecycle/trust fixes; the repaired fixed head passed
+   its clean macOS arm64 workflow before the project Owner authorized the merge.
+   See the
    [verification record](verification/desktop-d2-local-generic-2026-08-25.md).
-4. **Desktop-D3:** authorized on 2026-08-25; repeat the fixed Runtime and Owner
-   chain on Windows x64 with Squirrel installation, signing, uninstall data
-   preservation, and zero-residual-process evidence. Synthetic signing is
-   review-only; production signing remains a separate release gate.
+4. **Desktop-D3:** implemented as an external-review candidate on 2026-08-26.
+   Its fixed Runtime and Owner chain passed on Windows x64 with Squirrel
+   installation, Shell/installer signing mechanics, uninstall data
+   preservation, and zero-residual-process evidence. Squirrel is prevented from
+   mutating the independently trusted Runtime subtree. Synthetic signing and the
+   unsigned fixed sidecar remain review-only; production signing remains a
+   separate release gate. See the
+   [verification record](verification/desktop-d3-windows-x64-2026-08-26.md).
 5. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 

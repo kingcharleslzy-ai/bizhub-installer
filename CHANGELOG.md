@@ -6,6 +6,13 @@
   public `main`, and begin the separately authorized Desktop-D3 Windows x64
   checkpoint with a platform-bound PyInstaller Runtime, Squirrel.Windows
   lifecycle, signing gates, and install/uninstall data-preservation evidence.
+- Complete the Desktop-D3 Windows x64 external-review candidate with a
+  deterministic fixed Runtime, read-only Windows parent probe, portable archive
+  verification, bounded Squirrel events, Shell/installer Authenticode mechanics,
+  installed Owner lifecycle, uninstall data preservation, and zero residual
+  processes. A shared signing hook prevents Squirrel from changing the fixed
+  Runtime Pack; the synthetic signer and unsigned sidecar remain release
+  blockers rather than production authority.
 
 - Add the Desktop-D2 macOS arm64 Generic local implementation candidate. The
   customer-neutral Electron shell explicitly initializes one isolated local
