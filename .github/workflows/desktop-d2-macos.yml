@@ -48,14 +48,20 @@ jobs:
       - name: Install fixed Desktop dependencies
         run: npm ci
 
-      - name: Source, public boundary, and Python tests
-        shell: bash
+      - name: Verify repository checksums
+        run: python ../scripts/verify_checksums.py
+
+      - name: Run Desktop unit tests
+        run: npm test
+
+      - name: Verify public boundary and Runtime audit
         run: |
-          python ../scripts/verify_checksums.py
-          npm test
           npm run verify:boundary
           npm run audit:runtime
-          PYTHONPATH="$PWD/../app/backend" ../.desktop-test-venv/bin/pytest -q ../app/backend/tests ../tests
+
+      - name: Run public Python tests
+        shell: bash
+        run: PYTHONPATH="$PWD/../app/backend" ../.desktop-test-venv/bin/pytest -q ../app/backend/tests ../tests
 
       - name: Rebuild Generic Runtime source candidate
         shell: bash
