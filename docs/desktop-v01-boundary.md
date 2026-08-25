@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted boundary; Desktop-D2 narrow-fix candidate awaiting external re-review, not released
+Status: accepted boundary; Desktop-D2 merged to public main; Desktop-D3 authorized and in progress
 
 Date: 2026-08-25
 
@@ -23,11 +23,20 @@ Cloud business behavior comes from the cloud Runtime. Local business behavior
 comes from one fixed Generic Runtime built from the canonical public artifact.
 Electron and Vue connect to a backend API; they never open SQLite.
 
-Desktop-D0 and Desktop-D1 were approved on 2026-08-25. Desktop-D2 was separately
-authorized after D1 merged. The current implementation authorization covers the
-macOS arm64 Generic local technical proof with synthetic data. It does not
-authorize installation on a business machine, publication, production access,
-customer-private Runtime, migration, synchronization, or a writer switch.
+Desktop-D0, Desktop-D1, and Desktop-D2 were approved on 2026-08-25. Desktop-D2
+was merged to public `main` at
+`84c234fb0d2727e87d2dd0b30cd212b3cd658ad6` after the narrow trust/lifecycle
+repairs and a successful fixed-head macOS arm64 workflow. Its unsigned Artifact
+remains review evidence rather than a distributable release.
+
+Desktop-D3 was separately authorized after that merge. Its implementation
+scope is Windows x64 Generic local Runtime parity, a Squirrel.Windows installer,
+code-signing gates, install/uninstall evidence, and synthetic-data Owner
+readback. It does not authorize installation on a business machine, production
+access, customer-private Runtime, migration, synchronization, or a writer
+switch. A synthetic CI signer may prove the signing path but cannot authorize
+public distribution; formal release requires a separately verified production
+Authenticode identity.
 
 ## Installer
 
@@ -143,16 +152,19 @@ Each checkpoint requires separate authorization:
    prove the public shell can open an approved cloud Runtime without starting
    Python or creating SQLite. See the
    [local verification record](verification/desktop-d1-cloud-shell-2026-08-25.md).
-3. **Desktop-D2:** locally completed as an implementation candidate on 2026-08-25;
+3. **Desktop-D2:** completed and merged to public `main` on 2026-08-25;
    on macOS arm64 with synthetic data, proves Generic local setup,
    authentication, Owner preview/apply/readback, idempotent replay, restart,
    backup, failure-zero-write behavior, fixed Pack identity, single Runtime
    lifecycle, and interrupted-setup recovery. Its first external code review
    returned three narrow lifecycle/trust fixes; the repaired head must pass a
-   second review before merge. See the
+   repaired fixed head passed its clean macOS arm64 workflow before the project
+   Owner authorized the merge. See the
    [verification record](verification/desktop-d2-local-generic-2026-08-25.md).
-4. **Desktop-D3:** repeat the fixed release on Windows x64 with signing and
-   installer evidence.
+4. **Desktop-D3:** authorized on 2026-08-25; repeat the fixed Runtime and Owner
+   chain on Windows x64 with Squirrel installation, signing, uninstall data
+   preservation, and zero-residual-process evidence. Synthetic signing is
+   review-only; production signing remains a separate release gate.
 5. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 

@@ -62,6 +62,7 @@ const allowedAsarEntry = (value) => (
     "electron/main.cjs",
     "electron/network-policy.cjs",
     "electron/preload.cjs",
+    "electron/squirrel-startup.cjs",
     "package.json",
   ].includes(value)
 );
@@ -121,6 +122,7 @@ for (const sourceName of [
   "main.cjs",
   "network-policy.cjs",
   "preload.cjs",
+  "squirrel-startup.cjs",
 ]) {
   const source = await readFile(path.resolve("electron", sourceName));
   const packaged = asar.extractFile(asarFiles[0], `electron/${sourceName}`);

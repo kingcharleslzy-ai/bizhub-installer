@@ -1,4 +1,4 @@
-# BizHub Desktop D2 local Generic candidate
+# BizHub Desktop D2 merged baseline
 
 This directory contains the Desktop-D1 cloud shell plus the Desktop-D2 macOS
 arm64 local-runtime implementation candidate. One customer-neutral Electron
@@ -81,12 +81,20 @@ See the [D2 verification record](../docs/verification/desktop-d2-local-generic-2
 
 ## Release status
 
-This candidate is ad-hoc/unsigned and not notarized. The pinned Forge build
+The D2 source baseline is merged to public `main`, while its macOS Artifact
+remains ad-hoc/unsigned and not notarized. The pinned Forge build
 dependency tree still contains retained upstream findings even though the npm
 runtime dependency audit is clean. D2 is suitable only for internal isolated
 technical review. It is not authorized for publication, real business data,
 production trust keys, Windows local Runtime, or private cloud-to-local cutover.
-The fixed-head `desktop-d2-macos.yml` workflow performs the same tests on a
+The fixed-head `desktop-d2-macos.yml` workflow performed the same tests on a
 clean macOS arm64 runner. It separately rebuilds a source candidate, restores
 and verifies the fixed review Pack, then uploads an unsigned review Artifact;
 it does not sign, notarize, or publish a Release.
+
+Desktop-D3 is implemented on a separate branch. It must add a fixed Windows x64
+Runtime, Squirrel.Windows installer, bounded Squirrel lifecycle handling,
+Authenticode verification, install/local-Owner/uninstall evidence, formal-data
+preservation, and zero residual processes. An ephemeral CI certificate may be
+used only to prove the signing mechanics; it is not a production publisher
+identity and cannot produce a formal public release.

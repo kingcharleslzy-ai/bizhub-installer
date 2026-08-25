@@ -27,6 +27,7 @@ const {
   stopLocalRuntime,
 } = require("./local-runtime.cjs");
 const { createLocalRuntimeLifecycle } = require("./local-lifecycle.cjs");
+const { handleSquirrelStartup } = require("./squirrel-startup.cjs");
 
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
@@ -78,7 +79,8 @@ app.enableSandbox();
 if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
   app.disableHardwareAcceleration();
 }
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const squirrelStartupHandled = handleSquirrelStartup(app);
+const hasSingleInstanceLock = !squirrelStartupHandled && app.requestSingleInstanceLock();
 
 function rendererRoot() {
   return path.resolve(__dirname, "..", "dist", "renderer");
@@ -114,7 +116,14 @@ function localRuntimePackPath() {
 function localRuntimeTrustPath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "generic-runtime-trust.json")
-    : path.resolve(__dirname, "..", "config", "generic-runtime-trust.json");
+    : path.resolve(
+      __dirname,
+      "..",
+      "config",
+      process.platform === "win32"
+        ? "generic-runtime-trust.win32-x64.json"
+        : "generic-runtime-trust.json",
+    );
 }
 
 function publishState(next) {
@@ -739,7 +748,9 @@ async function createMainWindow() {
   }
 }
 
-if (!hasSingleInstanceLock) {
+if (squirrelStartupHandled) {
+  // Squirrel startup handling owns this short-lived process.
+} else if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.whenReady().then(async () => {

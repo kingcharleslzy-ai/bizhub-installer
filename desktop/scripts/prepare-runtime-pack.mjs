@@ -1,19 +1,21 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
 const { verifyRuntimePack } = require("../electron/local-runtime.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const archiveName = "bizhub-runtime-darwin-arm64-0.1.0-d2.zip";
+const target = runtimeTarget();
+const archiveName = target.archiveName;
 const archivePath = path.join(ROOT, "runtime", "vendor", archiveName);
 const checksumPath = path.join(ROOT, "runtime", "vendor", `${archiveName.replace(/\.zip$/, "")}.sha256`);
 const outputRoot = path.join(ROOT, "runtime-dist");
 const packRoot = path.join(outputRoot, "bizhub-runtime");
-const trustPath = path.join(ROOT, "config", "generic-runtime-trust.json");
+const trustPath = path.join(ROOT, "config", target.trustName);
 
 for (const filePath of [archivePath, checksumPath]) {
   const metadata = await lstat(filePath);
@@ -35,7 +37,21 @@ if (archiveSha256 !== match[1]) {
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true, mode: 0o700 });
 await new Promise((resolve, reject) => {
-  const child = spawn("/usr/bin/ditto", ["-x", "-k", archivePath, outputRoot], {
+  const extractor = process.platform === "win32"
+    ? {
+      command: "powershell.exe",
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
+        archivePath,
+        outputRoot,
+      ],
+    }
+    : { command: "/usr/bin/ditto", args: ["-x", "-k", archivePath, outputRoot] };
+  const child = spawn(extractor.command, extractor.args, {
     env: { ...process.env, COPYFILE_DISABLE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -65,8 +81,11 @@ await new Promise((resolve, reject) => {
 });
 
 const verified = await verifyRuntimePack(packRoot, trustPath);
+await copyFile(trustPath, path.join(outputRoot, "generic-runtime-trust.json"));
 process.stdout.write(`${JSON.stringify({
   status: "prepared",
+  platform: target.platform,
+  architecture: target.architecture,
   runtime_archive_sha256: archiveSha256,
   runtime_manifest_sha256: JSON.parse(await readFile(trustPath, "utf8")).runtime_manifest_sha256,
   runtime_pack_tree_digest: verified.manifest.pack_tree_digest,

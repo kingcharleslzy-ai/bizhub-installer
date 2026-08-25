@@ -5,17 +5,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
 const { verifyRuntimePack } = require("../electron/local-runtime.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const target = runtimeTarget();
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
 const sourcePack = path.join(ROOT, "runtime-dist", "bizhub-runtime");
-const trustPath = path.join(ROOT, "config", "generic-runtime-trust.json");
+const trustPath = path.join(ROOT, "config", target.trustName);
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-runtime-coordinated-tamper-"));
 const tamperedPack = path.join(temporaryRoot, "bizhub-runtime");
 

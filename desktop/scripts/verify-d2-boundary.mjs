@@ -30,6 +30,7 @@ const pythonFiles = relativeFiles.filter((value) => value.endsWith(".py"));
 assert.deepEqual(pythonFiles.sort(), [
   "runtime/bizhub_runtime_entry.py",
   "runtime/build_local_runtime.py",
+  "runtime/build_windows_runtime.py",
 ]);
 assert.deepEqual(
   relativeFiles.filter((value) => /\.(?:db|sqlite|sqlite3)$/i.test(value)),
@@ -89,6 +90,7 @@ for (const api of [
 const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
 assert.equal(packageJson.dependencies, undefined);
 assert.equal(packageJson.devDependencies.pyinstaller, undefined);
+assert.equal(packageJson.devDependencies["@electron-forge/maker-squirrel"], "7.11.2");
 const trustStore = JSON.parse(await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"));
 assert.deepEqual(trustStore, {
   schema_version: "bizhub.desktop-trust-store.v1",

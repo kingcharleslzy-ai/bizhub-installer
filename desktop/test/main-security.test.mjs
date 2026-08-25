@@ -58,7 +58,13 @@ test("desktop package keeps Node runtime empty and cloud trust empty", async () 
   assert.match(runtimeTrust.runtime_manifest_sha256, /^[0-9a-f]{64}$/);
   assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
   assert.equal(runtimeTrust.runtime_pack_file_count, 126);
+  assert.ok(mainTrustSelection(await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8")));
 });
+
+function mainTrustSelection(main) {
+  return main.includes("generic-runtime-trust.win32-x64.json")
+    && main.includes("generic-runtime-trust.json");
+}
 
 test("local Runtime lifecycle is isolated behind bounded main-process IPC", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
@@ -74,6 +80,7 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
     "127.0.0.1",
     "recoverInterruptedLocalSetup",
     "createLocalRuntimeLifecycle",
+    "handleSquirrelStartup",
   ]) {
     assert.ok(`${main}\n${localRuntime}\n${localLifecycle}`.includes(required), required);
   }
@@ -82,4 +89,7 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   }
   assert.ok(!preload.includes("node:child_process"));
   assert.ok(!preload.includes("node:fs"));
+  const squirrelStartup = await readFile(path.join(ROOT, "electron", "squirrel-startup.cjs"), "utf8");
+  assert.ok(squirrelStartup.includes("--squirrel-install"));
+  assert.ok(squirrelStartup.includes("--squirrel-uninstall"));
 });

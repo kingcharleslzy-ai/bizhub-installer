@@ -12,6 +12,7 @@
     "build": "vite build",
     "build:runtime": ".runtime-venv/bin/python runtime/build_local_runtime.py --python .runtime-venv/bin/python && node scripts/verify-runtime-pack.mjs",
     "make": "npm run prepare:runtime && npm run build && electron-forge make --platform=darwin --arch=arm64",
+    "make:windows": "npm run prepare:runtime && npm run build && electron-forge make --platform=win32 --arch=x64",
     "package": "npm run prepare:runtime && npm run build && electron-forge package --platform=darwin --arch=arm64",
     "prepare:runtime": "node scripts/prepare-runtime-pack.mjs",
     "smoke:cloud": "npm run build && node scripts/cloud-smoke.mjs",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "@electron/asar": "3.4.1",
     "@vitejs/plugin-vue": "6.0.8",

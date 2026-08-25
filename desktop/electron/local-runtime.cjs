@@ -82,6 +82,14 @@ async function verifyRuntimePack(packRoot, trustPath) {
   if (trust.schema_version !== "bizhub.desktop-runtime-trust.v1") {
     throw new Error("desktop_runtime_trust_schema_invalid");
   }
+  const supportedTarget = (
+    (trust.platform === "darwin" && trust.architecture === "arm64")
+    || (trust.platform === "win32" && trust.architecture === "x64")
+  );
+  if (!supportedTarget) throw new Error("desktop_runtime_target_unsupported");
+  if (trust.platform !== process.platform || trust.architecture !== process.arch) {
+    throw new Error("desktop_runtime_host_target_mismatch");
+  }
   if (
     !/^[0-9a-f]{64}$/.test(trust.runtime_manifest_sha256)
     || !/^[0-9a-f]{64}$/.test(trust.runtime_pack_tree_digest)
@@ -129,7 +137,10 @@ async function verifyRuntimePack(packRoot, trustPath) {
   for (const [key, expected] of Object.entries(bindings)) {
     if (manifest[key] !== expected) throw new Error(`desktop_runtime_identity_mismatch:${key}`);
   }
-  if (manifest.executable !== "bizhub-runtime") {
+  const expectedExecutable = trust.platform === "win32"
+    ? "bizhub-runtime.exe"
+    : "bizhub-runtime";
+  if (manifest.executable !== expectedExecutable) {
     throw new Error("desktop_runtime_executable_identity_invalid");
   }
   if (!Array.isArray(manifest.files) || manifest.files.length < 1) {

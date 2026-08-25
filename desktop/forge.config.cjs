@@ -1,3 +1,15 @@
+const certificateFile = process.env.BIZHUB_WINDOWS_CERTIFICATE_FILE;
+const certificatePassword = process.env.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD;
+const requireWindowsSigning = process.env.BIZHUB_REQUIRE_WINDOWS_SIGNING === "1";
+
+if (requireWindowsSigning && (!certificateFile || !certificatePassword)) {
+  throw new Error("desktop_windows_signing_credentials_missing");
+}
+
+const squirrelSigning = certificateFile && certificatePassword
+  ? { certificateFile, certificatePassword }
+  : {};
+
 module.exports = {
   packagerConfig: {
     appBundleId: "com.bizhub.desktop",
@@ -12,7 +24,7 @@ module.exports = {
     },
     extraResource: [
       "config/trusted-connection-keys.json",
-      "config/generic-runtime-trust.json",
+      "runtime-dist/generic-runtime-trust.json",
       "runtime-dist/bizhub-runtime",
     ],
     ignore: [
@@ -36,6 +48,16 @@ module.exports = {
     {
       name: "@electron-forge/maker-zip",
       platforms: ["darwin"],
+    },
+    {
+      name: "@electron-forge/maker-squirrel",
+      platforms: ["win32"],
+      config: {
+        name: "bizhub_desktop",
+        setupExe: "BizHub-Desktop-Setup-x64.exe",
+        noMsi: true,
+        ...squirrelSigning,
+      },
     },
   ],
 };

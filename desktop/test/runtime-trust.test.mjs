@@ -27,12 +27,13 @@ async function createSyntheticPack(temporaryRoot) {
   const packRoot = path.join(temporaryRoot, "pack");
   const trustPath = path.join(temporaryRoot, "trust.json");
   await mkdir(packRoot);
-  const executable = Buffer.from("#!/bin/sh\nexit 0\n");
-  await writeFile(path.join(packRoot, "bizhub-runtime"), executable);
-  await chmod(path.join(packRoot, "bizhub-runtime"), 0o755);
+  const executableName = process.platform === "win32" ? "bizhub-runtime.exe" : "bizhub-runtime";
+  const executable = Buffer.from(process.platform === "win32" ? "synthetic exe" : "#!/bin/sh\nexit 0\n");
+  await writeFile(path.join(packRoot, executableName), executable);
+  await chmod(path.join(packRoot, executableName), 0o755);
   const files = [{
     link_target: null,
-    path: "bizhub-runtime",
+    path: executableName,
     sha256: sha256(executable),
     size: executable.length,
     type: "file",
@@ -46,9 +47,9 @@ async function createSyntheticPack(temporaryRoot) {
     runtime_id: "bizhub-generic-local",
     runtime_version: "0.1.0-d2",
     profile_id: "generic-kernel-smoke",
-    platform: "darwin",
-    architecture: "arm64",
-    executable: "bizhub-runtime",
+    platform: process.platform,
+    architecture: process.arch,
+    executable: executableName,
     artifact_id: "bizhub-common",
     core_artifact_digest: `sha256:${"2".repeat(64)}`,
     core_source_commit: "3".repeat(40),
@@ -90,11 +91,27 @@ test("fixed trust accepts the exact synthetic Runtime Pack", async () => {
   }
 });
 
+test("rejects a Runtime Pack pinned for a different operating-system target", async () => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-runtime-target-"));
+  try {
+    const fixture = await createSyntheticPack(temporaryRoot);
+    fixture.trust.platform = process.platform === "win32" ? "darwin" : "win32";
+    fixture.trust.architecture = process.platform === "win32" ? "arm64" : "x64";
+    await writeFile(fixture.trustPath, `${JSON.stringify(fixture.trust, null, 2)}\n`);
+    await assert.rejects(
+      verifyRuntimePack(fixture.packRoot, fixture.trustPath),
+      /desktop_runtime_host_target_mismatch/,
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test("coordinated file and manifest tamper still fails against independent trust", async () => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-runtime-tamper-"));
   try {
     const fixture = await createSyntheticPack(temporaryRoot);
-    const executablePath = path.join(fixture.packRoot, "bizhub-runtime");
+    const executablePath = path.join(fixture.packRoot, fixture.manifest.executable);
     const tamperedExecutable = Buffer.concat([await readFile(executablePath), Buffer.from("# tampered\n")]);
     await writeFile(executablePath, tamperedExecutable);
     await chmod(executablePath, 0o755);

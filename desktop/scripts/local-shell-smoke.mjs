@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
 const { bootstrapLocalInstance } = require("../electron/local-runtime.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const target = runtimeTarget();
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -17,8 +19,14 @@ function option(name) {
   return path.resolve(value);
 }
 
+function flag(name) {
+  return process.argv.includes(name);
+}
+
 const packagedExecutable = option("--packaged-executable");
 const packagedResources = option("--packaged-resources");
+const explicitUserDataRoot = option("--user-data-root");
+const keepUserData = flag("--keep-user-data");
 if (Boolean(packagedExecutable) !== Boolean(packagedResources)) {
   throw new Error("desktop_local_smoke_packaged_options_incomplete");
 }
@@ -27,9 +35,9 @@ const runtimePack = packagedResources
   : path.join(ROOT, "runtime-dist", "bizhub-runtime");
 const trustPath = packagedResources
   ? path.join(packagedResources, "generic-runtime-trust.json")
-  : path.join(ROOT, "config", "generic-runtime-trust.json");
+  : path.join(ROOT, "config", target.trustName);
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-desktop-local-shell-"));
-const userDataRoot = path.join(temporaryRoot, "user-data");
+const userDataRoot = explicitUserDataRoot || path.join(temporaryRoot, "user-data");
 
 try {
   await bootstrapLocalInstance({
@@ -83,8 +91,12 @@ try {
     mode: "local",
     origin_kind: "random_loopback",
     packaged: Boolean(packagedExecutable),
+    user_data_root: userDataRoot,
     residual_runtime_processes: marker.residual_runtime_processes,
   })}\n`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
+  if (explicitUserDataRoot && !keepUserData) {
+    await rm(explicitUserDataRoot, { recursive: true, force: true });
+  }
 }

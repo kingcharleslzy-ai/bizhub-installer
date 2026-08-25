@@ -5,6 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -19,6 +20,7 @@ const {
 } = require("../electron/local-runtime.cjs");
 const { createLocalRuntimeLifecycle } = require("../electron/local-lifecycle.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const target = runtimeTarget();
 
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
@@ -40,7 +42,7 @@ async function mutation(runtime, pathname, body) {
 }
 
 const runtimePack = option("--runtime-pack", path.join(ROOT, "runtime-dist", "bizhub-runtime"));
-const trustPath = option("--trust", path.join(ROOT, "config", "generic-runtime-trust.json"));
+const trustPath = option("--trust", path.join(ROOT, "config", target.trustName));
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-desktop-d2-"));
 const userDataRoot = path.join(temporaryRoot, "user-data");
 const failedRoot = path.join(temporaryRoot, "failed-user-data");
@@ -52,8 +54,8 @@ let lifecycle = null;
 try {
   const release = await verifyRuntimePack(runtimePack, trustPath);
   assert.equal(release.manifest.profile_id, "generic-kernel-smoke");
-  assert.equal(release.manifest.platform, "darwin");
-  assert.equal(release.manifest.architecture, "arm64");
+  assert.equal(release.manifest.platform, target.platform);
+  assert.equal(release.manifest.architecture, target.architecture);
 
   const interruptedSetupId = randomUUID();
   const interruptedStageName = `.setup-${interruptedSetupId}`;
