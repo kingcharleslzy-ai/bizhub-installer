@@ -103,13 +103,9 @@ Get-CimInstance Win32_Process | Where-Object {
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
 }
 
-if (Test-Path -LiteralPath $defaultUserData) {
-    $unexpectedDatabase = Get-ChildItem -LiteralPath $defaultUserData -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -in ".db", ".sqlite", ".sqlite3" } |
-        Select-Object -First 1
-    if ($unexpectedDatabase) {
-        throw "desktop_windows_install_created_database:$($unexpectedDatabase.FullName)"
-    }
+$unexpectedLocalInstance = Join-Path $defaultUserData "local-instance"
+if (Test-Path -LiteralPath $unexpectedLocalInstance) {
+    throw "desktop_windows_install_created_local_instance:$unexpectedLocalInstance"
 }
 
 $installedSignature = Assert-AuthenticodeSignature -Path $installedExecutable -Expected $ExpectedThumbprint

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
@@ -54,4 +55,14 @@ test("Windows packaging signs the shell and preserves fixed Runtime Pack bytes",
     "bizhub-runtime.exe",
   );
   await config.packagerConfig.windowsSign.hookFunction(fixedRuntimeExecutable);
+});
+
+test("Windows install smoke checks only the formal BizHub instance boundary", () => {
+  const source = readFileSync(
+    new URL("../scripts/windows-installer-smoke.ps1", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /Join-Path \$defaultUserData "local-instance"/);
+  assert.match(source, /desktop_windows_install_created_local_instance/);
+  assert.doesNotMatch(source, /Where-Object \{ \$_\.Extension -in/);
 });
