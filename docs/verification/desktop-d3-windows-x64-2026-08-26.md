@@ -16,8 +16,14 @@ Windows runner.
 
 - public `main` base:
   `84c234fb0d2727e87d2dd0b30cd212b3cd658ad6`;
-- verified D3 head:
+- implementation head:
   `a7f568edf0a8819a13c6ca98ff321b59271e2bdb`;
+- artifact-build head:
+  `ea44050f6517248d57ede12bf46c984b0557d846`;
+- report-only correction head: the commit containing this report. Its SHA is
+  intentionally not copied into the report, which avoids a self-referential
+  identity. It changes only this report and is not an implementation or
+  Artifact build input;
 - Runtime Profile: `generic-kernel-smoke`;
 - common artifact digest:
   `sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72`;
@@ -40,7 +46,7 @@ bytes and hashes.
 ## Windows Artifact identity
 
 GitHub Actions run
-[`32869710838`](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32869710838)
+[`32870684992`](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32870684992)
 completed successfully on `windows-2022` with Node `22.22.2` and Python
 `3.12.10`.
 
@@ -48,18 +54,17 @@ completed successfully on `windows-2022` with Node `22.22.2` and Python
 - Setup name: `BizHub-Desktop-Setup-x64.exe`;
 - Setup size: `168856328` bytes;
 - Setup SHA-256:
-  `cf385b58101f98d0192eb201c437e1fe397af4d32aceccf8b1727af2e51a257f`;
+  `0b4c0ce9d42c9866ac647bbf73699db5e4d2e9ce59de1e6f14a572aaaa426ef6`;
 - full package: `bizhub_desktop-0.1.0-full.nupkg`;
-- full package size: `168157950` bytes;
+- full package size: `168157935` bytes;
 - full package SHA-256:
-  `6b619833eecfa99eba173c78f2a0b5e5b09829a908d9a367585ea05c69c074ba`;
+  `db60d061d01b1c35d66c37d34a15a70443f97a35446d0b4ac10abd2e725546bd`;
 - `RELEASES` SHA-256:
-  `704ed4ce917501ca5abd0928d06f59be6c0a451ba37eecff18725319f4d5bd33`;
-- Actions Artifact id: `9571694257`;
-- Actions Artifact size: `336767691` bytes;
+  `321e5c601299fc1963be845286f9d308995d9cc7fddbee34a4d052eb34059bcf`;
+- Actions Artifact id: `9572042052`;
+- Actions Artifact size: `336767483` bytes;
 - Actions Artifact digest:
-  `sha256:8d7aae83761379db734691368eca16dd10a8f15719dc7e67294b5f18e8cfa61f`;
-- Artifact expiry: `2026-09-08T16:08:26Z`.
+  `sha256:427656a3ff1c27e4d617d31ee5dc0147c4a12eeda6e57dfd166daf160a25c24f`.
 
 The Setup, packaged Shell, and installed Shell all reported Authenticode
 `Valid` against the same ephemeral synthetic certificate. The fixed Runtime
@@ -115,7 +120,12 @@ install source checksums
   153 files verified
 ```
 
-## Retained blockers
+## Review disposition and retained release blockers
+
+The external review conditionally passed the Windows code, Runtime Pack,
+Squirrel installation chain, and final Artifact. This report-only identity
+correction is the sole remaining pre-merge issue. The correction itself does
+not authorize a merge or a Release.
 
 The Actions certificate is generated only for CI mechanics, trusted only on the
 disposable runner, and deleted after the job. It is not a publisher identity.
@@ -125,6 +135,8 @@ therefore requires an approved real Authenticode identity and an approved
 signed-Runtime trust design or equivalently reviewed publisher binding.
 
 The complete Forge development dependency audit still reports 25 upstream
-build-chain findings: 3 low, 21 high, and 1 critical. Those findings, the
-synthetic signer, the unsigned sidecar, and pending external code review block
-merge/publication of D3. No GitHub Release was created.
+build-chain findings: 3 low, 21 high, and 1 critical. They remain formal-release
+risks but do not require rebuilding or expanding Desktop-D3. The synthetic
+signer, unsigned sidecar, and absence of an approved production publisher
+binding continue to block a formal Desktop Release. No GitHub Release was
+created.
