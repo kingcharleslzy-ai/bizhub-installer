@@ -113,11 +113,14 @@ assert.equal(packageJson.devDependencies["extract-zip"], "2.0.1");
 const forgeConfig = await readFile(path.join(ROOT, "forge.config.cjs"), "utf8");
 for (const required of [
   "windowsSign",
-  "signPackagedWindowsFile",
-  "runtimeResourceSegment",
-  "@electron/windows-sign",
+  "hookModulePath",
+  "windows-sign-hook.cjs",
 ]) {
   assert.ok(forgeConfig.includes(required), required);
+}
+const windowsSignHook = await readFile(path.join(ROOT, "scripts", "windows-sign-hook.cjs"), "utf8");
+for (const required of ["preservesFixedRuntime", "runtimeResourceSegment", "@electron/windows-sign"]) {
+  assert.ok(windowsSignHook.includes(required), required);
 }
 const trustStore = JSON.parse(await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"));
 assert.deepEqual(trustStore, {

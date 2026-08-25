@@ -42,11 +42,16 @@ test("Windows packaging signs the shell and preserves fixed Runtime Pack bytes",
     BIZHUB_WINDOWS_CERTIFICATE_PASSWORD: "synthetic-password",
   });
   assert.deepEqual(config.packagerConfig.windowsSign.hashes, ["sha256"]);
-  assert.equal(typeof config.packagerConfig.windowsSign.hookFunction, "function");
+  assert.match(config.packagerConfig.windowsSign.hookModulePath, /windows-sign-hook\.cjs$/);
   const squirrel = config.makers.find((maker) => maker.name === "@electron-forge/maker-squirrel");
   assert.deepEqual(squirrel.config.windowsSign.hashes, ["sha256"]);
+  assert.equal(
+    squirrel.config.windowsSign.hookModulePath,
+    config.packagerConfig.windowsSign.hookModulePath,
+  );
   assert.equal(squirrel.config.certificateFile, undefined);
 
+  const signWindowsFile = require(config.packagerConfig.windowsSign.hookModulePath);
   const fixedRuntimeExecutable = path.join(
     "C:",
     "review",
@@ -54,7 +59,12 @@ test("Windows packaging signs the shell and preserves fixed Runtime Pack bytes",
     "bizhub-runtime",
     "bizhub-runtime.exe",
   );
-  await config.packagerConfig.windowsSign.hookFunction(fixedRuntimeExecutable);
+  assert.equal(signWindowsFile.preservesFixedRuntime(fixedRuntimeExecutable), true);
+  await signWindowsFile(fixedRuntimeExecutable);
+  assert.equal(
+    signWindowsFile.preservesFixedRuntime(path.join("C:", "review", "BizHub Desktop.exe")),
+    false,
+  );
 });
 
 test("Windows install smoke checks only the formal BizHub instance boundary", () => {
