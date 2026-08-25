@@ -22,9 +22,11 @@ const {
   bootstrapLocalInstance,
   loadLocalInstance,
   loginLocalRuntime,
+  recoverInterruptedLocalSetup,
   startLocalRuntime,
   stopLocalRuntime,
 } = require("./local-runtime.cjs");
+const { createLocalRuntimeLifecycle } = require("./local-lifecycle.cjs");
 
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
@@ -44,9 +46,11 @@ let workspaceView = null;
 let workspaceExpiryTimer = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
-let localRuntime = null;
-let localRuntimeStopping = false;
 let shutdownInProgress = false;
+const localRuntimeLifecycle = createLocalRuntimeLifecycle({
+  startRuntime: launchLocalRuntime,
+  stopRuntime: stopLocalRuntime,
+});
 let workspaceState = {
   mode: "none",
   status: "idle",
@@ -263,13 +267,14 @@ async function setLocalSessionCookies(runtimeSession, runtime) {
 }
 
 async function openLocalWorkspaceView() {
-  if (!localRuntime) throw new Error("desktop_local_runtime_not_started");
+  const runtime = localRuntimeLifecycle.current();
+  if (!runtime) throw new Error("desktop_local_runtime_not_started");
   destroyWorkspaceView();
-  const localOrigin = normalizeLocalOrigin(localRuntime.origin);
+  const localOrigin = normalizeLocalOrigin(runtime.origin);
   if (!localOrigin) throw new Error("desktop_local_runtime_origin_invalid");
   const runtimeSession = session.fromPartition("persist:local-generic");
   configureLocalSession(runtimeSession, localOrigin);
-  await setLocalSessionCookies(runtimeSession, localRuntime);
+  await setLocalSessionCookies(runtimeSession, runtime);
   workspaceView = new WebContentsView({
     webPreferences: {
       allowRunningInsecureContent: false,
@@ -311,7 +316,7 @@ async function openLocalWorkspaceView() {
       localError: "",
     });
     if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
-      const origin = localRuntime?.origin || "";
+      const origin = runtime.origin;
       void stopLocalMode().then(() => {
         finishSmoke({
           status: "connected",
@@ -424,8 +429,7 @@ async function openWorkspace(profile) {
   await workspaceView.webContents.loadURL(profile.applicationUrl);
 }
 
-async function startLocalMode() {
-  if (localRuntime) return localRuntime;
+async function launchLocalRuntime() {
   const instance = await refreshLocalState();
   if (!instance) throw new Error("desktop_local_instance_not_initialized");
   publishState({
@@ -438,17 +442,16 @@ async function startLocalMode() {
     localStatus: "starting",
     localError: "",
   });
-  localRuntime = await startLocalRuntime({
+  const started = await startLocalRuntime({
     instanceRoot: localInstanceRoot(),
     runtimePack: localRuntimePackPath(),
     trustPath: localRuntimeTrustPath(),
   });
-  const started = localRuntime;
   started.child.once("exit", (code, signalName) => {
-    if (localRuntime !== started) return;
-    localRuntime = null;
+    const expectedExit = localRuntimeLifecycle.state() === "stopping" || shutdownInProgress;
+    if (!localRuntimeLifecycle.markExited(started)) return;
     destroyWorkspaceView();
-    if (!localRuntimeStopping && !shutdownInProgress) {
+    if (!expectedExit) {
       publishState({
         mode: "local",
         status: "error",
@@ -457,13 +460,18 @@ async function startLocalMode() {
       });
     }
   });
+  return started;
+}
+
+async function startLocalMode() {
+  const runtime = await localRuntimeLifecycle.start();
   publishState({
     mode: "local",
     status: "idle",
     localStatus: "awaiting_login",
-    applicationOrigin: localRuntime.origin,
+    applicationOrigin: runtime.origin,
   });
-  return localRuntime;
+  return runtime;
 }
 
 async function prepareLocalLogin() {
@@ -481,7 +489,9 @@ async function prepareLocalLogin() {
 }
 
 async function setupLocalInstance(input) {
-  if (localRuntime) throw new Error("desktop_local_runtime_already_started");
+  if (localRuntimeLifecycle.state() !== "stopped") {
+    throw new Error("desktop_local_runtime_already_started");
+  }
   publishState({
     mode: "local",
     status: "loading",
@@ -500,8 +510,8 @@ async function setupLocalInstance(input) {
       displayName: created.instance.display_name,
       profileId: created.instance.profile_id,
     });
-    await startLocalMode();
-    await loginLocalRuntime(localRuntime, input.username, input.password);
+    const runtime = await startLocalMode();
+    await loginLocalRuntime(runtime, input.username, input.password);
     await openLocalWorkspaceView();
   } catch (error) {
     await refreshLocalState();
@@ -524,8 +534,8 @@ async function authenticateLocal(input) {
     throw new Error("desktop_local_login_shape_invalid");
   }
   try {
-    await startLocalMode();
-    await loginLocalRuntime(localRuntime, String(input.username || ""), String(input.password || ""));
+    const runtime = await startLocalMode();
+    await loginLocalRuntime(runtime, String(input.username || ""), String(input.password || ""));
     await openLocalWorkspaceView();
   } catch (error) {
     publishState({
@@ -556,16 +566,7 @@ async function createLocalBackup() {
 
 async function stopLocalMode() {
   destroyWorkspaceView();
-  const running = localRuntime;
-  localRuntime = null;
-  if (running) {
-    localRuntimeStopping = true;
-    try {
-      await stopLocalRuntime(running);
-    } finally {
-      localRuntimeStopping = false;
-    }
-  }
+  await localRuntimeLifecycle.stop();
   publishState({
     mode: "none",
     status: "idle",
@@ -706,7 +707,7 @@ async function createMainWindow() {
   mainWindow.on("closed", () => {
     destroyWorkspaceView();
     mainWindow = null;
-    if (localRuntime) void stopLocalMode();
+    if (localRuntimeLifecycle.state() !== "stopped") void stopLocalMode();
   });
   await mainWindow.loadURL(SHELL_URL);
   await refreshLocalState();
@@ -744,7 +745,14 @@ if (!hasSingleInstanceLock) {
   app.whenReady().then(async () => {
     protocol.handle("bizhub-shell", serveShellAsset);
     installIpcHandlers();
+    let recoveryError = null;
+    try {
+      await recoverInterruptedLocalSetup(desktopUserDataRoot());
+    } catch (error) {
+      recoveryError = error instanceof Error ? error.message : "desktop_local_setup_recovery_failed";
+    }
     await createMainWindow();
+    if (recoveryError) publishState({ localError: recoveryError });
   });
 
   app.on("second-instance", () => {
@@ -759,14 +767,10 @@ if (!hasSingleInstanceLock) {
 
   app.on("before-quit", (event) => {
     destroyWorkspaceView();
-    if (!localRuntime || shutdownInProgress) return;
+    if (localRuntimeLifecycle.state() === "stopped" || shutdownInProgress) return;
     event.preventDefault();
     shutdownInProgress = true;
-    const running = localRuntime;
-    localRuntime = null;
-    localRuntimeStopping = true;
-    void stopLocalRuntime(running).finally(() => {
-      localRuntimeStopping = false;
+    void localRuntimeLifecycle.stop().finally(() => {
       app.quit();
     });
   });

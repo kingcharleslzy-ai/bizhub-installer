@@ -55,12 +55,16 @@ test("desktop package keeps Node runtime empty and cloud trust empty", async () 
   assert.equal(runtimeTrust.profile_id, "generic-kernel-smoke");
   assert.equal(runtimeTrust.platform, "darwin");
   assert.equal(runtimeTrust.architecture, "arm64");
+  assert.match(runtimeTrust.runtime_manifest_sha256, /^[0-9a-f]{64}$/);
+  assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
+  assert.equal(runtimeTrust.runtime_pack_file_count, 126);
 });
 
 test("local Runtime lifecycle is isolated behind bounded main-process IPC", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const preload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
   const localRuntime = await readFile(path.join(ROOT, "electron", "local-runtime.cjs"), "utf8");
+  const localLifecycle = await readFile(path.join(ROOT, "electron", "local-lifecycle.cjs"), "utf8");
   for (const required of [
     "bootstrapLocalInstance",
     "startLocalRuntime",
@@ -68,8 +72,10 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
     "backupLocalInstance",
     "BIZHUB_DESKTOP_PARENT_PID",
     "127.0.0.1",
+    "recoverInterruptedLocalSetup",
+    "createLocalRuntimeLifecycle",
   ]) {
-    assert.ok(`${main}\n${localRuntime}`.includes(required), required);
+    assert.ok(`${main}\n${localRuntime}\n${localLifecycle}`.includes(required), required);
   }
   for (const api of ["setupLocal", "loginLocal", "backupLocal", "stopLocal"]) {
     assert.ok(preload.includes(api), api);

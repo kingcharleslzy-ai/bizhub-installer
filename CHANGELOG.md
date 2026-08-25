@@ -13,6 +13,13 @@
   zero residual sidecar processes. No customer-private Runtime, real data,
   synchronization, background service, Windows local Runtime, signing, or
   publication is authorized.
+- Bind the fixed D2 Runtime to an independent raw Manifest SHA-256, Pack tree
+  digest, file count, and canonical source-record digest; normalize the
+  PyInstaller base ZIP order and reject coordinated file-plus-Manifest tamper.
+- Serialize local Runtime start/stop/Cloud transitions behind one lifecycle
+  controller, recover only marker-matched interrupted setup state, and add a
+  fixed public Generic Runtime archive plus a clean macOS arm64 workflow that
+  uploads an unsigned external-review Artifact without regenerating trust.
 - Document the proposed BizHub Desktop v0.1 boundary: one customer-neutral
   Electron shell, an explicit enterprise-cloud path, and one new Generic local
   instance without central IAM, customer-private code, direct SQLite access,

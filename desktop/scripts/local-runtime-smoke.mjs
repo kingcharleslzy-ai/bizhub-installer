@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -11,10 +12,12 @@ const {
   bootstrapLocalInstance,
   fetchRuntime,
   loginLocalRuntime,
+  recoverInterruptedLocalSetup,
   startLocalRuntime,
   stopLocalRuntime,
   verifyRuntimePack,
 } = require("../electron/local-runtime.cjs");
+const { createLocalRuntimeLifecycle } = require("../electron/local-lifecycle.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function option(name, fallback) {
@@ -44,12 +47,38 @@ const failedRoot = path.join(temporaryRoot, "failed-user-data");
 const username = "synthetic-admin";
 const password = "synthetic correct horse battery staple";
 let runtime = null;
+let lifecycle = null;
 
 try {
   const release = await verifyRuntimePack(runtimePack, trustPath);
   assert.equal(release.manifest.profile_id, "generic-kernel-smoke");
   assert.equal(release.manifest.platform, "darwin");
   assert.equal(release.manifest.architecture, "arm64");
+
+  const interruptedSetupId = randomUUID();
+  const interruptedStageName = `.setup-${interruptedSetupId}`;
+  const interruptedRecord = {
+    schema_version: "bizhub.desktop-local-setup.v1",
+    setup_id: interruptedSetupId,
+    stage_name: interruptedStageName,
+    owner_pid: 987654,
+    created_at: "2026-08-25T00:00:00.000Z",
+  };
+  const interruptedRuntimeRoot = path.join(userDataRoot, "runtime");
+  const interruptedStage = path.join(interruptedRuntimeRoot, interruptedStageName);
+  await mkdir(interruptedStage, { recursive: true });
+  await writeFile(
+    path.join(interruptedRuntimeRoot, `${interruptedStageName}.marker.json`),
+    `${JSON.stringify(interruptedRecord, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(interruptedRuntimeRoot, "setup.lock"),
+    `${JSON.stringify(interruptedRecord, null, 2)}\n`,
+  );
+  const recovery = await recoverInterruptedLocalSetup(userDataRoot);
+  assert.equal(recovery.status, "recovered");
+  assert.equal(recovery.recovered_setups, 1);
+  await assert.rejects(access(path.join(userDataRoot, "local-instance")));
 
   await assert.rejects(
     bootstrapLocalInstance({
@@ -75,7 +104,30 @@ try {
   assert.match(created.instance.writer_instance_id, /^desktop:/);
   const instanceRoot = path.join(userDataRoot, "local-instance");
 
-  runtime = await startLocalRuntime({ instanceRoot, runtimePack, trustPath });
+  let spawnCount = 0;
+  let maximumLiveRuntimeCount = 0;
+  const liveRuntimePids = new Set();
+  lifecycle = createLocalRuntimeLifecycle({
+    startRuntime: async () => {
+      spawnCount += 1;
+      const started = await startLocalRuntime({ instanceRoot, runtimePack, trustPath });
+      liveRuntimePids.add(started.child.pid);
+      maximumLiveRuntimeCount = Math.max(maximumLiveRuntimeCount, liveRuntimePids.size);
+      return started;
+    },
+    stopRuntime: async (started) => {
+      await stopLocalRuntime(started);
+      liveRuntimePids.delete(started.child.pid);
+    },
+  });
+  const [firstRuntime, duplicateStart] = await Promise.all([
+    lifecycle.start(),
+    lifecycle.start(),
+  ]);
+  assert.equal(firstRuntime, duplicateStart);
+  assert.equal(spawnCount, 1);
+  assert.equal(maximumLiveRuntimeCount, 1);
+  runtime = firstRuntime;
   assert.match(runtime.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
   const untrusted = await fetch(`${runtime.origin}/api/health`);
   assert.equal(untrusted.status, 403);
@@ -133,15 +185,17 @@ try {
   const backupManifest = JSON.parse(await readFile(backup.manifest_path, "utf8"));
   assert.equal(backupManifest.profile_id, "generic-kernel-smoke");
 
-  await stopLocalRuntime(runtime);
+  await lifecycle.stop();
   assert.ok(runtime.child.exitCode !== null || runtime.child.signalCode !== null);
-  runtime = await startLocalRuntime({ instanceRoot, runtimePack, trustPath });
+  assert.equal(liveRuntimePids.size, 0);
+  runtime = await lifecycle.start();
   await loginLocalRuntime(runtime, username, password);
   const restarted = await fetchRuntime(runtime, "/api/master-data/locations");
   assert.equal(restarted.body.items.length, 1);
   assert.equal(restarted.body.items[0].canonical_name, "Synthetic Warehouse");
-  await stopLocalRuntime(runtime);
+  await lifecycle.stop();
   assert.ok(runtime.child.exitCode !== null || runtime.child.signalCode !== null);
+  assert.equal(liveRuntimePids.size, 0);
   runtime = null;
 
   process.stdout.write(`${JSON.stringify({
@@ -153,6 +207,9 @@ try {
     apply_disposition: applied.body.disposition,
     replay_disposition: replay.body.disposition,
     failure_zero_write: true,
+    interrupted_setup_recovery: recovery.status,
+    concurrent_start_spawn_count: 1,
+    maximum_live_runtime_processes: maximumLiveRuntimeCount,
     backup_status: backup.validation.status,
     restart_readback_locations: restarted.body.items.length,
     runtime_pack_tree_digest: release.manifest.pack_tree_digest,
@@ -160,6 +217,7 @@ try {
     residual_runtime_processes: 0,
   })}\n`);
 } finally {
-  if (runtime) await stopLocalRuntime(runtime);
+  if (lifecycle?.current()) await lifecycle.stop();
+  else if (runtime) await stopLocalRuntime(runtime);
   await rm(temporaryRoot, { recursive: true, force: true });
 }

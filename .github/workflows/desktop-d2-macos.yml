@@ -1,0 +1,151 @@
+name: Desktop D2 macOS arm64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/desktop-d2-local-runtime
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: 3.12.13
+
+      - name: Verify fixed runner architecture
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(node -p 'process.arch')" = arm64
+          test "$(python -c 'import platform; print(platform.machine())')" = arm64
+
+      - name: Install hash-locked Python environments
+        shell: bash
+        run: |
+          python -m venv .runtime-venv
+          .runtime-venv/bin/pip install --disable-pip-version-check --require-hashes -r runtime/requirements-build.lock
+          python -m venv ../.desktop-test-venv
+          ../.desktop-test-venv/bin/pip install --disable-pip-version-check --require-hashes -r ../app/backend/requirements-dev.lock
+
+      - name: Install fixed Desktop dependencies
+        run: npm ci
+
+      - name: Source, public boundary, and Python tests
+        shell: bash
+        run: |
+          python ../scripts/verify_checksums.py
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
+          PYTHONPATH="$PWD/../app/backend" ../.desktop-test-venv/bin/pytest -q ../app/backend/tests ../tests
+
+      - name: Rebuild Generic Runtime source candidate
+        shell: bash
+        run: |
+          .runtime-venv/bin/python runtime/build_local_runtime.py --python .runtime-venv/bin/python
+          expected_source="$(jq -r .runtime_source_tree_digest config/generic-runtime-trust.json)"
+          test "$(jq -r .runtime_source_tree_digest runtime-dist/bizhub-runtime/runtime-release-manifest.json)" = "$expected_source"
+          test "$(jq -r .profile_id runtime-dist/bizhub-runtime/runtime-release-manifest.json)" = generic-kernel-smoke
+
+      - name: Prepare and verify fixed review Runtime Pack
+        shell: bash
+        run: |
+          npm run prepare:runtime
+          npm run smoke:runtime-tamper
+          npm run smoke:local
+
+      - name: Development Electron local smoke
+        run: npm run smoke:local-shell
+
+      - name: Make unsigned macOS arm64 ZIP
+        run: npm run make
+
+      - name: Scan packaged directory
+        run: npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
+
+      - name: Packaged Electron local smoke
+        shell: bash
+        run: |
+          node scripts/local-shell-smoke.mjs \
+            --packaged-executable "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/MacOS/BizHub Desktop" \
+            --packaged-resources "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/Resources"
+
+      - name: Packaged Electron cloud smoke
+        shell: bash
+        run: |
+          npm run smoke:packaged -- \
+            --packaged-executable "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/MacOS/BizHub Desktop" \
+            --packaged-trust-store "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app/Contents/Resources/trusted-connection-keys.json"
+          npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
+
+      - name: Extract, scan, and run the final product ZIP
+        shell: bash
+        run: |
+          mkdir -p out/final-zip-review
+          ditto -x -k "out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip" out/final-zip-review
+          npm run verify:artifact -- out/final-zip-review
+          node scripts/local-shell-smoke.mjs \
+            --packaged-executable "out/final-zip-review/BizHub Desktop.app/Contents/MacOS/BizHub Desktop" \
+            --packaged-resources "out/final-zip-review/BizHub Desktop.app/Contents/Resources"
+
+      - name: Confirm no residual Desktop or Runtime process
+        shell: bash
+        run: |
+          sleep 2
+          if pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'; then
+            exit 1
+          fi
+
+      - name: Record inner product ZIP identity
+        id: product
+        shell: bash
+        run: |
+          artifact="out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip"
+          bytes="$(stat -f '%z' "$artifact")"
+          sha256="$(shasum -a 256 "$artifact" | awk '{print $1}')"
+          jq -n \
+            --arg commit "${{ github.sha }}" \
+            --arg artifact "$(basename "$artifact")" \
+            --arg sha256 "$sha256" \
+            --argjson bytes "$bytes" \
+            '{status:"ok",commit:$commit,artifact:$artifact,bytes:$bytes,sha256:$sha256}' \
+            > out/desktop-d2-macos-arm64-identity.json
+          cat out/desktop-d2-macos-arm64-identity.json
+
+      - name: Upload fixed D2 review Artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desktop-d2-macos-arm64-${{ github.sha }}
+          path: |
+            desktop/out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip
+            desktop/out/desktop-d2-macos-arm64-identity.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Record Actions Artifact identity
+        shell: bash
+        run: |
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg artifact_id "${{ steps.upload.outputs.artifact-id }}" \
+            --arg artifact_digest "${{ steps.upload.outputs.artifact-digest }}" \
+            --arg artifact_url "${{ steps.upload.outputs.artifact-url }}" \
+            '{status:"uploaded",run_id:$run_id,artifact_id:$artifact_id,artifact_digest:$artifact_digest,artifact_url:$artifact_url}'

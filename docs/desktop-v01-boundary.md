@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted; Desktop-D2 local Generic implementation candidate, not released
+Status: accepted boundary; Desktop-D2 narrow-fix candidate awaiting external re-review, not released
 
 Date: 2026-08-25
 
@@ -146,7 +146,10 @@ Each checkpoint requires separate authorization:
 3. **Desktop-D2:** locally completed as an implementation candidate on 2026-08-25;
    on macOS arm64 with synthetic data, proves Generic local setup,
    authentication, Owner preview/apply/readback, idempotent replay, restart,
-   backup, and failure-zero-write behavior. See the
+   backup, failure-zero-write behavior, fixed Pack identity, single Runtime
+   lifecycle, and interrupted-setup recovery. Its first external code review
+   returned three narrow lifecycle/trust fixes; the repaired head must pass a
+   second review before merge. See the
    [verification record](verification/desktop-d2-local-generic-2026-08-25.md).
 4. **Desktop-D3:** repeat the fixed release on Windows x64 with signing and
    installer evidence.

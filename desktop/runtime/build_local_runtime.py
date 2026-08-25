@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,19 @@ def verify_common(root: Path, staging_common: Path) -> dict[str, Any]:
         if sha256(path) != record["sha256"]:
             raise RuntimeError(f"desktop_common_artifact_file_mismatch:{record['path']}")
     return manifest
+
+
+def normalize_zip_member_order(archive_path: Path) -> None:
+    """Rewrite PyInstaller's set-derived base ZIP order deterministically."""
+    temporary = archive_path.with_suffix(archive_path.suffix + ".normalized")
+    with zipfile.ZipFile(archive_path, "r") as source:
+        members = [(copy.copy(info), source.read(info.filename)) for info in source.infolist()]
+        comment = source.comment
+    with zipfile.ZipFile(temporary, "w", allowZip64=True) as target:
+        target.comment = comment
+        for info, content in sorted(members, key=lambda item: item[0].filename):
+            target.writestr(info, content)
+    temporary.replace(archive_path)
 
 
 def build(root: Path, python: Path) -> Path:
@@ -115,6 +130,7 @@ def build(root: Path, python: Path) -> Path:
     executable = pack / "bizhub-runtime"
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise RuntimeError("desktop_runtime_executable_missing")
+    normalize_zip_member_order(pack / "_internal" / "base_library.zip")
     records: list[dict[str, Any]] = []
     for path in sorted(candidate for candidate in pack.rglob("*") if candidate.is_file() or candidate.is_symlink()):
         relative = path.relative_to(pack).as_posix()

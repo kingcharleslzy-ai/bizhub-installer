@@ -57,6 +57,7 @@ const allowedAsarEntry = (value) => (
   || value === "electron"
   || [
     "electron/connection-profile.cjs",
+    "electron/local-lifecycle.cjs",
     "electron/local-runtime.cjs",
     "electron/main.cjs",
     "electron/network-policy.cjs",
@@ -115,6 +116,7 @@ assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present"
 
 for (const sourceName of [
   "connection-profile.cjs",
+  "local-lifecycle.cjs",
   "local-runtime.cjs",
   "main.cjs",
   "network-policy.cjs",
@@ -144,5 +146,8 @@ process.stdout.write(`${JSON.stringify({
   runtime_profile_id: verifiedRuntime.manifest.profile_id,
   runtime_pack_files: verifiedRuntime.manifest.files.length,
   runtime_pack_tree_digest: verifiedRuntime.manifest.pack_tree_digest,
+  runtime_manifest_sha256: createHash("sha256")
+    .update(await readFile(runtimeManifests[0]))
+    .digest("hex"),
   core_artifact_digest: verifiedRuntime.manifest.core_artifact_digest,
 })}\n`);

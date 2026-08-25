@@ -98,7 +98,13 @@ const runtimeTrust = JSON.parse(await readFile(path.join(ROOT, "config", "generi
 const commonManifestBytes = await readFile(path.join(REPO, "app", "vendor", "bizhub-common-manifest.json"));
 const commonManifest = JSON.parse(commonManifestBytes.toString("utf8"));
 const commonArtifact = await readFile(path.join(REPO, "app", "vendor", "bizhub-common.tar.gz"));
+const runtimeArchiveName = "bizhub-runtime-darwin-arm64-0.1.0-d2.zip";
+const runtimeArchive = await readFile(path.join(ROOT, "runtime", "vendor", runtimeArchiveName));
+const runtimeArchiveChecksum = (
+  await readFile(path.join(ROOT, "runtime", "vendor", "bizhub-runtime-darwin-arm64-0.1.0-d2.sha256"), "utf8")
+).trim();
 assert.equal(sha256(commonArtifact), commonManifest.artifact_sha256);
+assert.equal(runtimeArchiveChecksum, `${sha256(runtimeArchive)}  ${runtimeArchiveName}`);
 assert.equal(runtimeTrust.profile_id, "generic-kernel-smoke");
 assert.equal(runtimeTrust.platform, "darwin");
 assert.equal(runtimeTrust.architecture, "arm64");
@@ -106,6 +112,10 @@ assert.equal(runtimeTrust.artifact_id, commonManifest.artifact_id);
 assert.equal(runtimeTrust.core_artifact_digest, commonManifest.core_artifact_digest);
 assert.equal(runtimeTrust.core_source_commit, commonManifest.source_commit);
 assert.equal(runtimeTrust.allowlist_tree_digest, commonManifest.allowlist_tree_digest);
+assert.match(runtimeTrust.runtime_manifest_sha256, /^[0-9a-f]{64}$/);
+assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
+assert.ok(Number.isSafeInteger(runtimeTrust.runtime_pack_file_count));
+assert.ok(runtimeTrust.runtime_pack_file_count > 0);
 
 process.stdout.write(`${JSON.stringify({
   status: "ok",
@@ -115,5 +125,7 @@ process.stdout.write(`${JSON.stringify({
   trusted_connection_keys: 0,
   runtime_profile_id: runtimeTrust.profile_id,
   core_artifact_digest: runtimeTrust.core_artifact_digest,
+  runtime_pack_file_count: runtimeTrust.runtime_pack_file_count,
+  runtime_archive_sha256: sha256(runtimeArchive),
   private_markers: 0,
 })}\n`);

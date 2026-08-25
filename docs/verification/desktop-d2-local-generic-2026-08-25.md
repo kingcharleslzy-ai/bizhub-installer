@@ -2,8 +2,8 @@
 
 ## Result
 
-Desktop-D2 is a locally verified implementation candidate for macOS arm64. It
-is not a release. The same customer-neutral Electron shell can still open a
+Desktop-D2 is a locally verified narrow-fix candidate for macOS arm64 after its
+first external review. It is not a release. The same customer-neutral Electron shell can still open a
 signed enterprise HTTPS Workspace and can now, only after an explicit local
 choice, start one fixed Generic Python Runtime with one synthetic local SQLite
 database and one first administrator.
@@ -26,20 +26,29 @@ run.
 - common allowlist tree digest:
   `3c2770526b509439f4a1a3b2226066b3b86456b7595f462fead848e8ae98211d`;
 - Runtime source tree digest:
-  `943dac1b5207b36091e1754951108197e11cc5973a6ba35dee1567b13ca4a879`;
+  `6d99bc96edbcb6b48d3a5f115a7ea23575f31b0f1bd097dff526f38ec0cfdedd`;
+- Runtime release manifest SHA-256:
+  `8dd0705f9bc49a85b7dc785489a8e16bebbe491c971ad6bc6ee40d135f7d209d`;
+- fixed Runtime archive SHA-256:
+  `40d054980ee4f8d22276f5723877e447faec72e9d743f281709dfa9c2137e7eb`;
+- fixed Runtime archive size: `14880197` bytes;
 - final onedir file count: `126`;
 - final onedir tree digest:
-  `d1044138d529048dcd95163ec50c4ff1b17d6257f5f0b870e81c8277116f5ffe`.
+  `af1a302c37ba12e07060e13929a6f65c12cf1755e50a62bffdf784db066b7cbd`.
 
 The final unsigned internal ZIP candidate is:
 
 ```text
 desktop/out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip
-size: 143451476 bytes
-sha256: 7e9248d46af6d4d78c3b9adbc47a6abd41250bf3ee14c15039bbc32be7a1cd8d
+size: 143454027 bytes
+sha256: 20bd6c0a241aea85ed8c33f6da0e4e5f2070d4fd0814f7574dd542ab5a43e115
 ```
 
-The ZIP is ignored by Git and has not been uploaded or published.
+The previous `7e9248d4...` ZIP is superseded. The local ZIP remains ignored by
+Git and is not a release. The fixed-head macOS Actions workflow independently
+rebuilds a source candidate, then packages the checked-in fixed Runtime archive
+without regenerating trust. It uploads the reviewed ZIP and reports the Actions
+Artifact digest, inner ZIP digest, and byte size.
 
 ## Authority and failure boundaries
 
@@ -73,6 +82,14 @@ The acceptance proved:
 - a tampered apply returns `409`, while exact readback stays unchanged;
 - online backup plus manifest validates successfully;
 - stopping and restarting the Runtime preserves the formal readback;
+- changing a Runtime file and its Manifest hash/tree together is rejected by
+  the independently pinned Manifest digest;
+- two concurrent starts create one Python process and never more than one live
+  Runtime;
+- stop or Cloud switch during startup waits for that process and leaves zero
+  Runtime PIDs;
+- startup recovery removes only marker-matched interrupted setup state, keeps a
+  formal local instance untouched, and permits a new explicit initialization;
 - development, packaged-directory, and final-ZIP local smokes leave zero
   Runtime processes;
 - packaged cloud smoke still connects only to `https://example.com` and does
@@ -85,7 +102,7 @@ Executed on Apple Silicon macOS with Node `22.22.2`, Python `3.12.13`, Electron
 
 ```text
 npm test
-  13 passed, 0 failed
+  22 passed, 0 failed
 
 npm run verify:boundary
   status=ok
@@ -103,9 +120,21 @@ npm run smoke:local
   apply_disposition=applied
   replay_disposition=idempotent_noop
   failure_zero_write=true
+  interrupted_setup_recovery=recovered
+  concurrent_start_spawn_count=1
+  maximum_live_runtime_processes=1
   backup_status=valid
   restart_readback_locations=1
   residual_runtime_processes=0
+
+npm run smoke:runtime-tamper
+  attack=runtime_file_plus_manifest_coordinated_tamper
+  status=rejected, independent_trust=true
+
+four consecutive fixed-environment Runtime builds
+  runtime_manifest_sha256=8dd0705f9bc49a85b7dc785489a8e16bebbe491c971ad6bc6ee40d135f7d209d
+  runtime_pack_tree_digest=af1a302c37ba12e07060e13929a6f65c12cf1755e50a62bffdf784db066b7cbd
+  runtime_pack_file_count=126
 
 packaged directory and final ZIP extraction scans
   runtime_profile_id=generic-kernel-smoke
@@ -127,7 +156,9 @@ npm audit --omit=dev
 
 The scanner reads `.cjs`, `.mjs`, Python, JSON, HTML, CSS, JS, XML and YAML
 text, verifies the exact ASAR Electron runtime files against the checked-out
-source, verifies every Runtime manifest entry including bounded internal
+source, verifies the Manifest raw SHA-256 before parsing, independently pins
+the Pack tree digest and file count, validates canonical sorted source records,
+verifies every Runtime manifest entry including bounded internal
 symlinks, and rejects SQLite data, source maps, private keys, customer-private
 markers, a non-empty enterprise trust store, or a different Generic identity.
 

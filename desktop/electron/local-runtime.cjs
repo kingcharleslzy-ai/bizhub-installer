@@ -10,12 +10,16 @@ const {
   readdir,
   rename,
   rm,
+  unlink,
   writeFile,
 } = require("node:fs/promises");
 const path = require("node:path");
 
 const RUNTIME_COOKIE = "bizhub_desktop_runtime";
 const MAX_COMMAND_OUTPUT = 256 * 1024;
+const SETUP_MARKER_SCHEMA = "bizhub.desktop-local-setup.v1";
+const SETUP_STAGE_PATTERN = /^\.setup-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
+const activeSetupIds = new Set();
 
 function sha256Buffer(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -67,7 +71,10 @@ async function verifyRuntimePack(packRoot, trustPath) {
     "platform",
     "profile_id",
     "runtime_id",
+    "runtime_manifest_sha256",
     "runtime_manifest_schema",
+    "runtime_pack_file_count",
+    "runtime_pack_tree_digest",
     "runtime_source_tree_digest",
     "runtime_version",
     "schema_version",
@@ -75,8 +82,20 @@ async function verifyRuntimePack(packRoot, trustPath) {
   if (trust.schema_version !== "bizhub.desktop-runtime-trust.v1") {
     throw new Error("desktop_runtime_trust_schema_invalid");
   }
+  if (
+    !/^[0-9a-f]{64}$/.test(trust.runtime_manifest_sha256)
+    || !/^[0-9a-f]{64}$/.test(trust.runtime_pack_tree_digest)
+    || !Number.isSafeInteger(trust.runtime_pack_file_count)
+    || trust.runtime_pack_file_count < 1
+  ) {
+    throw new Error("desktop_runtime_trust_digest_invalid");
+  }
   const manifestPath = path.join(root, "runtime-release-manifest.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const manifestRaw = await readFile(manifestPath);
+  if (sha256Buffer(manifestRaw) !== trust.runtime_manifest_sha256) {
+    throw new Error("desktop_runtime_manifest_digest_mismatch");
+  }
+  const manifest = JSON.parse(manifestRaw.toString("utf8"));
   requireExactKeys(manifest, [
     "allowlist_tree_digest",
     "architecture",
@@ -115,6 +134,41 @@ async function verifyRuntimePack(packRoot, trustPath) {
   }
   if (!Array.isArray(manifest.files) || manifest.files.length < 1) {
     throw new Error("desktop_runtime_manifest_files_invalid");
+  }
+  if (
+    manifest.pack_tree_digest !== trust.runtime_pack_tree_digest
+    || manifest.files.length !== trust.runtime_pack_file_count
+  ) {
+    throw new Error("desktop_runtime_pack_pin_mismatch");
+  }
+  if (!Array.isArray(manifest.runtime_source_files) || manifest.runtime_source_files.length < 1) {
+    throw new Error("desktop_runtime_source_files_invalid");
+  }
+  const sourcePaths = new Set();
+  const canonicalSourceRecords = [];
+  let previousSourcePath = "";
+  for (const record of manifest.runtime_source_files) {
+    requireExactKeys(record, ["path", "sha256"], "desktop_runtime_source_record_invalid");
+    if (
+      !safeRelative(record.path)
+      || sourcePaths.has(record.path)
+      || record.path <= previousSourcePath
+      || !/^[0-9a-f]{64}$/.test(record.sha256)
+    ) {
+      throw new Error(`desktop_runtime_source_record_invalid:${record.path}`);
+    }
+    sourcePaths.add(record.path);
+    previousSourcePath = record.path;
+    canonicalSourceRecords.push({ path: record.path, sha256: record.sha256 });
+  }
+  const sourceTreeDigest = sha256Buffer(
+    Buffer.from(`${JSON.stringify(canonicalSourceRecords)}\n`),
+  );
+  if (
+    sourceTreeDigest !== manifest.runtime_source_tree_digest
+    || sourceTreeDigest !== trust.runtime_source_tree_digest
+  ) {
+    throw new Error("desktop_runtime_source_tree_digest_mismatch");
   }
   const expectedPaths = new Set();
   const canonicalRecords = [];
@@ -157,7 +211,13 @@ async function verifyRuntimePack(packRoot, trustPath) {
       throw new Error(`desktop_runtime_file_type_invalid:${record.path}`);
     }
     expectedPaths.add(record.path);
-    canonicalRecords.push(record);
+    canonicalRecords.push({
+      link_target: record.link_target,
+      path: record.path,
+      sha256: record.sha256,
+      size: record.size,
+      type: record.type,
+    });
   }
   const actualPaths = new Set(
     (await filesUnder(root))
@@ -171,7 +231,10 @@ async function verifyRuntimePack(packRoot, trustPath) {
     throw new Error("desktop_runtime_pack_file_set_mismatch");
   }
   const treeDigest = sha256Buffer(Buffer.from(`${JSON.stringify(canonicalRecords)}\n`));
-  if (treeDigest !== manifest.pack_tree_digest) {
+  if (
+    treeDigest !== manifest.pack_tree_digest
+    || treeDigest !== trust.runtime_pack_tree_digest
+  ) {
     throw new Error("desktop_runtime_pack_tree_digest_mismatch");
   }
   const executable = path.join(root, manifest.executable);
@@ -205,9 +268,161 @@ function runtimeEnvironment(instanceRoot) {
   };
 }
 
-async function writeJsonSecure(filePath, payload) {
-  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+async function writeJsonSecure(filePath, payload, options = {}) {
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, {
+    ...options,
+    mode: 0o600,
+  });
   await chmod(filePath, 0o600);
+}
+
+function setupRecord(setupId, stageName) {
+  return {
+    schema_version: SETUP_MARKER_SCHEMA,
+    setup_id: setupId,
+    stage_name: stageName,
+    owner_pid: process.pid,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function validateSetupRecord(payload, expectedStageName = null) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("desktop_local_setup_marker_invalid");
+  }
+  requireExactKeys(payload, [
+    "created_at",
+    "owner_pid",
+    "schema_version",
+    "setup_id",
+    "stage_name",
+  ], "desktop_local_setup_marker_invalid");
+  const match = SETUP_STAGE_PATTERN.exec(payload.stage_name);
+  if (
+    payload.schema_version !== SETUP_MARKER_SCHEMA
+    || !match
+    || payload.setup_id !== match[1]
+    || (expectedStageName && payload.stage_name !== expectedStageName)
+    || !Number.isSafeInteger(payload.owner_pid)
+    || payload.owner_pid <= 1
+    || !Number.isFinite(Date.parse(payload.created_at))
+  ) {
+    throw new Error("desktop_local_setup_marker_invalid");
+  }
+  return payload;
+}
+
+async function readSetupRecord(filePath, expectedStageName = null) {
+  const metadata = await lstat(filePath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error(`desktop_local_setup_marker_type_invalid:${filePath}`);
+  }
+  return validateSetupRecord(
+    JSON.parse(await readFile(filePath, "utf8")),
+    expectedStageName,
+  );
+}
+
+function sameSetupRecord(left, right) {
+  return ["schema_version", "setup_id", "stage_name", "owner_pid", "created_at"]
+    .every((key) => left[key] === right[key]);
+}
+
+async function recoverInterruptedLocalSetup(userDataRoot) {
+  const base = path.resolve(userDataRoot);
+  const runtimeRoot = path.join(base, "runtime");
+  const finalRoot = path.join(base, "local-instance");
+  let formalInstancePresent = false;
+  try {
+    const finalMetadata = await lstat(finalRoot);
+    if (!finalMetadata.isDirectory() || finalMetadata.isSymbolicLink()) {
+      throw new Error("desktop_local_instance_root_invalid");
+    }
+    formalInstancePresent = true;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  let entries;
+  try {
+    const runtimeMetadata = await lstat(runtimeRoot);
+    if (!runtimeMetadata.isDirectory() || runtimeMetadata.isSymbolicLink()) {
+      throw new Error("desktop_local_setup_runtime_root_invalid");
+    }
+    entries = await readdir(runtimeRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { status: "clean", recovered_setups: 0, formal_instance_present: formalInstancePresent };
+    }
+    throw error;
+  }
+
+  const stages = new Map();
+  const markerPaths = new Map();
+  let lockPath = null;
+  for (const entry of entries) {
+    const candidate = path.join(runtimeRoot, entry.name);
+    if (entry.name === "setup.lock") {
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error("desktop_local_setup_lock_type_invalid");
+      }
+      lockPath = candidate;
+      continue;
+    }
+    const markerMatch = /^(\.setup-[0-9a-f-]+)\.marker\.json$/.exec(entry.name);
+    const stageMatch = SETUP_STAGE_PATTERN.exec(entry.name);
+    if (markerMatch) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !SETUP_STAGE_PATTERN.test(markerMatch[1])) {
+        throw new Error(`desktop_local_setup_recovery_path_invalid:${entry.name}`);
+      }
+      markerPaths.set(markerMatch[1], candidate);
+      continue;
+    }
+    if (stageMatch) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) {
+        throw new Error(`desktop_local_setup_recovery_path_invalid:${entry.name}`);
+      }
+      stages.set(entry.name, candidate);
+      continue;
+    }
+    if (entry.name.startsWith(".setup-")) {
+      throw new Error(`desktop_local_setup_recovery_path_invalid:${entry.name}`);
+    }
+  }
+
+  const records = new Map();
+  for (const [stageName, markerPath] of markerPaths) {
+    const record = await readSetupRecord(markerPath, stageName);
+    if (activeSetupIds.has(record.setup_id)) {
+      throw new Error("desktop_local_setup_recovery_active");
+    }
+    records.set(stageName, record);
+  }
+  for (const stageName of stages.keys()) {
+    if (!records.has(stageName)) {
+      throw new Error(`desktop_local_setup_recovery_marker_missing:${stageName}`);
+    }
+  }
+  let lockRecord = null;
+  if (lockPath) {
+    lockRecord = await readSetupRecord(lockPath);
+    const markerRecord = records.get(lockRecord.stage_name);
+    if (!markerRecord || !sameSetupRecord(lockRecord, markerRecord)) {
+      throw new Error("desktop_local_setup_lock_marker_mismatch");
+    }
+  }
+
+  for (const stagePath of stages.values()) {
+    await rm(stagePath, { recursive: true, force: true });
+  }
+  for (const markerPath of markerPaths.values()) {
+    await unlink(markerPath);
+  }
+  if (lockPath) await unlink(lockPath);
+  return {
+    status: records.size || lockRecord ? "recovered" : "clean",
+    recovered_setups: records.size,
+    formal_instance_present: formalInstancePresent,
+  };
 }
 
 function validateSetupInput(input) {
@@ -319,16 +534,33 @@ async function bootstrapLocalInstance({ userDataRoot, runtimePack, trustPath, in
   const verified = await verifyRuntimePack(runtimePack, trustPath);
   const base = path.resolve(userDataRoot);
   const finalRoot = path.join(base, "local-instance");
-  const lock = path.join(base, "runtime", "setup.lock");
-  await mkdir(path.dirname(lock), { recursive: true, mode: 0o700 });
-  try {
-    await mkdir(lock, { mode: 0o700 });
-  } catch (error) {
-    if (error?.code === "EEXIST") throw new Error("desktop_local_setup_in_progress");
-    throw error;
+  const runtimeRoot = path.join(base, "runtime");
+  const lock = path.join(runtimeRoot, "setup.lock");
+  const setupId = randomUUID();
+  const stageName = `.setup-${setupId}`;
+  const stage = path.join(runtimeRoot, stageName);
+  const markerPath = path.join(runtimeRoot, `${stageName}.marker.json`);
+  const marker = setupRecord(setupId, stageName);
+  let markerOwned = false;
+  let stageOwned = false;
+  let lockOwned = false;
+  await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
+  if (!(await lstat(runtimeRoot)).isDirectory()) {
+    throw new Error("desktop_local_setup_runtime_root_invalid");
   }
-  const stage = path.join(base, "runtime", `.setup-${randomUUID()}`);
   try {
+    await writeJsonSecure(markerPath, marker, { flag: "wx" });
+    markerOwned = true;
+    await mkdir(stage, { mode: 0o700 });
+    stageOwned = true;
+    try {
+      await writeJsonSecure(lock, marker, { flag: "wx" });
+      lockOwned = true;
+      activeSetupIds.add(setupId);
+    } catch (error) {
+      if (error?.code === "EEXIST") throw new Error("desktop_local_setup_in_progress");
+      throw error;
+    }
     try {
       await access(finalRoot);
       throw new Error("desktop_local_instance_already_exists");
@@ -390,16 +622,27 @@ async function bootstrapLocalInstance({ userDataRoot, runtimePack, trustPath, in
       })}\n`,
     );
     await rename(stage, finalRoot);
+    stageOwned = false;
     return {
       status: "created",
       instance: (await loadLocalInstance(finalRoot)).payload,
       readback: result.readback,
     };
-  } catch (error) {
-    await rm(stage, { recursive: true, force: true });
-    throw error;
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    activeSetupIds.delete(setupId);
+    if (lockOwned) {
+      try {
+        const currentLock = await readSetupRecord(lock, stageName);
+        if (!sameSetupRecord(currentLock, marker)) {
+          throw new Error("desktop_local_setup_lock_ownership_lost");
+        }
+        await unlink(lock);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+    }
+    if (stageOwned) await rm(stage, { recursive: true, force: true });
+    if (markerOwned) await rm(markerPath, { force: true });
   }
 }
 
@@ -575,6 +818,7 @@ module.exports = {
   instancePaths,
   loadLocalInstance,
   loginLocalRuntime,
+  recoverInterruptedLocalSetup,
   runtimeEnvironment,
   startLocalRuntime,
   stopLocalRuntime,
