@@ -81,7 +81,10 @@ try {
     await writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`);
   }
 
-  const executable = packagedExecutable || path.join(ROOT, "node_modules", ".bin", "electron");
+  const developmentExecutable = process.platform === "win32"
+    ? path.join(ROOT, "node_modules", "electron", "dist", "electron.exe")
+    : path.join(ROOT, "node_modules", ".bin", "electron");
+  const executable = packagedExecutable || developmentExecutable;
   const child = spawn(executable, packagedExecutable ? [] : [ROOT], {
     cwd: ROOT,
     env: {
