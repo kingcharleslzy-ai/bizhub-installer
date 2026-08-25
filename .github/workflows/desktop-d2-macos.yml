@@ -42,8 +42,8 @@ jobs:
         run: |
           python -m venv .runtime-venv
           .runtime-venv/bin/pip install --disable-pip-version-check --require-hashes -r runtime/requirements-build.lock
-          python -m venv ../.desktop-test-venv
-          ../.desktop-test-venv/bin/pip install --disable-pip-version-check --require-hashes -r ../app/backend/requirements-dev.lock
+          python -m venv "$RUNNER_TEMP/bizhub-desktop-test-venv"
+          "$RUNNER_TEMP/bizhub-desktop-test-venv/bin/pip" install --disable-pip-version-check --require-hashes -r ../app/backend/requirements-dev.lock
 
       - name: Install fixed Desktop dependencies
         run: npm ci
@@ -61,7 +61,7 @@ jobs:
 
       - name: Run public Python tests
         shell: bash
-        run: PYTHONPATH="$PWD/../app/backend" ../.desktop-test-venv/bin/pytest -q ../app/backend/tests ../tests
+        run: PYTHONPATH="$PWD/../app/backend" "$RUNNER_TEMP/bizhub-desktop-test-venv/bin/pytest" -q ../app/backend/tests ../tests
 
       - name: Rebuild Generic Runtime source candidate
         shell: bash
