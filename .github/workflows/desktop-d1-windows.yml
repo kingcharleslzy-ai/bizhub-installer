@@ -50,7 +50,16 @@ jobs:
         run: npm run make -- --platform=win32 --arch=x64
 
       - name: Scan packaged artifact
-        run: npm run verify:artifact -- "out/BizHub Desktop-win32-x64"
+        shell: pwsh
+        run: |
+          $output = npm run verify:artifact -- "out/BizHub Desktop-win32-x64" 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          $output
+          if ($exitCode -ne 0) {
+            $escaped = $output.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Packaged artifact scan details::$escaped"
+            exit $exitCode
+          }
 
       - name: Packaged Electron HTTPS smoke
         shell: pwsh

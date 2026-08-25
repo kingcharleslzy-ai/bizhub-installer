@@ -36,7 +36,9 @@ for (const name of lowerNames) {
 
 const asarFiles = files.filter((value) => path.basename(value).toLowerCase() === "app.asar");
 assert.equal(asarFiles.length, 1, "app_asar_count_invalid");
-const asarEntries = asar.listPackage(asarFiles[0]).map((value) => value.replace(/^\//, ""));
+const asarEntries = asar.listPackage(asarFiles[0]).map((value) => (
+  value.replaceAll("\\", "/").replace(/^\//, "")
+));
 const allowedAsarEntry = (value) => (
   value === "dist"
   || value === "dist/renderer"
