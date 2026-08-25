@@ -23,15 +23,18 @@
     "start": "npm run build && electron-forge start",
     "test": "node --test test/*.test.mjs",
     "verify:artifact": "node scripts/verify-packaged-artifact.mjs",
-    "verify:boundary": "node scripts/verify-d2-boundary.mjs"
+    "verify:boundary": "node scripts/verify-d2-boundary.mjs",
+    "verify:runtime-archive": "node scripts/verify-fixed-runtime-archive.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
     "@electron-forge/maker-squirrel": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "@electron/asar": "3.4.1",
+    "@electron/windows-sign": "1.2.2",
     "@vitejs/plugin-vue": "6.0.8",
     "electron": "44.0.0",
+    "extract-zip": "2.0.1",
     "vite": "8.2.2",
     "vue": "3.5.41"
   }

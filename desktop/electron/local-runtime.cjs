@@ -56,7 +56,7 @@ function requireExactKeys(payload, expected, code) {
   if (JSON.stringify(actual) !== JSON.stringify(wanted)) throw new Error(code);
 }
 
-async function verifyRuntimePack(packRoot, trustPath) {
+async function verifyRuntimePackInternal(packRoot, trustPath, requireHostTarget) {
   const root = path.resolve(packRoot);
   if (!(await lstat(root)).isDirectory()) {
     throw new Error("desktop_runtime_pack_root_invalid");
@@ -87,7 +87,10 @@ async function verifyRuntimePack(packRoot, trustPath) {
     || (trust.platform === "win32" && trust.architecture === "x64")
   );
   if (!supportedTarget) throw new Error("desktop_runtime_target_unsupported");
-  if (trust.platform !== process.platform || trust.architecture !== process.arch) {
+  if (
+    requireHostTarget
+    && (trust.platform !== process.platform || trust.architecture !== process.arch)
+  ) {
     throw new Error("desktop_runtime_host_target_mismatch");
   }
   if (
@@ -251,6 +254,14 @@ async function verifyRuntimePack(packRoot, trustPath) {
   const executable = path.join(root, manifest.executable);
   await access(executable, 1);
   return { root, executable, manifest };
+}
+
+async function verifyRuntimePackIdentity(packRoot, trustPath) {
+  return verifyRuntimePackInternal(packRoot, trustPath, false);
+}
+
+async function verifyRuntimePack(packRoot, trustPath) {
+  return verifyRuntimePackInternal(packRoot, trustPath, true);
 }
 
 function instancePaths(instanceRoot) {
@@ -834,4 +845,5 @@ module.exports = {
   startLocalRuntime,
   stopLocalRuntime,
   verifyRuntimePack,
+  verifyRuntimePackIdentity,
 };

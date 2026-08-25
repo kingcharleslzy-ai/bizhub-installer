@@ -100,6 +100,17 @@ const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "
 assert.equal(packageJson.dependencies, undefined);
 assert.equal(packageJson.devDependencies.pyinstaller, undefined);
 assert.equal(packageJson.devDependencies["@electron-forge/maker-squirrel"], "7.11.2");
+assert.equal(packageJson.devDependencies["@electron/windows-sign"], "1.2.2");
+assert.equal(packageJson.devDependencies["extract-zip"], "2.0.1");
+const forgeConfig = await readFile(path.join(ROOT, "forge.config.cjs"), "utf8");
+for (const required of [
+  "windowsSign",
+  "signPackagedWindowsFile",
+  "runtimeResourceSegment",
+  "@electron/windows-sign",
+]) {
+  assert.ok(forgeConfig.includes(required), required);
+}
 const trustStore = JSON.parse(await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"));
 assert.deepEqual(trustStore, {
   schema_version: "bizhub.desktop-trust-store.v1",
@@ -128,6 +139,35 @@ assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
 assert.ok(Number.isSafeInteger(runtimeTrust.runtime_pack_file_count));
 assert.ok(runtimeTrust.runtime_pack_file_count > 0);
 
+const windowsRuntimeTrust = JSON.parse(
+  await readFile(path.join(ROOT, "config", "generic-runtime-trust.win32-x64.json"), "utf8"),
+);
+const windowsRuntimeArchiveName = "bizhub-runtime-win32-x64-0.1.0-d3.zip";
+const windowsRuntimeArchive = await readFile(
+  path.join(ROOT, "runtime", "vendor", windowsRuntimeArchiveName),
+);
+const windowsRuntimeArchiveChecksum = (
+  await readFile(
+    path.join(ROOT, "runtime", "vendor", "bizhub-runtime-win32-x64-0.1.0-d3.sha256"),
+    "utf8",
+  )
+).trim();
+assert.equal(
+  windowsRuntimeArchiveChecksum,
+  `${sha256(windowsRuntimeArchive)}  ${windowsRuntimeArchiveName}`,
+);
+assert.equal(windowsRuntimeTrust.profile_id, "generic-kernel-smoke");
+assert.equal(windowsRuntimeTrust.platform, "win32");
+assert.equal(windowsRuntimeTrust.architecture, "x64");
+assert.equal(windowsRuntimeTrust.artifact_id, commonManifest.artifact_id);
+assert.equal(windowsRuntimeTrust.core_artifact_digest, commonManifest.core_artifact_digest);
+assert.equal(windowsRuntimeTrust.core_source_commit, commonManifest.source_commit);
+assert.equal(windowsRuntimeTrust.allowlist_tree_digest, commonManifest.allowlist_tree_digest);
+assert.match(windowsRuntimeTrust.runtime_manifest_sha256, /^[0-9a-f]{64}$/);
+assert.match(windowsRuntimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
+assert.ok(Number.isSafeInteger(windowsRuntimeTrust.runtime_pack_file_count));
+assert.ok(windowsRuntimeTrust.runtime_pack_file_count > 0);
+
 process.stdout.write(`${JSON.stringify({
   status: "ok",
   scanned_text_files: inspected.length,
@@ -138,5 +178,7 @@ process.stdout.write(`${JSON.stringify({
   core_artifact_digest: runtimeTrust.core_artifact_digest,
   runtime_pack_file_count: runtimeTrust.runtime_pack_file_count,
   runtime_archive_sha256: sha256(runtimeArchive),
+  windows_runtime_pack_file_count: windowsRuntimeTrust.runtime_pack_file_count,
+  windows_runtime_archive_sha256: sha256(windowsRuntimeArchive),
   private_markers: 0,
 })}\n`);

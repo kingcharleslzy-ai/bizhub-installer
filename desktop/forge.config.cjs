@@ -1,3 +1,6 @@
+const path = require("node:path");
+const { sign: signWindowsFiles } = require("@electron/windows-sign");
+
 const certificateFile = process.env.BIZHUB_WINDOWS_CERTIFICATE_FILE;
 const certificatePassword = process.env.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD;
 const requireWindowsSigning = process.env.BIZHUB_REQUIRE_WINDOWS_SIGNING === "1";
@@ -6,9 +9,22 @@ if (requireWindowsSigning && (!certificateFile || !certificatePassword)) {
   throw new Error("desktop_windows_signing_credentials_missing");
 }
 
-const squirrelSigning = certificateFile && certificatePassword
-  ? { certificateFile, certificatePassword }
-  : {};
+const windowsSigning = certificateFile && certificatePassword
+  ? { certificateFile, certificatePassword, hashes: ["sha256"] }
+  : null;
+const runtimeResourceSegment = `${path.sep}resources${path.sep}bizhub-runtime${path.sep}`.toLowerCase();
+
+async function signPackagedWindowsFile(fileToSign) {
+  if (!windowsSigning) throw new Error("desktop_windows_signing_credentials_missing");
+  const normalized = path.resolve(fileToSign).toLowerCase();
+  // The fixed Runtime Pack is independently identity-bound before packaging.
+  // Signing it here would mutate its PE files after trust verification.
+  if (normalized.includes(runtimeResourceSegment)) return;
+  await signWindowsFiles({
+    files: [fileToSign],
+    ...windowsSigning,
+  });
+}
 
 module.exports = {
   packagerConfig: {
@@ -16,6 +32,12 @@ module.exports = {
     appCategoryType: "public.app-category.business",
     asar: true,
     executableName: "BizHub Desktop",
+    ...(windowsSigning ? {
+      windowsSign: {
+        ...windowsSigning,
+        hookFunction: signPackagedWindowsFile,
+      },
+    } : {}),
     extendInfo: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: false,
@@ -56,7 +78,7 @@ module.exports = {
         name: "bizhub_desktop",
         setupExe: "BizHub-Desktop-Setup-x64.exe",
         noMsi: true,
-        ...squirrelSigning,
+        ...(windowsSigning ? { windowsSign: windowsSigning } : {}),
       },
     },
   ],

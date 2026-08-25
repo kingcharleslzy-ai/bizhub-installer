@@ -171,6 +171,7 @@ jobs:
           python ../scripts/verify_checksums.py
           npm test
           npm run verify:boundary
+          npm run verify:runtime-archive
           npm run audit:runtime
 
       - name: Bind rebuilt Runtime to the independent Windows trust record
