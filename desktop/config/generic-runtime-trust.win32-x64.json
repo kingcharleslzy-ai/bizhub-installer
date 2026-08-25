@@ -1,0 +1,17 @@
+{
+  "schema_version": "bizhub.desktop-runtime-trust.v1",
+  "runtime_manifest_schema": "bizhub.desktop-runtime-release.v1",
+  "runtime_id": "bizhub-generic-local",
+  "runtime_version": "0.1.0-d3",
+  "profile_id": "generic-kernel-smoke",
+  "platform": "win32",
+  "architecture": "x64",
+  "artifact_id": "bizhub-common",
+  "core_artifact_digest": "sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72",
+  "core_source_commit": "0c05a44a22dc049ef4760173307a6b4af5a3dfad",
+  "allowlist_tree_digest": "3c2770526b509439f4a1a3b2226066b3b86456b7595f462fead848e8ae98211d",
+  "runtime_source_tree_digest": "1cd9a1fc11a054bcdecb1384a1fcd360b4d0f6ff90f0cb2591d2ec4a340acaa0",
+  "runtime_manifest_sha256": "3ecd816daa1c1760eef243e3c447a030aa411e9059803db346bd1f6006997fbc",
+  "runtime_pack_tree_digest": "22c38e64c1a022994674c58d0a8cfc9650580db61317e3c3826516e793169ea0",
+  "runtime_pack_file_count": 131
+}
