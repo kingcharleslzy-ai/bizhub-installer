@@ -73,8 +73,8 @@ The final unsigned local ZIP candidate is:
 
 ```text
 desktop/out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip
-size: 127603731 bytes
-sha256: 1ffabeaa1a7d4edd7ad2f7bb51fce7ed58741f05962dc2fd02444b363fb47889
+size: 127603753 bytes
+sha256: 51ba15150a80bec30777689536781170d5a7a6675c9ca405bb2a4c3eaf69b21d
 ```
 
 The artifact is ignored by Git and has not been uploaded or published.
