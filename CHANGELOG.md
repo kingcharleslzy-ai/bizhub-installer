@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Document the proposed BizHub Desktop v0.1 boundary: one customer-neutral
+  Electron shell, an explicit enterprise-cloud path, and one new Generic local
+  instance without central IAM, customer-private code, direct SQLite access,
+  cloud/local synchronization, or an automatic writer switch.
+
 ## 0.7.0-preview.1 — 2026-08-23
 
 - Replace the preview image's copied public business implementation with the
