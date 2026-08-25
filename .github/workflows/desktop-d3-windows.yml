@@ -72,6 +72,11 @@ jobs:
       - name: Verify fixed source checksums
         run: python ../scripts/verify_checksums.py
 
+      - name: Verify read-only Windows parent-process probe
+        shell: pwsh
+        run: |
+          & $env:BIZHUB_RUNTIME_PYTHON -c "import os,sys; sys.path.insert(0, 'runtime'); import bizhub_runtime_entry_windows as entry; assert entry._parent_process_alive(os.getpid())"
+
       - name: Prove two Windows Runtime builds are deterministic
         id: runtime
         shell: pwsh

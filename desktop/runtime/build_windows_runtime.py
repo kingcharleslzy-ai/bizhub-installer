@@ -75,7 +75,7 @@ def build(root: Path, python: Path) -> Path:
         f"{common / 'backend' / 'generic_kernel' / 'ui'}{data_separator}backend/generic_kernel/ui",
         "--collect-submodules",
         "uvicorn",
-        str(desktop / "runtime" / "bizhub_runtime_entry.py"),
+        str(desktop / "runtime" / "bizhub_runtime_entry_windows.py"),
     ]
     build_environment = os.environ.copy()
     build_environment["SOURCE_DATE_EPOCH"] = REPRODUCIBLE_BUILD_EPOCH
@@ -110,6 +110,7 @@ def build(root: Path, python: Path) -> Path:
         )
     source_paths = [
         desktop / "runtime" / "bizhub_runtime_entry.py",
+        desktop / "runtime" / "bizhub_runtime_entry_windows.py",
         desktop / "runtime" / "build_local_runtime.py",
         desktop / "runtime" / "build_windows_runtime.py",
         desktop / "runtime" / "requirements-build.in",

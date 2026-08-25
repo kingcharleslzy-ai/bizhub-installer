@@ -29,6 +29,7 @@ const relativeFiles = files.map((value) => path.relative(ROOT, value).replaceAll
 const pythonFiles = relativeFiles.filter((value) => value.endsWith(".py"));
 assert.deepEqual(pythonFiles.sort(), [
   "runtime/bizhub_runtime_entry.py",
+  "runtime/bizhub_runtime_entry_windows.py",
   "runtime/build_local_runtime.py",
   "runtime/build_windows_runtime.py",
 ]);
@@ -57,6 +58,7 @@ const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
 const preload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
 const localRuntime = await readFile(path.join(ROOT, "electron", "local-runtime.cjs"), "utf8");
 const windowsRuntimeBuilder = await readFile(path.join(ROOT, "runtime", "build_windows_runtime.py"), "utf8");
+const runtimeEntry = await readFile(path.join(ROOT, "runtime", "bizhub_runtime_entry_windows.py"), "utf8");
 const runtimePreparer = await readFile(path.join(ROOT, "scripts", "prepare-runtime-pack.mjs"), "utf8");
 for (const required of [
   "bootstrapLocalInstance",
@@ -77,6 +79,9 @@ assert.ok(!preload.includes("node:" + "child_process"));
 assert.ok(localRuntime.includes("node:" + "child_process"));
 assert.ok(runtimePreparer.includes('import extract from "extract-zip"'));
 assert.ok(!runtimePreparer.includes("powershell.exe"));
+for (const required of ["OpenProcess", "GetExitCodeProcess", "CloseHandle"]) {
+  assert.ok(runtimeEntry.includes(required), required);
+}
 for (const required of [
   'build_environment["SOURCE_DATE_EPOCH"]',
   'build_environment["PYTHONHASHSEED"]',
