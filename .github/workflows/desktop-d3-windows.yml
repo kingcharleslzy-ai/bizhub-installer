@@ -192,14 +192,21 @@ jobs:
             throw "desktop_windows_runtime_source_rebuild_mismatch"
           }
 
-      - name: Prepare fixed Runtime and run Owner lifecycle smokes
+      - name: Prepare fixed Windows Runtime
         if: steps.capture.outputs.captured != 'true'
-        shell: pwsh
-        run: |
-          npm run prepare:runtime
-          npm run smoke:runtime-tamper
-          npm run smoke:local
-          npm run smoke:local-shell
+        run: npm run prepare:runtime
+
+      - name: Reject fixed Windows Runtime tamper
+        if: steps.capture.outputs.captured != 'true'
+        run: npm run smoke:runtime-tamper
+
+      - name: Run Windows Generic Owner lifecycle smoke
+        if: steps.capture.outputs.captured != 'true'
+        run: npm run smoke:local
+
+      - name: Run Windows Desktop local shell smoke
+        if: steps.capture.outputs.captured != 'true'
+        run: npm run smoke:local-shell
 
       - name: Configure isolated Windows signing identity
         if: steps.capture.outputs.captured != 'true'
