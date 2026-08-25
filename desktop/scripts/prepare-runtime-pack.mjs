@@ -4,6 +4,7 @@ import { copyFile, lstat, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import extract from "extract-zip";
 import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
@@ -36,49 +37,39 @@ if (archiveSha256 !== match[1]) {
 
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true, mode: 0o700 });
-await new Promise((resolve, reject) => {
-  const extractor = process.platform === "win32"
-    ? {
-      command: "powershell.exe",
-      args: [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
-        archivePath,
-        outputRoot,
-      ],
-    }
-    : { command: "/usr/bin/ditto", args: ["-x", "-k", archivePath, outputRoot] };
-  const child = spawn(extractor.command, extractor.args, {
-    env: { ...process.env, COPYFILE_DISABLE: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  const append = (chunk) => {
-    output += chunk.toString("utf8");
-    if (Buffer.byteLength(output) > 64 * 1024) {
+if (process.platform === "win32") {
+  await extract(archivePath, { dir: outputRoot });
+} else {
+  await new Promise((resolve, reject) => {
+    const child = spawn("/usr/bin/ditto", ["-x", "-k", archivePath, outputRoot], {
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    const append = (chunk) => {
+      output += chunk.toString("utf8");
+      if (Buffer.byteLength(output) > 64 * 1024) {
+        child.kill("SIGKILL");
+        reject(new Error("desktop_runtime_vendor_extract_output_too_large"));
+      }
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+    const timeout = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error("desktop_runtime_vendor_extract_output_too_large"));
-    }
-  };
-  child.stdout.on("data", append);
-  child.stderr.on("data", append);
-  const timeout = setTimeout(() => {
-    child.kill("SIGKILL");
-    reject(new Error("desktop_runtime_vendor_extract_timeout"));
-  }, 30_000);
-  child.once("error", (error) => {
-    clearTimeout(timeout);
-    reject(error);
+      reject(new Error("desktop_runtime_vendor_extract_timeout"));
+    }, 30_000);
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) resolve();
+      else reject(new Error(`desktop_runtime_vendor_extract_failed:${code}:${output.trim()}`));
+    });
   });
-  child.once("exit", (code) => {
-    clearTimeout(timeout);
-    if (code === 0) resolve();
-    else reject(new Error(`desktop_runtime_vendor_extract_failed:${code}:${output.trim()}`));
-  });
-});
+}
 
 const verified = await verifyRuntimePack(packRoot, trustPath);
 await copyFile(trustPath, path.join(outputRoot, "generic-runtime-trust.json"));

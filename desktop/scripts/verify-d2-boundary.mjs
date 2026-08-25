@@ -57,6 +57,7 @@ const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
 const preload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
 const localRuntime = await readFile(path.join(ROOT, "electron", "local-runtime.cjs"), "utf8");
 const windowsRuntimeBuilder = await readFile(path.join(ROOT, "runtime", "build_windows_runtime.py"), "utf8");
+const runtimePreparer = await readFile(path.join(ROOT, "scripts", "prepare-runtime-pack.mjs"), "utf8");
 for (const required of [
   "bootstrapLocalInstance",
   "startLocalRuntime",
@@ -74,6 +75,8 @@ for (const prohibited of ["better" + "-sqlite3", "sql" + ".js", "0.0.0.0"] ) {
 assert.ok(!main.includes("node:" + "child_process"));
 assert.ok(!preload.includes("node:" + "child_process"));
 assert.ok(localRuntime.includes("node:" + "child_process"));
+assert.ok(runtimePreparer.includes('import extract from "extract-zip"'));
+assert.ok(!runtimePreparer.includes("powershell.exe"));
 for (const required of [
   'build_environment["SOURCE_DATE_EPOCH"]',
   'build_environment["PYTHONHASHSEED"]',
