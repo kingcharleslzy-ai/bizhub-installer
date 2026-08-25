@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = path.resolve(ROOT, "..");
 const SKIP = new Set([".runtime-venv", "dist", "node_modules", "out", "runtime-build", "runtime-dist"]);
-const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".html", ".js", ".json", ".md", ".mjs", ".py", ".txt"]);
+const TEXT_EXTENSIONS = new Set([".cjs", ".css", ".html", ".js", ".json", ".md", ".mjs", ".ps1", ".py", ".txt"]);
 
 async function filesUnder(directory) {
   const output = [];

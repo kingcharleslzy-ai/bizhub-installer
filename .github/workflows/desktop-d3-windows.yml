@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: desktop-d3-windows-x64
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   windows-x64:
@@ -233,21 +233,12 @@ jobs:
             $signingMode = "production"
           } else {
             $certificatePassword = [Guid]::NewGuid().ToString("N")
-            $securePassword = ConvertTo-SecureString -String $certificatePassword -Force -AsPlainText
-            $certificate = New-SelfSignedCertificate `
-              -Type CodeSigningCert `
-              -Subject "CN=BizHub Desktop D3 Synthetic CI" `
-              -CertStoreLocation Cert:\CurrentUser\My `
-              -HashAlgorithm SHA256 `
-              -KeyAlgorithm RSA `
-              -KeyLength 3072 `
-              -KeyExportPolicy Exportable `
-              -NotAfter (Get-Date).AddDays(2)
-            Export-PfxCertificate -Cert $certificate -FilePath $certificatePath -Password $securePassword | Out-Null
-            Export-Certificate -Cert $certificate -FilePath "$certificatePath.cer" | Out-Null
-            Import-Certificate -FilePath "$certificatePath.cer" -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
-            Import-Certificate -FilePath "$certificatePath.cer" -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
-            $thumbprint = $certificate.Thumbprint.Replace(" ", "").ToUpperInvariant()
+            Write-Output "::add-mask::$certificatePassword"
+            $secureCertificatePassword = ConvertTo-SecureString -String $certificatePassword -AsPlainText -Force
+            $certificateIdentity = ./scripts/create-synthetic-windows-signing-certificate.ps1 `
+              -OutputPfx $certificatePath `
+              -Password $secureCertificatePassword | ConvertFrom-Json
+            $thumbprint = $certificateIdentity.thumbprint.Replace(" ", "").ToUpperInvariant()
             $signingMode = "synthetic-ci"
           }
           Write-Output "::add-mask::$certificatePassword"
@@ -359,4 +350,12 @@ jobs:
           }
           if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE -and (Test-Path -LiteralPath "$env:BIZHUB_WINDOWS_CERTIFICATE_FILE.cer")) {
             Remove-Item -LiteralPath "$env:BIZHUB_WINDOWS_CERTIFICATE_FILE.cer" -Force
+          }
+          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) {
+            foreach ($store in "My", "Root", "TrustedPublisher") {
+              $certificate = "Cert:\CurrentUser\$store\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT"
+              if (Test-Path -LiteralPath $certificate) {
+                Remove-Item -LiteralPath $certificate -Force
+              }
+            }
           }
