@@ -112,7 +112,6 @@ jobs:
     env:
       BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
       BIZHUB_WINDOWS_SIGNING_MODE: synthetic-ci
-      BIZHUB_REQUIRE_WINDOWS_SIGNING: "1"
     defaults:
       run:
         working-directory: desktop
@@ -120,7 +119,9 @@ jobs:
       - name: Preserve repository byte identity
         shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: git config --global core.autocrlf false
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -133,6 +134,7 @@ jobs:
       - name: Verify source, tests, dependency, and public boundary
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           if ((node -p "process.platform") -ne "win32" -or (node -p "process.arch") -ne "x64") { throw "desktop_r1_windows_target_invalid" }
           python ../scripts/verify_checksums.py
           npm ci
@@ -145,6 +147,7 @@ jobs:
       - name: Prepare fixed Runtime and synthetic publisher
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm run prepare:runtime
           npm run smoke:runtime-tamper
           npm run smoke:local
@@ -158,14 +161,17 @@ jobs:
           "BIZHUB_WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$certificatePassword" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint.Replace(' ', '').ToUpperInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Sign and rebind Runtime
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           node scripts/prepare-signed-windows-runtime.mjs
           ./scripts/verify-windows-runtime-signatures.ps1 -RuntimeRoot runtime-dist/bizhub-runtime -PreparationIdentity out/desktop-r1-windows-runtime-preparation.json -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -Output out/desktop-r1-windows-runtime-identity.json -SigningMode synthetic-ci
       - name: Build old and current signed installers
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $currentVersion = node -p "require('./package.json').version"
           $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
           Copy-Item package.json "$env:RUNNER_TEMP/package.json"
@@ -183,6 +189,7 @@ jobs:
       - name: Verify current product, installation, and identities
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $product = "out/BizHub Desktop-win32-x64"
           $resources = "$product/resources"
           npm run verify:artifact -- $product --expected-runtime-trust runtime-dist/generic-runtime-trust.json
@@ -205,6 +212,7 @@ jobs:
       - name: Confirm no residual process
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           Start-Sleep -Seconds 2
           $left = Get-CimInstance Win32_Process | Where-Object { $_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe" -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) }
           if ($left) { throw "desktop_residual_process_detected" }

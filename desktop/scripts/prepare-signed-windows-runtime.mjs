@@ -22,7 +22,7 @@ const runtimeRoot = path.resolve(process.env.BIZHUB_WINDOWS_RUNTIME_ROOT || path
 ));
 const baselineTrustPath = path.resolve(
   process.env.BIZHUB_WINDOWS_BASELINE_RUNTIME_TRUST
-    || path.join(ROOT, "config", "generic-runtime-trust.json"),
+    || path.join(ROOT, "config", "generic-runtime-trust.windows-x64.json"),
 );
 const outputTrustPath = path.resolve(
   process.env.BIZHUB_WINDOWS_SIGNED_RUNTIME_TRUST

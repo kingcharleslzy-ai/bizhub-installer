@@ -77,6 +77,11 @@ test("R1 requires explicit Runtime PE signing, verification, and release-specifi
   assert.match(workflow, /--expected-runtime-trust runtime-dist\/generic-runtime-trust\.json/);
   assert.match(workflow, /make:windows-release/);
   assert.doesNotMatch(workflow, /npm run make:windows(?:\s|$)/m);
+  const runtimePreparation = readFileSync(
+    new URL("../scripts/prepare-signed-windows-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(runtimePreparation, /generic-runtime-trust\.windows-x64\.json/);
 });
 
 test("Windows install smoke checks only the formal BizHub instance boundary", () => {

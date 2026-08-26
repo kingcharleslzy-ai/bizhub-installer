@@ -168,7 +168,6 @@ jobs:
       BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
       BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
       BIZHUB_WINDOWS_SIGNING_MODE: production
-      BIZHUB_REQUIRE_WINDOWS_SIGNING: "1"
     defaults:
       run:
         working-directory: desktop
@@ -176,7 +175,9 @@ jobs:
       - name: Preserve repository byte identity
         shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: git config --global core.autocrlf false
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
@@ -190,6 +191,7 @@ jobs:
       - name: Verify exact main source and release contract
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           if ((git rev-parse HEAD) -ne "${{ inputs.release_commit }}" -or (git rev-parse origin/main) -ne "${{ inputs.release_commit }}") { throw "desktop_release_main_commit_mismatch" }
           python ../scripts/verify_checksums.py
           npm ci
@@ -206,6 +208,7 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD }}
           CERTIFICATE_THUMBPRINT: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:CERTIFICATE_THUMBPRINT) { throw "desktop_windows_production_signing_credentials_missing" }
           $certificatePath = Join-Path $env:RUNNER_TEMP "bizhub-windows-signing.pfx"
           [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
@@ -213,15 +216,18 @@ jobs:
           "BIZHUB_WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$env:CERTIFICATE_PASSWORD" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$thumbprint" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Prepare, sign, and rebind Runtime
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm run prepare:runtime
           node scripts/prepare-signed-windows-runtime.mjs
           ./scripts/verify-windows-runtime-signatures.ps1 -RuntimeRoot runtime-dist/bizhub-runtime -PreparationIdentity out/desktop-r1-windows-runtime-preparation.json -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -Output out/desktop-r1-windows-runtime-identity.json -SigningMode production
       - name: Build old and current signed installers
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $currentVersion = node -p "require('./package.json').version"
           $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
           Copy-Item package.json "$env:RUNNER_TEMP/package.json"
@@ -239,6 +245,7 @@ jobs:
       - name: Verify signed current product and record identity
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $product = "out/BizHub Desktop-win32-x64"
           $resources = "$product/resources"
           npm run verify:artifact -- $product --expected-runtime-trust runtime-dist/generic-runtime-trust.json
