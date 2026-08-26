@@ -106,6 +106,13 @@ parse, and Workspace validation. Receipt stops immediately above 64 KiB. Only
 the latest main-process account lookup generation may atomically replace the
 active Workspace set, and reset invalidates every in-flight result.
 
+Descriptor expiry is a connection-admission boundary, not a cloud business
+Session expiry. Desktop validates the envelope again immediately before every
+Workspace open. A view opened while the Descriptor is valid remains under the
+selected Runtime's login and Session policy after that Descriptor expires.
+Disconnecting does not refresh authority: reopening with the old expired
+envelope fails closed and requires a new account-directory query.
+
 A confirmed directory `404` may expose the existing explicit Generic local
 setup action. A directory timeout, invalid response, missing platform key, or
 cloud login failure never becomes “account not found” and never creates a local
@@ -171,7 +178,9 @@ The desktop boundary requires:
 - operating-system credential storage for secrets;
 - graceful local Runtime shutdown and visible abnormal-exit recovery.
 - account lookup sends no password and accepts only signed, unexpired cloud
-  Descriptors whose expiry does not outlive the signing key;
+  Descriptors whose expiry does not outlive the signing key; the same checks run
+  immediately before every open, while an already-open Runtime Session is not
+  terminated by Descriptor expiry;
 - an account-directory error cannot be converted into an unknown-account or
   local-database fallback.
 

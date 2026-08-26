@@ -47,7 +47,6 @@ const MIME_TYPES = new Map([
 
 let mainWindow = null;
 let workspaceView = null;
-let workspaceExpiryTimer = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
 let activeEnterpriseProfiles = new Map();
@@ -196,10 +195,6 @@ function setWorkspaceBounds() {
 }
 
 function destroyWorkspaceView() {
-  if (workspaceExpiryTimer) {
-    clearTimeout(workspaceExpiryTimer);
-    workspaceExpiryTimer = null;
-  }
   if (!workspaceView) return;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.contentView.removeChildView(workspaceView);
@@ -366,19 +361,6 @@ async function openLocalWorkspaceView() {
   await workspaceView.webContents.loadURL(`${localOrigin}/`);
 }
 
-function scheduleWorkspaceExpiry(expiresAt) {
-  const check = () => {
-    const remaining = Date.parse(expiresAt) - Date.now();
-    if (remaining <= 0) {
-      destroyWorkspaceView();
-      publishState({ status: "error", error: "desktop_connection_profile_expired" });
-      return;
-    }
-    workspaceExpiryTimer = setTimeout(check, Math.min(remaining, 60_000));
-  };
-  check();
-}
-
 async function readJsonFile(filePath, maxBytes) {
   const metadata = await stat(filePath);
   if (!metadata.isFile() || metadata.size < 2 || metadata.size > maxBytes) {
@@ -458,7 +440,6 @@ async function openWorkspace(profile, partitionName = workspaceSessionPartition(
     applicationOrigin: new URL(profile.applicationUrl).origin,
     error: "",
   });
-  scheduleWorkspaceExpiry(profile.expiresAt);
   await workspaceView.webContents.loadURL(profile.applicationUrl);
 }
 

@@ -84,7 +84,6 @@ const errorLabel = computed(() => {
     profile_signing_key_inactive: "连接签发密钥当前无效。",
     profile_expiry_exceeds_signing_key: "企业工作区有效期超过签发密钥有效期。",
     profile_shell_version_unsupported: "客户端版本过低，请先更新 BizHub Desktop。",
-    desktop_connection_profile_expired: "企业连接文件已过期，请取得新文件。",
   };
   if (known[value]) return known[value];
   if (value.startsWith("desktop_local_login_failed:401")) return "本地管理员账号或密码不正确。";

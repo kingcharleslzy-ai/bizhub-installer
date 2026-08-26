@@ -134,6 +134,7 @@ let child = null;
 let cdp = null;
 let debugPort = null;
 const directoryRequests = [];
+const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
@@ -200,6 +201,12 @@ async function workspaceCdpClient() {
   return client;
 }
 
+async function workspaceTargetPresent() {
+  const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+  const targets = await response.json();
+  return targets.some((item) => item.url.includes("/workspace"));
+}
+
 try {
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -213,23 +220,29 @@ try {
   const workspaceOrigin = `https://127.0.0.1:${directoryPort}`;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const keyId = "desktop-account-smoke-key";
-  const envelope = {
-    schema_version: "bizhub.desktop-connection-envelope.v1",
-    key_id: keyId,
-    payload: {
-      allowed_origins: [workspaceOrigin],
-      application_url: `${workspaceOrigin}/workspace`,
-      connection_id: "synthetic-enterprise",
-      data_authority_mode: "cloud",
-      display_name: "Synthetic Enterprise",
-      expires_at: new Date(now + 5 * 60_000).toISOString(),
-      profile_id: "synthetic-profile",
-      runtime_mode: "cloud",
-      shell_min_version: "0.1.0",
-    },
-    signature: "",
+  const descriptorTtlMs = 8_000;
+  const issueEnvelope = () => {
+    const expiresAt = Date.now() + descriptorTtlMs;
+    const envelope = {
+      schema_version: "bizhub.desktop-connection-envelope.v1",
+      key_id: keyId,
+      payload: {
+        allowed_origins: [workspaceOrigin],
+        application_url: `${workspaceOrigin}/workspace`,
+        connection_id: "synthetic-enterprise",
+        data_authority_mode: "cloud",
+        display_name: "Synthetic Enterprise",
+        expires_at: new Date(expiresAt).toISOString(),
+        profile_id: "synthetic-profile",
+        runtime_mode: "cloud",
+        shell_min_version: "0.1.0",
+      },
+      signature: "",
+    };
+    envelope.signature = sign(null, signatureInput(envelope), privateKey).toString("base64url");
+    issuedWorkspaceExpiries.push(expiresAt);
+    return envelope;
   };
-  envelope.signature = sign(null, signatureInput(envelope), privateKey).toString("base64url");
   const trustStore = {
     schema_version: "bizhub.desktop-trust-store.v1",
     keys: [{
@@ -321,7 +334,7 @@ try {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(`${JSON.stringify({
         schema_version: "bizhub.desktop-workspace-directory-response.v1",
-        workspaces: [envelope],
+        workspaces: [issueEnvelope()],
       })}\n`);
     });
   });
@@ -359,6 +372,10 @@ try {
   }
   if (directoryRequests.length !== 1 || directoryRequests[0].includes("password")) {
     fail("desktop_account_flow_directory_credential_leak");
+  }
+  const firstDescriptorExpiresAt = issuedWorkspaceExpiries[0];
+  if (!Number.isSafeInteger(firstDescriptorExpiresAt)) {
+    fail("desktop_account_flow_descriptor_expiry_missing");
   }
 
   await cdp.send("Emulation.setDeviceMetricsOverride", {
@@ -399,12 +416,69 @@ try {
       fail("desktop_account_flow_first_session_marker_missing");
     }
   }
+  await new Promise((resolve) => setTimeout(
+    resolve,
+    Math.max(0, firstDescriptorExpiresAt + 750 - Date.now()),
+  ));
+  const connectedAfterDescriptorExpiry = await evaluate(
+    cdp,
+    "window.bizhubDesktop.getState()",
+  );
+  if (
+    connectedAfterDescriptorExpiry.mode !== "cloud"
+    || connectedAfterDescriptorExpiry.status !== "connected"
+    || !await workspaceTargetPresent()
+  ) {
+    fail("desktop_account_flow_connected_workspace_expired_with_descriptor");
+  }
+  {
+    const workspaceCdp = await workspaceCdpClient();
+    const text = await evaluate(workspaceCdp, "document.body.innerText");
+    workspaceCdp.close();
+    if (!text.includes("Workspace Login")) {
+      fail("desktop_account_flow_connected_workspace_not_running_after_expiry");
+    }
+  }
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
     "desktop_account_flow_selection_not_restored");
+  if (!await clickButton(cdp, "打开并登录")) {
+    fail("desktop_account_flow_expired_reconnect_button_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.error === "profile_expired" ? value : null;
+  }, "desktop_account_flow_expired_descriptor_reconnect_not_rejected");
+  if (await workspaceTargetPresent()) {
+    fail("desktop_account_flow_expired_descriptor_reopened_workspace");
+  }
   if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_change_account_missing");
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
     "desktop_account_flow_lookup_not_reset");
+  if (!await enterAccount(cdp, "Charles.Example")) {
+    fail("desktop_account_flow_fresh_descriptor_input_missing");
+  }
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
+    "desktop_account_flow_fresh_descriptor_missing");
+  if (
+    issuedWorkspaceExpiries.length < 2
+    || issuedWorkspaceExpiries[1] <= firstDescriptorExpiresAt
+  ) {
+    fail("desktop_account_flow_fresh_descriptor_not_issued");
+  }
+  if (!await clickButton(cdp, "打开并登录")) {
+    fail("desktop_account_flow_fresh_descriptor_button_missing");
+  }
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
+    "desktop_account_flow_fresh_descriptor_not_connected", 45_000);
+  await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
+    "desktop_account_flow_fresh_descriptor_selection_not_restored");
+  if (!await clickButton(cdp, "换一个账号")) {
+    fail("desktop_account_flow_fresh_descriptor_change_account_missing");
+  }
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
+    "desktop_account_flow_fresh_descriptor_lookup_not_reset");
   if (!await enterAccount(cdp, "known.empty")) fail("desktop_account_flow_empty_input_missing");
   const empty = await waitFor(async () => {
     const text = await evaluate(cdp, "document.body.innerText");
@@ -486,6 +560,10 @@ try {
     account_directory_passwords: 0,
     signed_cloud_workspaces: 1,
     cloud_workspace_connected: true,
+    descriptor_ttl_ms: descriptorTtlMs,
+    connected_workspace_survived_descriptor_expiry: true,
+    expired_descriptor_reconnect_rejected: true,
+    fresh_descriptor_requery_reconnected: true,
     known_account_without_workspace_local_instances_created: 0,
     unknown_account_local_instances_created: 0,
     local_setup_form_reached: true,

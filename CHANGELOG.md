@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Treat Workspace Descriptor expiry as connection admission only: every cloud
+  open still revalidates signature and expiry, but an already-connected Runtime
+  Session is no longer closed when the short Descriptor TTL elapses. Disconnect
+  plus stale-envelope reopen fails with `profile_expired`; a fresh directory
+  lookup can issue a new Descriptor and reconnect. The real Electron account
+  flow now proves all four short-TTL states in development and packaged builds.
 - Configure Desktop-W2 with one customer-neutral HTTPS account-directory
   transport and one bounded Ed25519 public trust root. Customer account hashes,
   Workspace URL/Profile mapping, and signing private key remain deployment-only;

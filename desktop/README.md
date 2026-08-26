@@ -52,6 +52,13 @@ and signed Workspace validation. The body reader aborts as soon as it exceeds
 account request can atomically replace the active Workspace set; reset makes
 every older result stale.
 
+Descriptor `expires_at` is an admission deadline, not the cloud business
+Session lifetime. Desktop revalidates signature, key window, Shell compatibility,
+and expiry immediately before every Workspace open. Once the Workspace is open,
+its Runtime owns login and Session lifetime, so Descriptor expiry does not close
+the running view. After disconnect, the retained expired envelope cannot reopen;
+the user must query the directory for a fresh Descriptor.
+
 Generic Local is intentionally available to every installation in W1, including
 when an enterprise Workspace is present. It is an independent Generic authority
 and never copies, synchronizes, or writes enterprise data. A future policy that

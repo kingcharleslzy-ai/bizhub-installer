@@ -77,6 +77,17 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   assert.ok(mainTrustSelection(await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8")));
 });
 
+test("Descriptor expiry gates each cloud open without expiring the connected Session", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  assert.match(
+    main,
+    /validateConnectionEnvelope\(workspace\.envelope, options\);\s+await stopLocalMode\(\);\s+await openWorkspace/,
+  );
+  assert.ok(!main.includes("scheduleWorkspaceExpiry"));
+  assert.ok(!main.includes("workspaceExpiryTimer"));
+  assert.ok(!main.includes("desktop_connection_profile_expired"));
+});
+
 function mainTrustSelection(main) {
   return main.includes("generic-runtime-trust.win32-x64.json")
     && main.includes("generic-runtime-trust.json");

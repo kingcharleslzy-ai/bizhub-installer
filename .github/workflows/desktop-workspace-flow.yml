@@ -6,6 +6,7 @@ on:
     branches:
       - codex/desktop-workspace-login-20260826
       - codex/desktop-w2-account-directory-20260826
+      - codex/desktop-w2-descriptor-ttl-20260826
 
 permissions:
   contents: read
