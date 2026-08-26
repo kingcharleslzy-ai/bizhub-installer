@@ -1,4 +1,4 @@
 {
   "schema_version": "bizhub.desktop-account-directory.v1",
-  "resolve_url": null
+  "resolve_url": "https://bizhub-account-directory.150-158-11-134.sslip.io/v1/desktop/workspaces/resolve"
 }

@@ -125,16 +125,18 @@ for (const required of ["preservesFixedRuntime", "runtimeResourceSegment", "@ele
   assert.ok(windowsSignHook.includes(required), required);
 }
 const trustStore = JSON.parse(await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"));
-assert.deepEqual(trustStore, {
-  schema_version: "bizhub.desktop-trust-store.v1",
-  keys: [],
-});
+assert.equal(trustStore.schema_version, "bizhub.desktop-trust-store.v1");
+assert.equal(trustStore.keys.length, 1);
+assert.equal(trustStore.keys[0].algorithm, "Ed25519");
+assert.equal(trustStore.keys[0].key_id, "bizhub-workspace-2026-08");
+assert.match(trustStore.keys[0].public_key_pem, /^-----BEGIN PUBLIC KEY-----/);
+assert.ok(!trustStore.keys[0].public_key_pem.includes("PRIVATE KEY"));
 const accountDirectory = JSON.parse(
   await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"),
 );
 assert.deepEqual(accountDirectory, {
   schema_version: "bizhub.desktop-account-directory.v1",
-  resolve_url: null,
+  resolve_url: "https://bizhub-account-directory.150-158-11-134.sslip.io/v1/desktop/workspaces/resolve",
 });
 const runtimeTrust = JSON.parse(await readFile(path.join(ROOT, "config", "generic-runtime-trust.json"), "utf8"));
 const commonManifestBytes = await readFile(path.join(REPO, "app", "vendor", "bizhub-common-manifest.json"));
@@ -193,7 +195,7 @@ process.stdout.write(`${JSON.stringify({
   scanned_text_files: inspected.length,
   python_source_files: pythonFiles.length,
   sqlite_files: 0,
-  trusted_connection_keys: 0,
+  trusted_connection_keys: trustStore.keys.length,
   runtime_profile_id: runtimeTrust.profile_id,
   core_artifact_digest: runtimeTrust.core_artifact_digest,
   runtime_pack_file_count: runtimeTrust.runtime_pack_file_count,

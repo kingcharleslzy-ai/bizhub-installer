@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Configure Desktop-W2 with one customer-neutral HTTPS account-directory
+  transport and one bounded Ed25519 public trust root. Customer account hashes,
+  Workspace URL/Profile mapping, and signing private key remain deployment-only;
+  the Shell still sends no password and contains no customer identity. The
+  initial `sslip.io` transport is a configured checkpoint and must move to an
+  owned neutral domain before broad public distribution.
 - Add the Desktop-W1 account-to-Workspace product-flow candidate. The public
   Shell submits only an account identifier to a generic HTTPS directory,
   verifies returned cloud Workspaces against the packaged Ed25519 trust root,

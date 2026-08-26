@@ -234,7 +234,7 @@ remain available only in their immutable `v0.5`/`v0.6` tags. See
 | Current typed Owner actions and historical import boundary | [Data and action contracts](docs/data-import.md) |
 | Kernel, modules, capabilities and extraction direction | [Modular architecture](docs/modular-architecture.md) |
 | Public Desktop shell, account lookup, and Generic local boundary | [Desktop v0.1 boundary decision](docs/desktop-v01-boundary.md) |
-| Desktop cloud/local product-flow candidate | [Desktop implementation](desktop/README.md), [D1 evidence](docs/verification/desktop-d1-cloud-shell-2026-08-25.md), [D2 evidence](docs/verification/desktop-d2-local-generic-2026-08-25.md), and [D3 evidence](docs/verification/desktop-d3-windows-x64-2026-08-26.md) |
+| Desktop cloud/local product flow and configured directory trust | [Desktop implementation](desktop/README.md), [D1 evidence](docs/verification/desktop-d1-cloud-shell-2026-08-25.md), [D2 evidence](docs/verification/desktop-d2-local-generic-2026-08-25.md), and [D3 evidence](docs/verification/desktop-d3-windows-x64-2026-08-26.md) |
 | How a customer's Agent chooses config, mapping, Skill, or module | [Agent evolution](docs/agent-evolution.md) |
 | Executable private read-only extension boundary | [Read-only extension](docs/read-only-extension.md) |
 | Common artifact identity and two-Profile image boundary | [Common artifact delivery](docs/common-artifact-delivery.md) |

@@ -1,4 +1,4 @@
-# BizHub Desktop product-flow candidate
+# BizHub Desktop configured product-flow candidate
 
 This directory contains the merged Desktop-D1/D2/D3 cross-platform baseline
 plus the current account-to-Workspace product-flow candidate. One
@@ -22,12 +22,19 @@ delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
 not reimplement master data, inventory, procurement, or sales. Formal writes
 remain inside the existing Generic Owners.
 
-The checked-in enterprise trust store and account-directory endpoint remain
-empty. The candidate contains no customer-private Profile, rule, endpoint,
-account, credential, production data, model, collector, synchronization,
-background service, automatic update, or authority switch. Production account
-lookup therefore remains fail-closed until a separately approved generic
-platform endpoint and public signing key are provisioned.
+Desktop-W2 configures one customer-neutral HTTPS directory transport and one
+Ed25519 public trust root. The package still contains no customer-private
+Profile, rule, customer endpoint, account mapping, credential, production data,
+model, collector, synchronization, background service, automatic update, or
+authority switch. Customer names, account hashes, private keys, Profile IDs,
+and Workspace URLs stay on the directory deployment and arrive only inside a
+short-lived signed envelope.
+
+The initial transport hostname uses the Tencent Cloud fixed public address via
+`sslip.io`. This is a practical configured checkpoint, not the desired broad-
+release identity. Replace it with an owned customer-neutral BizHub domain before
+public distribution; the packaged Ed25519 trust root remains the authority while
+that transport URL changes.
 
 Cloud cookies, browser storage, and cache use a non-persistent Session partition
 derived from the account identifier hash plus Workspace ID. The raw account
@@ -143,9 +150,8 @@ and verifies the fixed review Pack, then uploads an unsigned review Artifact;
 it does not sign, notarize, or publish a Release.
 
 Desktop-D3 is merged to public `main`; its reviewed Windows Artifact remains
-evidence rather than a formal public release. The current account-flow candidate
-does not authorize merge or publication. Formal release additionally requires a
-generic account-directory origin, a production Workspace signing public key,
-real customer cloud read-only/login validation, macOS signing/notarization,
-production Windows Authenticode, and resolution of the retained build-chain
-audit findings.
+evidence rather than a formal public release. The configured W2 candidate does
+not authorize publication. Formal release still requires real customer cloud
+login validation, an owned neutral directory domain for broad distribution,
+macOS signing/notarization, production Windows Authenticode, and resolution of
+the retained build-chain audit findings.

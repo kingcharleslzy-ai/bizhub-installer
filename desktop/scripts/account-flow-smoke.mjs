@@ -254,12 +254,17 @@ try {
     ]);
     const existingTrust = JSON.parse(originalPackagedTrustStore.toString("utf8"));
     const existingDirectory = JSON.parse(originalPackagedAccountDirectory.toString("utf8"));
+    const expectedTrust = JSON.parse(
+      await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"),
+    );
+    const expectedDirectory = JSON.parse(
+      await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"),
+    );
     if (
-      !Array.isArray(existingTrust.keys)
-      || existingTrust.keys.length !== 0
-      || existingDirectory.resolve_url !== null
+      JSON.stringify(existingTrust) !== JSON.stringify(expectedTrust)
+      || JSON.stringify(existingDirectory) !== JSON.stringify(expectedDirectory)
     ) {
-      fail("desktop_account_flow_packaged_baseline_not_empty");
+      fail("desktop_account_flow_packaged_configuration_mismatch");
     }
     await Promise.all([
       writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`),

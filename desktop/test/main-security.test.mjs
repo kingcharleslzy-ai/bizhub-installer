@@ -55,13 +55,16 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   }
 });
 
-test("desktop package keeps Node runtime empty and cloud trust empty", async () => {
+test("desktop package keeps Node runtime empty and cloud trust public-only", async () => {
   const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
   assert.equal(packageJson.dependencies, undefined);
   const trustStore = JSON.parse(
     await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"),
   );
-  assert.deepEqual(trustStore.keys, []);
+  assert.equal(trustStore.keys.length, 1);
+  assert.equal(trustStore.keys[0].algorithm, "Ed25519");
+  assert.match(trustStore.keys[0].public_key_pem, /^-----BEGIN PUBLIC KEY-----/);
+  assert.ok(!trustStore.keys[0].public_key_pem.includes("PRIVATE KEY"));
   const runtimeTrust = JSON.parse(
     await readFile(path.join(ROOT, "config", "generic-runtime-trust.json"), "utf8"),
   );

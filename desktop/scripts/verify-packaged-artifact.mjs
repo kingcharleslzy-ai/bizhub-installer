@@ -3,8 +3,10 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const asar = require("@electron/asar");
 const { verifyRuntimePack } = require("../electron/local-runtime.cjs");
 const artifactRoot = path.resolve(process.argv[2] || "");
@@ -109,17 +111,17 @@ for (const entry of asarEntryRecords.filter(
 const trustStores = files.filter((value) => path.basename(value) === "trusted-connection-keys.json");
 assert.equal(trustStores.length, 1, "packaged_trust_store_count_invalid");
 const trustStore = JSON.parse(await readFile(trustStores[0], "utf8"));
-assert.deepEqual(trustStore, {
-  schema_version: "bizhub.desktop-trust-store.v1",
-  keys: [],
-});
+const expectedTrustStore = JSON.parse(
+  await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"),
+);
+assert.deepEqual(trustStore, expectedTrustStore, "packaged_trust_store_mismatch");
 const accountDirectories = files.filter((value) => path.basename(value) === "account-directory.json");
 assert.equal(accountDirectories.length, 1, "account_directory_count_invalid");
 const accountDirectory = JSON.parse(await readFile(accountDirectories[0], "utf8"));
-assert.deepEqual(accountDirectory, {
-  schema_version: "bizhub.desktop-account-directory.v1",
-  resolve_url: null,
-});
+const expectedAccountDirectory = JSON.parse(
+  await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"),
+);
+assert.deepEqual(accountDirectory, expectedAccountDirectory, "packaged_account_directory_mismatch");
 const packageJson = JSON.parse(asar.extractFile(asarFiles[0], "package.json").toString("utf8"));
 assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present");
 

@@ -1,4 +1,12 @@
 {
   "schema_version": "bizhub.desktop-trust-store.v1",
-  "keys": []
+  "keys": [
+    {
+      "algorithm": "Ed25519",
+      "key_id": "bizhub-workspace-2026-08",
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA+PbDZDxCIjl3g6W5JR5M7QL/OS3snGSGuJ0C18JO1Ro=\n-----END PUBLIC KEY-----\n",
+      "valid_from": "2026-08-26T00:00:00Z",
+      "valid_until": "2027-08-26T00:00:00Z"
+    }
+  ]
 }

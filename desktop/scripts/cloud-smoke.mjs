@@ -77,8 +77,11 @@ try {
   if (packagedTrustStore) {
     originalPackagedTrustStore = await readFile(packagedTrustStore);
     const existing = JSON.parse(originalPackagedTrustStore.toString("utf8"));
-    if (!Array.isArray(existing.keys) || existing.keys.length !== 0) {
-      throw new Error("desktop_smoke_packaged_trust_store_not_empty");
+    const expected = JSON.parse(
+      await readFile(path.join(ROOT, "config", "trusted-connection-keys.json"), "utf8"),
+    );
+    if (JSON.stringify(existing) !== JSON.stringify(expected)) {
+      throw new Error("desktop_smoke_packaged_trust_store_mismatch");
     }
     await writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`);
   }

@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted boundary; Desktop-D3 merged to public main; Desktop-W1 account-flow candidate
+Status: accepted boundary; Desktop-D3 merged; Desktop-W1 passed; Desktop-W2 configured candidate
 
 Date: 2026-08-26
 
@@ -75,6 +75,22 @@ prove the shell boundary. Desktop-W1 replaces that manual product step with
 account-driven lookup, but deliberately does not add password authentication,
 refresh tokens, device sessions, organization management, invitations, SSO, or
 billing to the Shell.
+
+Desktop-W2 provisions the platform directory transport and the first production
+trust root without turning the Shell into an identity provider. The package
+contains only a customer-neutral HTTPS directory address and an Ed25519 public
+key. Account mappings, signing private keys, customer display names, Profile
+IDs, and Workspace URLs remain deployment-side data and are returned only in a
+short-lived signed envelope. The first configured cloud Runtime still owns its
+password login, session, permissions, business rules, Owners, and database.
+
+The initial directory hostname is derived from the fixed Tencent Cloud public
+address through `sslip.io`. This avoids embedding a customer domain in the
+generic package and is sufficient for the configured product-flow checkpoint.
+It is not the preferred long-term release-channel identity: a separately owned,
+customer-neutral BizHub domain should replace it before broad public release.
+The Ed25519 trust root is independent of that transport hostname, so changing
+the directory URL does not change customer Runtime authority.
 
 Cloud browser sessions are isolated in non-persistent partitions derived from
 the hash of account identifier plus Workspace ID. Changing the account clears
@@ -205,7 +221,11 @@ Each checkpoint requires separate authorization:
    and entry to local setup with synthetic evidence. It does not provision a
    production directory URL, production trust key, or real account mapping and
    is not a release approval.
-6. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
+6. **Desktop-W2:** configure a customer-neutral HTTPS directory endpoint, one
+   production Ed25519 public trust key, and deployment-private account-to-
+   Workspace mapping. This does not create Desktop installers or approve a
+   Release.
+7. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 
 Machine evidence must also prove that the public package contains no
