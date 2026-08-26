@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add the Desktop-R1 fail-closed dual-platform release candidate. macOS verifies
+  the fixed Generic Pack, signs its Mach-O contents, rebuilds release-specific
+  trust, signs/notarizes the Shell and DMG, and reads back both ZIP and mounted
+  DMG. Windows reuses the approved D3 Squirrel/Runtime chain, requires
+  Authenticode, and repeats install/Owner/uninstall data-preservation evidence.
+  Synthetic branch runs cannot tag or publish; production is manual-only and
+  requires exact public `main`, a version-matching immutable tag, real publisher
+  credentials, an owned neutral 443 directory, and explicit `publish=true`.
+- Replace the vulnerable Forge extraction transitive with a bounded,
+  path-confined BSD-compatible implementation and use a bounded PowerShell
+  extractor for the fixed Windows Runtime archive. The complete Desktop npm
+  audit is now clean at the release threshold without changing the approved
+  Runtime Pack or product authority.
 - Treat Workspace Descriptor expiry as connection admission only: every cloud
   open still revalidates signature and expiry, but an already-connected Runtime
   Session is no longer closed when the short Descriptor TTL elapses. Disconnect

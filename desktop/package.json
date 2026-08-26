@@ -12,6 +12,7 @@
     "build": "vite build",
     "build:runtime": ".runtime-venv/bin/python runtime/build_local_runtime.py --python .runtime-venv/bin/python && node scripts/verify-runtime-pack.mjs",
     "make": "npm run prepare:runtime && npm run build && electron-forge make --platform=darwin --arch=arm64",
+    "make:macos-release": "npm run build && electron-forge package --platform=darwin --arch=arm64",
     "make:windows": "npm run prepare:runtime && npm run build && electron-forge make --platform=win32 --arch=x64",
     "package": "npm run prepare:runtime && npm run build && electron-forge package --platform=darwin --arch=arm64",
     "prepare:runtime": "node scripts/prepare-runtime-pack.mjs",
@@ -32,11 +33,18 @@
     "@electron-forge/maker-squirrel": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "@electron/asar": "3.4.1",
+    "@electron/notarize": "3.1.1",
+    "@electron/osx-sign": "2.7.0",
     "@electron/windows-sign": "1.2.2",
     "@vitejs/plugin-vue": "6.0.8",
     "electron": "44.0.0",
-    "extract-zip": "2.0.1",
+    "extract-zip": "file:vendor/extract-zip-safe",
     "vite": "8.2.2",
     "vue": "3.5.41"
+  },
+  "overrides": {
+    "@electron/rebuild": "4.2.0",
+    "extract-zip": "$extract-zip",
+    "tmp": "0.2.7"
   }
 }

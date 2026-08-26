@@ -53,6 +53,7 @@ module.exports = {
       /^\/scripts($|\/)/,
       /^\/shell-frontend($|\/)/,
       /^\/test($|\/)/,
+      /^\/vendor($|\/)/,
       /^\/vite\.config\.mjs$/,
     ],
   },

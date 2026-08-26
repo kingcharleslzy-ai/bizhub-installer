@@ -1,4 +1,4 @@
-# BizHub Desktop configured product-flow candidate
+# BizHub Desktop release-gated product candidate
 
 This directory contains the merged Desktop-D1/D2/D3 cross-platform baseline
 plus the current account-to-Workspace product-flow candidate. One
@@ -126,6 +126,23 @@ npm run make
 npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
 ```
 
+Desktop-R1 adds a separate fail-closed release path. A branch push runs only
+`synthetic-ci`; it cannot create a tag or GitHub Release. A production run must
+be manually dispatched from public `main` with an exact 40-character commit,
+a tag matching the current `package.json` version, real macOS and Windows
+publisher credentials, and `publish=true`. The Shell version is therefore not
+globally frozen: every later product version receives its own immutable release
+tag and artifacts.
+
+The macOS release path first verifies the fixed unsigned Runtime Pack, signs
+every Runtime Mach-O object with the same Developer ID used for the Shell,
+rebuilds a release-specific Manifest/trust record over those signed bytes, then
+signs and notarizes the application and DMG. The ZIP and mounted DMG are both
+read back through the same Runtime and signature verifier. The Windows path
+keeps the externally approved D3 fixed Runtime boundary, Authenticode-signs the
+Shell and Squirrel chain, installs it, runs the Generic Owner lifecycle,
+uninstalls it, and proves formal local data was preserved.
+
 The account-flow smoke starts a real Electron window against a temporary HTTPS
 directory and temporary Ed25519 key. It proves an account page with no password,
 signed Workspace selection, cloud launch, an explicit unknown-account state,
@@ -147,20 +164,17 @@ The Windows x64 equivalent runs on `windows-2022` through
 
 ## Release status
 
-The D2 source baseline is merged to public `main`, while its macOS Artifact
-remains ad-hoc/unsigned and not notarized. The pinned Forge build
-dependency tree still contains retained upstream findings even though the npm
-runtime dependency audit is clean. D2 is suitable only for internal isolated
-technical review. It is not authorized for publication, real business data,
-production trust keys, Windows local Runtime, or private cloud-to-local cutover.
-The fixed-head `desktop-d2-macos.yml` workflow performed the same tests on a
-clean macOS arm64 runner. It separately rebuilds a source candidate, restores
-and verifies the fixed review Pack, then uploads an unsigned review Artifact;
-it does not sign, notarize, or publish a Release.
+Desktop-D1 through D3 and W1/W2 are merged. Desktop-R1 is currently an
+implementation candidate, not a formal Release. Its local macOS synthetic path
+has proved the signed Pack, hardened application, real packaged account flow,
+Generic Owner chain, ZIP, and DMG while retaining zero npm audit findings at
+the configured threshold. Synthetic signatures establish build mechanics only;
+they are never publisher authority.
 
-Desktop-D3 is merged to public `main`; its reviewed Windows Artifact remains
-evidence rather than a formal public release. The configured W2 candidate does
-not authorize publication. Formal release still requires real customer cloud
-login validation, an owned neutral directory domain for broad distribution,
-macOS signing/notarization, production Windows Authenticode, and resolution of
-the retained build-chain audit findings.
+Formal publication remains blocked until the project Owner separately provides
+an Apple Developer ID/Application notarization identity, a publicly trusted
+Windows Authenticode identity, and an owned customer-neutral account-directory
+domain on standard HTTPS 443. The current `nip.io:8443` W2 transport is
+intentionally rejected by production preflight. No current R1 code path changes
+the directory service, account mapping, cloud login, SQLite, migrations,
+Profile, Owner, writer, or production data.
