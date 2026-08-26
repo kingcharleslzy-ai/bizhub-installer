@@ -42,6 +42,7 @@ module.exports = {
     ignore: [
       /^\/\.runtime-venv($|\/)/,
       /^\/config($|\/)/,
+      /^\/electron-windows-sign\.log$/,
       /^\/forge\.config\.cjs$/,
       /^\/node_modules($|\/)/,
       /^\/out($|\/)/,

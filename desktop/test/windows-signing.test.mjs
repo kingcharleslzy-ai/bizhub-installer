@@ -50,6 +50,10 @@ test("Windows packaging signs the shell and preserves the already rebound Runtim
     config.packagerConfig.windowsSign.hookModulePath,
   );
   assert.equal(squirrel.config.certificateFile, undefined);
+  assert.equal(
+    config.packagerConfig.ignore.some((pattern) => pattern.test("/electron-windows-sign.log")),
+    true,
+  );
 
   const signWindowsFile = require(config.packagerConfig.windowsSign.hookModulePath);
   const fixedRuntimeExecutable = path.join(
