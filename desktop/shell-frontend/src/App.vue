@@ -298,11 +298,13 @@ onBeforeUnmount(() => unsubscribe());
             </article>
           </div>
           <div v-else class="empty-workspaces">
-            <strong>{{ state.accountNotFound ? "没有找到企业云端工作区" : "尚未查询企业工作区" }}</strong>
+            <strong>{{ state.accountNotFound ? "没有找到企业云端工作区" : "该账号当前没有企业云端工作区" }}</strong>
             <span v-if="state.accountNotFound">
               不会自动创建数据库；如需使用 Generic 本地版，请在右侧明确创建。
             </span>
-            <span v-else>输入账号标识后，客户端只接受平台签名的工作区结果。</span>
+            <span v-else>
+              不会自动创建数据库；请确认账号权限，或在右侧明确创建 Generic 本地版。
+            </span>
           </div>
           <button
             v-if="accountResolved"

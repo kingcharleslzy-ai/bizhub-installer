@@ -213,6 +213,14 @@ try {
       const body = Buffer.concat(chunks).toString("utf8");
       directoryRequests.push(body);
       const parsed = JSON.parse(body);
+      if (parsed.account_id === "known.empty") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(`${JSON.stringify({
+          schema_version: "bizhub.desktop-workspace-directory-response.v1",
+          workspaces: [],
+        })}\n`);
+        return;
+      }
       if (parsed.account_id === "unknown.account") {
         response.writeHead(404, { "Content-Type": "application/json" });
         response.end("{}\n");
@@ -311,6 +319,15 @@ try {
   if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_change_account_missing");
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
     "desktop_account_flow_lookup_not_reset");
+  if (!await enterAccount(cdp, "known.empty")) fail("desktop_account_flow_empty_input_missing");
+  const empty = await waitFor(async () => {
+    const text = await evaluate(cdp, "document.body.innerText");
+    return text.includes("该账号当前没有企业云端工作区") ? text : null;
+  }, "desktop_account_flow_empty_state_missing");
+  if (!empty.includes("不会自动创建数据库")) fail("desktop_account_flow_empty_fallback_copy_missing");
+  if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_empty_change_account_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
+    "desktop_account_flow_empty_lookup_not_reset");
   if (!await enterAccount(cdp, "unknown.account")) fail("desktop_account_flow_unknown_input_missing");
   const unknown = await waitFor(async () => {
     const text = await evaluate(cdp, "document.body.innerText");
@@ -341,6 +358,7 @@ try {
     account_directory_passwords: 0,
     signed_cloud_workspaces: 1,
     cloud_workspace_connected: true,
+    known_account_without_workspace_local_instances_created: 0,
     unknown_account_local_instances_created: 0,
     local_setup_form_reached: true,
     packaged: Boolean(packagedExecutable),
