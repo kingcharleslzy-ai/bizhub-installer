@@ -84,13 +84,15 @@ IDs, and Workspace URLs remain deployment-side data and are returned only in a
 short-lived signed envelope. The first configured cloud Runtime still owns its
 password login, session, permissions, business rules, Owners, and database.
 
-The initial directory hostname is derived from the fixed Tencent Cloud public
-address through `sslip.io`. This avoids embedding a customer domain in the
-generic package and is sufficient for the configured product-flow checkpoint.
-It is not the preferred long-term release-channel identity: a separately owned,
-customer-neutral BizHub domain should replace it before broad public release.
-The Ed25519 trust root is independent of that transport hostname, so changing
-the directory URL does not change customer Runtime authority.
+Tencent Cloud blocks unregistered wildcard-DNS hostnames before ACME validation,
+so the initial directory transport uses the existing US operations VPS through
+`nip.io:8443` and a source-IP-restricted origin path. This avoids embedding a
+customer domain in the generic package and is sufficient for the configured
+product-flow checkpoint. It is not the preferred long-term release-channel
+identity: a separately owned, customer-neutral BizHub domain on standard port
+443 should replace it before broad public release. The Ed25519 trust root is
+independent of that transport hostname, so changing the directory URL does not
+change customer Runtime authority.
 
 Cloud browser sessions are isolated in non-persistent partitions derived from
 the hash of account identifier plus Workspace ID. Changing the account clears

@@ -30,11 +30,13 @@ authority switch. Customer names, account hashes, private keys, Profile IDs,
 and Workspace URLs stay on the directory deployment and arrive only inside a
 short-lived signed envelope.
 
-The initial transport hostname uses the Tencent Cloud fixed public address via
-`sslip.io`. This is a practical configured checkpoint, not the desired broad-
-release identity. Replace it with an owned customer-neutral BizHub domain before
-public distribution; the packaged Ed25519 trust root remains the authority while
-that transport URL changes.
+Tencent Cloud blocks unregistered wildcard-DNS hostnames before ACME can validate
+them, so the initial transport uses the existing US operations VPS through
+`nip.io:8443` and a source-IP-restricted origin path. This is a practical
+configured checkpoint, not the desired broad-release identity. Replace it with
+an owned customer-neutral BizHub domain on standard port 443 before public
+distribution; the packaged Ed25519 trust root remains the authority while that
+transport URL changes.
 
 Cloud cookies, browser storage, and cache use a non-persistent Session partition
 derived from the account identifier hash plus Workspace ID. The raw account

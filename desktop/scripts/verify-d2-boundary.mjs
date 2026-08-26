@@ -136,7 +136,7 @@ const accountDirectory = JSON.parse(
 );
 assert.deepEqual(accountDirectory, {
   schema_version: "bizhub.desktop-account-directory.v1",
-  resolve_url: "https://bizhub-account-directory.150-158-11-134.sslip.io/v1/desktop/workspaces/resolve",
+  resolve_url: "https://bizhub-account-directory.38.49.54.254.nip.io:8443/v1/desktop/workspaces/resolve",
 });
 const runtimeTrust = JSON.parse(await readFile(path.join(ROOT, "config", "generic-runtime-trust.json"), "utf8"));
 const commonManifestBytes = await readFile(path.join(REPO, "app", "vendor", "bizhub-common-manifest.json"));

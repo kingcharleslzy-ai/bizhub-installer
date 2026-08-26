@@ -11,7 +11,7 @@ test("production directory transport is configured without customer identity", a
   assert.equal(value.schema_version, "bizhub.desktop-account-directory.v1");
   assert.equal(
     value.resolve_url,
-    "https://bizhub-account-directory.150-158-11-134.sslip.io/v1/desktop/workspaces/resolve",
+    "https://bizhub-account-directory.38.49.54.254.nip.io:8443/v1/desktop/workspaces/resolve",
   );
   assert.equal(Object.keys(value).sort().join(","), "resolve_url,schema_version");
 });

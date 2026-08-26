@@ -6,8 +6,9 @@
   transport and one bounded Ed25519 public trust root. Customer account hashes,
   Workspace URL/Profile mapping, and signing private key remain deployment-only;
   the Shell still sends no password and contains no customer identity. The
-  initial `sslip.io` transport is a configured checkpoint and must move to an
-  owned neutral domain before broad public distribution.
+  initial `nip.io:8443` transport runs on the existing US operations VPS with a
+  source-IP-restricted origin path; it is a configured checkpoint and must move
+  to an owned neutral domain on standard port 443 before broad public distribution.
 - Add the Desktop-W1 account-to-Workspace product-flow candidate. The public
   Shell submits only an account identifier to a generic HTTPS directory,
   verifies returned cloud Workspaces against the packaged Ed25519 trust root,
