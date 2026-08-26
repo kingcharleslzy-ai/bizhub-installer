@@ -10,11 +10,13 @@ import {
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
 const { sign } = require("@electron/windows-sign");
 const { verifyRuntimePackIdentity } = require("../electron/local-runtime.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const target = runtimeTarget();
 const runtimeRoot = path.resolve(process.env.BIZHUB_WINDOWS_RUNTIME_ROOT || path.join(
   ROOT,
   "runtime-dist",
@@ -22,7 +24,7 @@ const runtimeRoot = path.resolve(process.env.BIZHUB_WINDOWS_RUNTIME_ROOT || path
 ));
 const baselineTrustPath = path.resolve(
   process.env.BIZHUB_WINDOWS_BASELINE_RUNTIME_TRUST
-    || path.join(ROOT, "config", "generic-runtime-trust.windows-x64.json"),
+    || path.join(ROOT, "config", target.trustName),
 );
 const outputTrustPath = path.resolve(
   process.env.BIZHUB_WINDOWS_SIGNED_RUNTIME_TRUST
