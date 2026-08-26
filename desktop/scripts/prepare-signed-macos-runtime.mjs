@@ -255,6 +255,7 @@ const identity = {
   signed_framework_count: frameworkDirectories.length,
   synthetic_library_validation_exception: signingMode === "synthetic-ci",
   runtime_source_tree_digest: signedTrust.runtime_source_tree_digest,
+  core_artifact_digest: signedTrust.core_artifact_digest,
   signed_runtime_trust_sha256: await sha256File(outputTrustPath),
 };
 await mkdir(path.dirname(identityOutputPath), { recursive: true });

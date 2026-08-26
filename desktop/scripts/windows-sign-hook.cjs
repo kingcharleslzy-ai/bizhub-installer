@@ -8,7 +8,9 @@ function preservesFixedRuntime(fileToSign) {
 }
 
 async function signWindowsFile(fileToSign) {
-  // The fixed Runtime Pack is independently identity-bound before packaging.
+  // R1 signs and independently rebinds the Runtime Pack before packaging.
+  // The packager must preserve those finalized bytes; other workflows keep
+  // using their already reviewed fixed Runtime Pack without an R1 rebind.
   // Squirrel signs files inside its temporary NuGet tree too, so this hook must
   // be a serializable module shared by Packager and electron-winstaller.
   if (preservesFixedRuntime(fileToSign)) return;

@@ -35,7 +35,7 @@ test("Windows signing gate fails closed without both certificate inputs", () => 
   );
 });
 
-test("Windows packaging signs the shell and preserves fixed Runtime Pack bytes", async () => {
+test("Windows packaging signs the shell and preserves the already rebound Runtime Pack bytes", async () => {
   const config = loadForgeConfig({
     BIZHUB_REQUIRE_WINDOWS_SIGNING: "1",
     BIZHUB_WINDOWS_CERTIFICATE_FILE: "synthetic.pfx",
@@ -65,6 +65,18 @@ test("Windows packaging signs the shell and preserves fixed Runtime Pack bytes",
     signWindowsFile.preservesFixedRuntime(path.join("C:", "review", "BizHub Desktop.exe")),
     false,
   );
+});
+
+test("R1 requires explicit Runtime PE signing, verification, and release-specific trust", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/desktop-r1-signed-candidate.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /prepare-signed-windows-runtime\.mjs/);
+  assert.match(workflow, /verify-windows-runtime-signatures\.ps1/);
+  assert.match(workflow, /--expected-runtime-trust runtime-dist\/generic-runtime-trust\.json/);
+  assert.match(workflow, /make:windows-release/);
+  assert.doesNotMatch(workflow, /npm run make:windows(?:\s|$)/m);
 });
 
 test("Windows install smoke checks only the formal BizHub instance boundary", () => {

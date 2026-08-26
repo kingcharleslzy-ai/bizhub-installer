@@ -4,43 +4,64 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { validateProductionDirectory } from "../scripts/release-preflight.mjs";
+import { previousFixtureVersion } from "../scripts/package-version-fixture.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const workflowPath = path.resolve(ROOT, "..", ".github", "workflows", "desktop-r1-release.yml");
+const workflowRoot = path.resolve(ROOT, "..", ".github", "workflows");
 
-test("R1 branch runs cannot publish and production needs all explicit release gates", async () => {
-  const workflow = await readFile(workflowPath, "utf8");
-  assert.match(workflow, /push:\n\s+branches:\n\s+- codex\/desktop-r1-release-20260826/);
-  assert.doesNotMatch(workflow, /push:\n\s+tags:/);
-  assert.match(workflow, /permissions:\n\s+contents: read/);
-  assert.match(
-    workflow,
-    /if: github\.event_name == 'workflow_dispatch' && inputs\.signing_mode == 'production' && inputs\.publish == true/,
-  );
-  assert.match(workflow, /needs:\n\s+- macos-arm64\n\s+- windows-x64/);
-  assert.match(workflow, /desktop_release_tag_already_exists/);
-  assert.match(workflow, /node scripts\/sign-production-macos-app\.mjs/);
-  assert.match(workflow, /sha256sum --check SHA256SUMS\.expected/);
+async function workflow(name) {
+  return readFile(path.join(workflowRoot, name), "utf8");
+}
+
+test("synthetic CI cannot access production secrets, environments, or publication", async () => {
+  const source = await workflow("desktop-r1-release.yml");
+  assert.match(source, /^name: Desktop R1 Synthetic$/m);
+  assert.match(source, /pull_request:\n\s+branches: \[main\]/);
+  assert.match(source, /desktop-r1-synthetic-macos-arm64/);
+  assert.match(source, /desktop-r1-synthetic-windows-x64/);
+  assert.match(source, /macos-upgrade-rollback-smoke\.mjs/);
+  assert.match(source, /windows-upgrade-rollback-smoke\.ps1/);
+  assert.doesNotMatch(source, /\bsecrets\./);
+  assert.doesNotMatch(source, /environment: desktop-production/);
+  assert.doesNotMatch(source, /gh release|contents: write/);
+});
+
+test("production signing is isolated from exact-plan publication", async () => {
+  const candidate = await workflow("desktop-r1-signed-candidate.yml");
+  const publish = await workflow("desktop-r1-publish.yml");
+  assert.match(candidate, /^name: Desktop R1 Signed Candidate$/m);
+  assert.equal((candidate.match(/environment: desktop-production-signing/g) || []).length, 2);
+  assert.match(candidate, /node scripts\/prepare-signed-windows-runtime\.mjs/);
+  assert.match(candidate, /desktop-r1-release-plan\.sha256/);
+  assert.doesNotMatch(candidate, /gh release create|contents: write/);
+
+  assert.match(publish, /environment: desktop-production-publish/);
+  for (const input of ["source_run_id", "release_plan_sha256", "release_commit", "release_tag"]) {
+    assert.match(publish, new RegExp(`\\n      ${input}:`));
+  }
+  assert.match(publish, /\.immutable/);
+  assert.match(publish, /immutable-releases/);
+  assert.match(publish, /node desktop\/scripts\/release-plan\.mjs verify/);
+  assert.doesNotMatch(publish, /npm (?:ci|run (?:build|make|package))|electron-forge|sign-production|secrets\./);
+});
+
+test("cross-version fixtures always produce a distinct older semantic version", () => {
+  assert.equal(previousFixtureVersion("1.2.3"), "1.2.2");
+  assert.equal(previousFixtureVersion("1.2.0"), "1.1.999");
+  assert.equal(previousFixtureVersion("1.0.0"), "0.999.999");
+  assert.equal(previousFixtureVersion("0.1.0"), "0.0.999");
+  assert.throws(() => previousFixtureVersion("1.2"), /desktop_fixture_current_version_invalid/);
 });
 
 test("the configured W2 temporary directory remains an intentional production blocker", async () => {
   const directory = JSON.parse(await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"));
-  assert.throws(
-    () => validateProductionDirectory(directory),
-    /desktop_release_directory_/,
-  );
+  assert.throws(() => validateProductionDirectory(directory), /desktop_release_directory_/);
 });
 
 test("production entitlements never inherit the synthetic ad-hoc library exception", async () => {
   const production = await readFile(path.join(ROOT, "config", "entitlements.macos.plist"), "utf8");
-  const syntheticApp = await readFile(
-    path.join(ROOT, "config", "entitlements.macos.synthetic-app.plist"),
-    "utf8",
-  );
-  const syntheticRuntime = await readFile(
-    path.join(ROOT, "config", "entitlements.macos.synthetic-runtime.plist"),
-    "utf8",
-  );
+  const syntheticApp = await readFile(path.join(ROOT, "config", "entitlements.macos.synthetic-app.plist"), "utf8");
+  const syntheticRuntime = await readFile(path.join(ROOT, "config", "entitlements.macos.synthetic-runtime.plist"), "utf8");
   assert.doesNotMatch(production, /disable-library-validation/);
   assert.match(syntheticApp, /disable-library-validation/);
   assert.match(syntheticRuntime, /disable-library-validation/);

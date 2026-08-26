@@ -34,19 +34,52 @@ or desktop-vX.Y.Z-preview.N
 An existing tag is never overwritten. The next Desktop version changes
 `package.json` and produces another immutable release.
 
-## Synthetic candidate path
+## Three isolated workflows
 
-A push to the fixed R1 review branch runs macOS and Windows in
-`synthetic-ci`. The workflow uses ad-hoc/self-signed identities only to prove
-the signing topology, installed application, account Workspace flow, Generic
-Owner lifecycle, idempotency/failure safety, uninstall preservation, artifact
-scan, and zero residual processes. That path has read-only repository
-permission and has no release job.
+`Desktop R1 Synthetic` runs on review/main changes with read-only repository
+permission. It contains no `secrets.*` expression, production Environment, tag,
+or release command. Ad-hoc/self-signed identities prove product, Owner,
+packaging, installation, vN to vN+1 to rollback, and cleanup mechanics only.
+
+`Desktop R1 Signed Candidate` is manual, exact-main-only, and binds both native
+signing jobs to `desktop-production-signing`. It produces fixed signed products
+and a deterministic `desktop.release-plan.v1`, prints the plan SHA-256, and
+stops. It has no contents-write permission and cannot create a Release.
+
+`Desktop R1 Publish` is separately manual and binds its only job to
+`desktop-production-publish`. It accepts only `source_run_id`,
+`release_plan_sha256`, `release_commit`, and `release_tag`; verifies Actions
+Artifact IDs/digests and every inner SHA; and publishes those existing bytes.
+It contains no build, package, sign, notarize, or production-secret step.
 
 Synthetic identities are not publisher identities and are never uploaded as a
 formal Release.
 
-## Production gate
+## GitHub control plane
+
+Both production Environments require a reviewer, prohibit self-review, and
+allow only `main`. Publisher credentials may exist only as signing-Environment
+secrets, never repository secrets. The publish Environment contains no
+publisher credential. Public `main` is protected by a no-bypass ruleset that
+rejects deletion and non-fast-forward updates, requires pull requests, and
+requires both Desktop R1 synthetic platform checks.
+
+The repository must have immutable releases enabled before publication. The
+publish workflow fails before creating a draft if that setting is absent and,
+after publication, requires REST readback of `draft=false`, `immutable=true`,
+the exact tag, exact target commit, exact tag ref, and exact downloaded bytes.
+
+The repository currently has only one collaborator. Configuring that person as
+required reviewer while prohibiting self-review intentionally leaves production
+jobs fail-closed until a second independent reviewer is added. This document
+does not invent or grant that role. GitHub's Environment REST configuration
+does not expose a separate administrator-bypass switch here; the personal
+repository owner therefore remains an explicitly recorded administrative
+exception. The `main` ruleset itself has an empty bypass-actor list, and any
+out-of-band Environment bypass is outside and cannot be inferred from these
+workflows.
+
+## Signed candidate gate
 
 Production is available only through a manual dispatch on public `main`. Every
 condition below must be true:
@@ -65,10 +98,16 @@ condition below must be true:
    timestamp.
 6. Both platform jobs pass and upload fixed identities and products from the
    same commit.
-7. `publish=true` is explicitly selected.
+7. Each platform proves one synthetic prior version can create Generic Owner
+   data, the current version reads it back, and reinstalling the prior version
+   reads back the same data and writer identity.
+8. The release-plan binds the directory/trust configuration, common artifact,
+   publisher identities, Runtime trust, test identities, Actions Artifact
+   IDs/digests, and inner install-file hashes.
 
-Only then may the final job create a new tag and GitHub Release, download all
-assets again, and verify `SHA256SUMS`.
+Only after the project Owner approves that exact plan SHA may the independent
+publish workflow consume the same run's Artifacts. A second signing run cannot
+substitute different timestamped bytes for the approved candidate.
 
 ## macOS Runtime trust
 
@@ -90,6 +129,16 @@ artifact digest, source commit, allowlist digest, and source-tree digest. It
 changes only the byte identities necessarily changed by signing. It does not
 rebuild business code or create another Runtime.
 
+## Windows Runtime trust
+
+R1 verifies the fixed Windows Pack, detects every PE by its binary header,
+signs only PEs without an Authenticode certificate table (including
+`bizhub-runtime.exe`), then regenerates the release-specific Manifest and trust
+from those signed bytes. Packaging deliberately skips that finalized subtree.
+Packaged and installed verification requires every Runtime PE to report
+Authenticode `Valid`; publisher-signed PEs must match the approved thumbprint,
+and production signatures must have a timestamp.
+
 ## Current blockers
 
 The implementation intentionally cannot create a production Release today:
@@ -100,5 +149,7 @@ The implementation intentionally cannot create a production Release today:
   than an owned neutral hostname on port 443.
 
 Resolving those prerequisites changes external publisher/deployment state and
-requires a separate project Owner decision. The R1 candidate itself does not
-make or infer that decision.
+requires a separate project Owner decision. A second independent GitHub
+reviewer is also needed before the protected Environments can approve a real
+run. The R1 candidate itself does not configure credentials, domain, reviewer
+membership, tag, or Release.

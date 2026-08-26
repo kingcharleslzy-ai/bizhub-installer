@@ -10,7 +10,11 @@ param(
     [string]$ExpectedThumbprint,
 
     [ValidateSet("synthetic-ci", "production")]
-    [string]$SigningMode = "synthetic-ci"
+    [string]$SigningMode = "synthetic-ci",
+
+    [string]$RuntimePreparationIdentity = "",
+
+    [string]$RuntimeIdentityOutput = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,6 +140,18 @@ if (-not (Test-Path -LiteralPath $formalDatabase -PathType Leaf)) {
 
 $sidecarExecutable = Join-Path $packagedResources "bizhub-runtime\bizhub-runtime.exe"
 $sidecarSignature = Get-AuthenticodeSignature -LiteralPath $sidecarExecutable
+if ($RuntimePreparationIdentity -or $RuntimeIdentityOutput) {
+    if (-not $RuntimePreparationIdentity -or -not $RuntimeIdentityOutput) {
+        throw "desktop_windows_runtime_identity_arguments_incomplete"
+    }
+    & "$PSScriptRoot/verify-windows-runtime-signatures.ps1" `
+        -RuntimeRoot (Join-Path $packagedResources "bizhub-runtime") `
+        -PreparationIdentity $RuntimePreparationIdentity `
+        -ExpectedThumbprint $ExpectedThumbprint `
+        -Output $RuntimeIdentityOutput `
+        -SigningMode $SigningMode | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "desktop_windows_runtime_signature_verification_failed" }
+}
 $result = [ordered]@{
     status = "ok"
     signing_mode = $SigningMode

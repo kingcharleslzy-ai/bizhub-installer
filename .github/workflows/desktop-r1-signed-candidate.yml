@@ -1,0 +1,336 @@
+name: Desktop R1 Signed Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_commit:
+        description: Exact current public main commit.
+        required: true
+        type: string
+      release_tag:
+        description: desktop-vPACKAGE_VERSION or desktop-vPACKAGE_VERSION-preview.N.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-r1-signed-candidate-${{ inputs.release_commit }}
+  cancel-in-progress: false
+
+jobs:
+  macos_arm64:
+    name: desktop-r1-signed-candidate-macos-arm64
+    if: github.ref == 'refs/heads/main'
+    environment: desktop-production-signing
+    runs-on: macos-14
+    timeout-minutes: 90
+    outputs:
+      artifact_id: ${{ steps.upload.outputs['artifact-id'] }}
+      artifact_digest: ${{ steps.upload.outputs['artifact-digest'] }}
+    env:
+      BIZHUB_DESKTOP_RELEASE_MODE: production
+      BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
+      BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
+      BIZHUB_MACOS_SIGNING_MODE: production
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_commit }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Verify exact main source and release contract
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = "${{ inputs.release_commit }}"
+          test "$(git rev-parse origin/main)" = "${{ inputs.release_commit }}"
+          python ../scripts/verify_checksums.py
+          npm ci
+          node scripts/release-preflight.mjs
+          npm test
+          npm run verify:boundary
+          npm run verify:runtime-archive
+          npm run audit:runtime
+          npm audit --audit-level=moderate
+      - name: Configure approved macOS publisher
+        shell: bash
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
+          API_KEY_P8: ${{ secrets.BIZHUB_APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.BIZHUB_APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.BIZHUB_APPLE_API_ISSUER }}
+        run: |
+          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
+          test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
+          test -n "$API_KEY_P8" && test -n "$API_KEY_ID" && test -n "$API_ISSUER"
+          certificate="$RUNNER_TEMP/bizhub-developer-id.p12"
+          api_key="$RUNNER_TEMP/bizhub-notary-api-key.p8"
+          keychain="$RUNNER_TEMP/bizhub-release.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate"
+          printf '%s' "$API_KEY_P8" > "$api_key"
+          chmod 600 "$certificate" "$api_key"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGNING_IDENTITY"
+          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_KEY_FILE=$api_key" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_KEY_ID=$API_KEY_ID" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_ISSUER=$API_ISSUER" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
+      - name: Prepare, sign, and rebind Runtime
+        run: |
+          npm run prepare:runtime
+          node scripts/prepare-signed-macos-runtime.mjs
+      - name: Build notarized old and current products
+        shell: bash
+        run: |
+          current_version="$(node -p 'require("./package.json").version')"
+          old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
+          cp package.json "$RUNNER_TEMP/package.json"
+          cp package-lock.json "$RUNNER_TEMP/package-lock.json"
+          node scripts/package-version-fixture.mjs set "$old_version"
+          npm run make:macos-release
+          node scripts/sign-production-macos-app.mjs
+          /usr/bin/ditto "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" "$RUNNER_TEMP/BizHub Desktop-old.app"
+          cp "$RUNNER_TEMP/package.json" package.json
+          cp "$RUNNER_TEMP/package-lock.json" package-lock.json
+          rm -rf "out/BizHub Desktop-darwin-arm64"
+          npm run make:macos-release
+          node scripts/sign-production-macos-app.mjs
+          node scripts/macos-upgrade-rollback-smoke.mjs --old-app "$RUNNER_TEMP/BizHub Desktop-old.app" --new-app "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" --old-version "$old_version" --new-version "$current_version" --output out/desktop-r1-macos-upgrade-rollback.json
+          git diff --exit-code -- package.json package-lock.json
+      - name: Verify notarized current product and containers
+        shell: bash
+        run: |
+          product="out/BizHub Desktop-darwin-arm64"
+          app="$product/BizHub Desktop.app"
+          resources="$app/Contents/Resources"
+          npm run verify:artifact -- "$product" --expected-runtime-trust runtime-dist/generic-runtime-trust.json
+          node scripts/verify-macos-release.mjs --app "$app" --expected-runtime-trust runtime-dist/generic-runtime-trust.json --mode production --team-id "$BIZHUB_MACOS_TEAM_ID"
+          node scripts/account-flow-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-resources "$resources"
+          node scripts/make-macos-release-containers.mjs
+          node scripts/verify-macos-release-containers.mjs
+          mkdir -p out/candidate-macos
+          cp out/release/BizHub-Desktop-*-macOS-arm64.zip out/candidate-macos/
+          cp out/release/BizHub-Desktop-*-macOS-arm64.dmg out/candidate-macos/
+          cp out/release/desktop-r1-macos-containers.json out/candidate-macos/
+          cp out/desktop-r1-macos-release-identity.json out/candidate-macos/
+          cp out/desktop-r1-macos-runtime-identity.json out/candidate-macos/
+          cp out/desktop-r1-macos-upgrade-rollback.json out/candidate-macos/
+          sleep 2
+          ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
+      - name: Upload fixed macOS signed candidate
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-r1-macos-arm64-${{ inputs.release_commit }}-production
+          path: desktop/out/candidate-macos/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove macOS signing material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then security delete-keychain "$BIZHUB_MACOS_KEYCHAIN" || true; fi
+          for sensitive_path in "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" "${BIZHUB_APPLE_API_KEY_FILE:-}"; do if [ -n "$sensitive_path" ]; then rm -f -- "$sensitive_path"; fi; done
+
+  windows_x64:
+    name: desktop-r1-signed-candidate-windows-x64
+    if: github.ref == 'refs/heads/main'
+    environment: desktop-production-signing
+    runs-on: windows-2022
+    timeout-minutes: 90
+    outputs:
+      artifact_id: ${{ steps.upload.outputs['artifact-id'] }}
+      artifact_digest: ${{ steps.upload.outputs['artifact-digest'] }}
+    env:
+      BIZHUB_DESKTOP_RELEASE_MODE: production
+      BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
+      BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
+      BIZHUB_WINDOWS_SIGNING_MODE: production
+      BIZHUB_REQUIRE_WINDOWS_SIGNING: "1"
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Preserve repository byte identity
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_commit }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Verify exact main source and release contract
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne "${{ inputs.release_commit }}" -or (git rev-parse origin/main) -ne "${{ inputs.release_commit }}") { throw "desktop_release_main_commit_mismatch" }
+          python ../scripts/verify_checksums.py
+          npm ci
+          node scripts/release-preflight.mjs
+          npm test
+          npm run verify:boundary
+          npm run verify:runtime-archive
+          npm run audit:runtime
+          npm audit --audit-level=moderate
+      - name: Configure approved Windows publisher
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD }}
+          CERTIFICATE_THUMBPRINT: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:CERTIFICATE_THUMBPRINT) { throw "desktop_windows_production_signing_credentials_missing" }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "bizhub-windows-signing.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $thumbprint = $env:CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
+          "BIZHUB_WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$env:CERTIFICATE_PASSWORD" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$thumbprint" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare, sign, and rebind Runtime
+        shell: pwsh
+        run: |
+          npm run prepare:runtime
+          node scripts/prepare-signed-windows-runtime.mjs
+          ./scripts/verify-windows-runtime-signatures.ps1 -RuntimeRoot runtime-dist/bizhub-runtime -PreparationIdentity out/desktop-r1-windows-runtime-preparation.json -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -Output out/desktop-r1-windows-runtime-identity.json -SigningMode production
+      - name: Build old and current signed installers
+        shell: pwsh
+        run: |
+          $currentVersion = node -p "require('./package.json').version"
+          $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
+          Copy-Item package.json "$env:RUNNER_TEMP/package.json"
+          Copy-Item package-lock.json "$env:RUNNER_TEMP/package-lock.json"
+          node scripts/package-version-fixture.mjs set $oldVersion
+          npm run make:windows-release
+          Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe"
+          Copy-Item "$env:RUNNER_TEMP/package.json" package.json
+          Copy-Item "$env:RUNNER_TEMP/package-lock.json" package-lock.json
+          Remove-Item "out/make" -Recurse -Force
+          Remove-Item "out/BizHub Desktop-win32-x64" -Recurse -Force
+          npm run make:windows-release
+          ./scripts/windows-upgrade-rollback-smoke.ps1 -OldSetup "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe" -NewSetup "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -OldVersion $oldVersion -NewVersion $currentVersion -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -Output out/desktop-r1-windows-upgrade-rollback.json -SigningMode production
+          git diff --exit-code -- package.json package-lock.json
+      - name: Verify signed current product and record identity
+        shell: pwsh
+        run: |
+          $product = "out/BizHub Desktop-win32-x64"
+          $resources = "$product/resources"
+          npm run verify:artifact -- $product --expected-runtime-trust runtime-dist/generic-runtime-trust.json
+          node scripts/account-flow-smoke.mjs --packaged-executable "$product/BizHub Desktop.exe" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs --packaged-executable "$product/BizHub Desktop.exe" --packaged-resources $resources
+          ./scripts/windows-installer-smoke.ps1 -SetupExe "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -PackagedDirectory $product -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -SigningMode production -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -RuntimeIdentityOutput out/desktop-r1-windows-runtime-identity.json
+          $output = "out/make/squirrel.windows/x64"
+          $setup = Get-Item "$output/BizHub-Desktop-Setup-x64.exe"
+          $nupkgs = @(Get-ChildItem $output -Filter "*-full.nupkg")
+          if ($nupkgs.Count -ne 1) { throw "desktop_windows_full_nupkg_count_invalid:$($nupkgs.Count)" }
+          $signature = Get-AuthenticodeSignature $setup.FullName
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or -not $signature.TimeStamperCertificate) { throw "desktop_windows_release_signature_invalid" }
+          $identity = [ordered]@{
+            status = "ok"; schema_version = "bizhub.desktop-windows-release-identity.v1"; commit = (git rev-parse HEAD); signing_mode = "production"
+            signer_subject = $signature.SignerCertificate.Subject; signer_thumbprint = $signature.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant(); timestamp_subject = $signature.TimeStamperCertificate.Subject
+            setup = [ordered]@{ name = $setup.Name; bytes = $setup.Length; sha256 = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+            nupkg = [ordered]@{ name = $nupkgs[0].Name; bytes = $nupkgs[0].Length; sha256 = (Get-FileHash $nupkgs[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+            releases_sha256 = (Get-FileHash "$output/RELEASES" -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          if ($identity.signer_thumbprint -ne $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) { throw "desktop_windows_release_signer_mismatch" }
+          $identity | ConvertTo-Json -Depth 5 | Out-File out/desktop-r1-windows-x64-identity.json -Encoding utf8
+          New-Item -ItemType Directory -Path out/candidate-windows -Force | Out-Null
+          Copy-Item "$output/BizHub-Desktop-Setup-x64.exe" out/candidate-windows/
+          Copy-Item $nupkgs[0].FullName out/candidate-windows/
+          Copy-Item "$output/RELEASES" out/candidate-windows/
+          Copy-Item out/desktop-r1-windows-x64-identity.json out/candidate-windows/
+          Copy-Item out/desktop-r1-windows-runtime-identity.json out/candidate-windows/
+          Copy-Item out/desktop-r1-windows-upgrade-rollback.json out/candidate-windows/
+      - name: Upload fixed Windows signed candidate
+        id: upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-r1-windows-x64-${{ inputs.release_commit }}-production
+          path: desktop/out/candidate-windows/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove Windows signing material
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
+
+  release-plan:
+    name: desktop-r1-signed-candidate-release-plan
+    if: github.ref == 'refs/heads/main'
+    needs: [macos_arm64, windows_x64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.release_commit }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: desktop-r1-macos-arm64-${{ inputs.release_commit }}-production
+          path: candidate/macos
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: desktop-r1-windows-x64-${{ inputs.release_commit }}-production
+          path: candidate/windows
+      - name: Build deterministic Owner approval plan
+        working-directory: desktop
+        run: |
+          node scripts/release-plan.mjs build \
+            --source-run-id "${{ github.run_id }}" \
+            --source-run-attempt "${{ github.run_attempt }}" \
+            --commit "${{ inputs.release_commit }}" \
+            --tag "${{ inputs.release_tag }}" \
+            --mac-root ../candidate/macos \
+            --mac-artifact-id "${{ needs.macos_arm64.outputs.artifact_id }}" \
+            --mac-artifact-name "desktop-r1-macos-arm64-${{ inputs.release_commit }}-production" \
+            --mac-artifact-digest "${{ needs.macos_arm64.outputs.artifact_digest }}" \
+            --windows-root ../candidate/windows \
+            --windows-artifact-id "${{ needs.windows_x64.outputs.artifact_id }}" \
+            --windows-artifact-name "desktop-r1-windows-x64-${{ inputs.release_commit }}-production" \
+            --windows-artifact-digest "${{ needs.windows_x64.outputs.artifact_digest }}" \
+            --output ../candidate/desktop-r1-release-plan.json
+          sha256sum ../candidate/desktop-r1-release-plan.json | tee ../candidate/desktop-r1-release-plan.sha256
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-r1-release-plan-${{ inputs.release_commit }}
+          path: |
+            candidate/desktop-r1-release-plan.json
+            candidate/desktop-r1-release-plan.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Stop for exact Owner approval
+        run: |
+          echo "::notice title=Desktop R1 Owner approval required::source_run_id=${{ github.run_id }} commit=${{ inputs.release_commit }} tag=${{ inputs.release_tag }} plan_sha256=$(cut -d' ' -f1 candidate/desktop-r1-release-plan.sha256)"

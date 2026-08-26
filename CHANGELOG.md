@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Split Desktop-R1 into secret-free synthetic CI, a protected production
+  signing-candidate workflow, and a separately protected exact-Artifact publish
+  workflow. The candidate ends with a deterministic release-plan SHA for Owner
+  approval; publication cannot rebuild or re-sign and must read back an
+  immutable GitHub Release. Protect `main` with the two native R1 checks.
+- Sign every previously unsigned Windows Runtime PE, including
+  `bizhub-runtime.exe`, regenerate release-specific Runtime Manifest/trust, and
+  require all packaged/installed PE signatures to be valid. Add native macOS
+  and Windows vN to vN+1 to rollback Generic Owner data/readback evidence while
+  leaving automatic updates out of scope.
 - Add the Desktop-R1 fail-closed dual-platform release candidate. macOS verifies
   the fixed Generic Pack, signs its Mach-O contents, rebuilds release-specific
   trust, signs/notarizes the Shell and DMG, and reads back both ZIP and mounted

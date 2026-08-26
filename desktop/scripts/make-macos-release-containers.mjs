@@ -46,6 +46,7 @@ const outputRoot = path.resolve(
 const signingMode = process.env.BIZHUB_MACOS_SIGNING_MODE || "";
 const signingIdentity = process.env.BIZHUB_MACOS_SIGNING_IDENTITY || "";
 const signingKeychain = process.env.BIZHUB_MACOS_KEYCHAIN || "";
+const expectedTeamId = process.env.BIZHUB_MACOS_TEAM_ID || "";
 const appleApiKey = process.env.BIZHUB_APPLE_API_KEY_FILE || "";
 const appleApiKeyId = process.env.BIZHUB_APPLE_API_KEY_ID || "";
 const appleApiIssuer = process.env.BIZHUB_APPLE_API_ISSUER || "";
@@ -146,7 +147,9 @@ const identity = {
     name: path.basename(dmgPath),
     bytes: dmgMetadata.size,
     sha256: await sha256File(dmgPath),
+    notary_staple_readback: signingMode === "production",
   },
+  publisher_team_id: expectedTeamId || null,
 };
 const identityPath = path.join(outputRoot, "desktop-r1-macos-containers.json");
 await writeFile(identityPath, `${JSON.stringify(identity, null, 2)}\n`);

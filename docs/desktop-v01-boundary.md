@@ -132,8 +132,8 @@ and platform-specific local Runtime Pack to carry independent identities.
 Account lookup refreshes signed Descriptors; Profile composition remains
 build-time and Runtime Pack changes remain immutable signed releases rather
 than per-module hot updates. Automatic Shell update, Runtime Pack download,
-cross-version migration/rollback, and update channels remain future Release
-work rather than W1 capability.
+and update channels remain future work. R1 proves only the installation-level
+vN to vN+1 to rollback data/readback boundary; it does not add an updater.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
@@ -243,13 +243,13 @@ Each checkpoint requires separate authorization:
    production Ed25519 public trust key, and deployment-private account-to-
    Workspace mapping. This does not create Desktop installers or approve a
    Release.
-7. **Desktop-R1:** one manual, fail-closed release workflow for macOS arm64 and
-   Windows x64. Branch and review runs use synthetic signing and cannot publish.
-   Production requires exact public `main`, a version-matching immutable tag,
-   real Developer ID/notarization and Authenticode identities, an owned neutral
-   standard-HTTPS directory, two passing platform jobs, checksums, and explicit
-   `publish=true`. The release mechanism is deployment configuration; it adds no
-   business module or writer.
+7. **Desktop-R1:** three isolated workflows: secret-free dual-platform
+   synthetic CI; protected exact-main signed-candidate generation ending in a
+   fixed release-plan SHA; and independently protected publication of only the
+   approved existing Artifacts. Windows signs previously unsigned Runtime PEs
+   before trust rebinding, and both platforms prove vN to vN+1 to rollback
+   Owner readback. Immutable releases and protected `main` are hard gates. The
+   mechanism is deployment configuration; it adds no business module or writer.
 8. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 

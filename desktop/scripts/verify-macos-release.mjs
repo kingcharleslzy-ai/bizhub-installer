@@ -131,6 +131,7 @@ const identity = {
   signing_mode: mode,
   bundle_identifier: appSignature.identifier,
   publisher_team_id: appSignature.teamId || null,
+  notary_staple_readback: mode === "production",
   runtime_macho_file_count: machOFiles.length,
   runtime_manifest_sha256: createHash("sha256")
     .update(await readFile(path.join(runtimeRoot, "runtime-release-manifest.json")))

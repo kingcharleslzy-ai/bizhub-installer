@@ -1,239 +1,134 @@
-# Desktop-R1 release readiness verification — 2026-08-26
+# Desktop-R1 release-control verification — 2026-08-26
 
 ## Result
 
-Desktop-R1 now has one fail-closed, repeatable macOS arm64 and Windows x64
-release path. The fixed public implementation candidate passed the complete
-synthetic publisher matrix on both native GitHub runners. It has **not** been
-merged, tagged, published, notarized, or distributed as a formal Release.
+Desktop-R1 is a narrow release-control implementation candidate. It separates
+synthetic testing, production signing, exact-Artifact approval, and publication;
+signs the missing Windows Runtime PEs before rebinding trust; and adds native
+cross-version data readback. It has not been merged, signed with a real
+publisher, tagged, published, notarized, or distributed.
 
-The current `0.1.0` package version identifies this candidate only. BizHub
-Desktop versions are expected to keep advancing. Each future Release must bind
-one exact package version, tag, Git commit, signed product, container digest,
-and checksum set; this does not freeze the application at a global version.
+No private repository, directory service, account mapping, real login, SQLite
+schema, migration, Profile, Owner, writer, formal data, or production deployment
+was changed.
 
-No private repository, customer account mapping, production directory service,
-production key, cloud login, SQLite database, migration, Profile, Owner,
-writer, business data, or production deployment was modified.
-
-## Fixed source identities
+## Source identities
 
 - public `main` base:
   `1cc8f33dd6198da41e7b6d16520430690944bbf3`;
-- R1 implementation commit:
-  `5abdc7d1bde2eeacba591e69fbfe67afc89a4db7`;
-- final fixed R1 candidate head, including the pinned Node 24 Artifact uploader:
+- previous accepted R1 mechanics head:
   `93efbefcff15c3b05c02766e48d8ec42110d93f0`;
-- candidate branch: `codex/desktop-r1-release-20260826`;
-- report-only evidence head: the commit containing this report. Its SHA is
-  intentionally not copied into the report, avoiding a self-referential
-  identity. It must not redefine the fixed implementation candidate above;
-- Runtime Profile: `generic-kernel-smoke`;
-- common artifact digest:
-  `sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72`.
+- previous report-only head:
+  `ddb6797a189879bbc1b241e9330ed40b030d4f61`;
+- narrow-fix implementation head: to be fixed after the native matrix passes;
+- report-only evidence head: the commit containing the final evidence update;
+  its own SHA is intentionally not written into this report.
 
-## Release contract proved by code and tests
+## Release-control evidence
 
-The new `Desktop R1 Release` workflow has two separate modes:
+The implementation defines three disjoint workflows:
 
-1. branch pushes run `synthetic-ci`, proving the native packaging, signing,
-   installation, product flow, Owner, cleanup, and Artifact mechanics without
-   any production credential;
-2. `production` is manual, `main`-only, exact-commit-only, exact-tag-only, and
-   `publish=true`-only. It additionally requires real publisher credentials,
-   notarization, and an owned neutral standard-HTTPS account directory before
-   it can create an immutable tag and GitHub Release.
+1. `Desktop R1 Synthetic` has `contents: read`, contains no production secret
+   reference or production Environment, and cannot create a tag or Release.
+2. `Desktop R1 Signed Candidate` is manual and exact-main-only. Its macOS and
+   Windows jobs use `desktop-production-signing`, create fixed production
+   Artifacts, generate `desktop.release-plan.v1` plus SHA-256, then stop.
+3. `Desktop R1 Publish` uses `desktop-production-publish` and requires the exact
+   source run, plan SHA, commit, and tag. It downloads only the prior run's
+   Artifacts, verifies Actions IDs/digests and inner hashes, contains no build or
+   signing step, and requires immutable-release readback.
 
-A production request fails before packaging if the release commit is moving,
-the tag does not match the current package version, the source is not the exact
-public `main`, the account-directory URL uses temporary DNS, a literal IP, a
-non-443 port, credentials, or a non-HTTPS origin, or a required publisher
-credential is absent. A branch or synthetic run cannot enter the publish job.
+Both protected Environments require review, prohibit self-review, and allow
+only `main`. Public `main` rejects deletion/non-fast-forward changes, requires a
+pull request, and requires both native synthetic checks. Repository-level
+Actions Secrets remain empty; future publisher credentials belong only in the
+signing Environment.
 
-macOS uses one prepared Runtime identity, signs the Runtime and Electron app
-with a single approved Developer ID identity, applies distinct least-privilege
-entitlements, verifies all 63 Runtime Mach-O files, notarizes and staples the
-app, creates ZIP and DMG containers, mounts/extracts both, and verifies the
-product again. Synthetic mode uses a separate ad-hoc entitlement exception
-only because it has no Apple Team ID; production entitlements cannot inherit
-that exception.
+The repository currently has one collaborator. That collaborator is the
+configured required reviewer, so `prevent_self_review=true` deliberately makes
+a self-triggered production run unapprovable. A second independent reviewer is
+required before real signing. This is a fail-closed prerequisite, not an
+exception or inferred approval. The personal-repository owner remains the
+explicitly recorded GitHub Environment administrative exception because the
+Environment REST configuration exposes no administrator-bypass switch; the
+`main` ruleset itself has no bypass actor.
 
-Windows reuses the accepted fixed D3 Runtime and Squirrel chain, requires a
-real Authenticode PFX and password in production, signs the Shell and Setup,
-verifies the packaged and installed signatures, runs the installed product,
-uninstalls it, and proves that formal local data outside the installation root
-is preserved. The fixed Runtime is independently trust-bound and is not
-silently replaced or granted a second writer.
+Immutable releases are enabled at repository scope. The publish workflow also
+checks that setting before it creates a draft and afterwards requires the REST
+release to report `draft=false` and `immutable=true`, with exact tag,
+`target_commitish`, tag ref, release-plan SHA, and downloaded install bytes.
 
-Forge remains only the deterministic packager. The renderer still has no Node
-or filesystem authority, cloud Sessions remain non-persistent across Desktop
-restart, and every business write remains behind the Python Owner path.
+## Windows Runtime publisher binding
 
-## Native GitHub Actions evidence
+The accepted fixed Windows Runtime is still the only Runtime input. R1 verifies
+it against the independent baseline trust, detects PEs by binary header, signs
+only files without an Authenticode certificate table, and requires the baseline
+`bizhub-runtime.exe` to be in that set. It then regenerates a release-specific
+Manifest and trust record from the signed bytes. Forge skips this finalized
+subtree rather than changing it again.
 
-GitHub Actions run
-[`32972549877`](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/32972549877)
-is bound exactly to candidate head
-`93efbefcff15c3b05c02766e48d8ec42110d93f0` and completed with `success`:
+Packaged and installed verification enumerates every Runtime PE and requires
+Authenticode `Valid`. PEs signed by the BizHub publisher must match the expected
+thumbprint; production signatures must also contain a timestamp. Evidence binds
+PE count, publisher-signed paths, main executable subject/thumbprint, Runtime
+Manifest/tree/trust, source-tree digest, and common artifact digest.
 
-- macOS arm64 job `98189693336`: success in 1m48s;
-- Windows x64 job `98189693102`: success in 3m43s;
-- `publish-release`: skipped as required for a branch `synthetic-ci` run;
-- Node 20 action deprecation warnings: zero;
-- final residual Electron/Desktop/Python processes: zero.
+## Cross-version data readback
 
-### macOS arm64 synthetic evidence
-
-- package version: `0.1.0`;
-- ZIP: `BizHub-Desktop-0.1.0-macOS-arm64.zip`;
-- ZIP size: `142458117` bytes;
-- ZIP SHA-256:
-  `26736193e5349084e9a0b833bf0df9d4b78f03987a06e8d57679feac8864daec`;
-- DMG: `BizHub-Desktop-0.1.0-macOS-arm64.dmg`;
-- DMG size: `159306945` bytes;
-- DMG SHA-256:
-  `5c51cc45702cfa6344c06b3a1054c2b40f763573c5363c5b34b35dfb338ef139`;
-- Actions Artifact id: `9608236964`;
-- Actions Artifact size: `297493465` bytes;
-- Actions Artifact digest:
-  `sha256:719911ede94a424820f3a5db2bebabf2138c13464a8a84639c5e8153bdc2b6a0`;
-- signed Runtime Manifest SHA-256:
-  `172efb048c71ac0b156216eb25c2294ad9d93e36a57500e52647c8610836c1ec`;
-- signed Runtime tree digest:
-  `2a5b6086e156de524d044e2c6f656514c331c2415e9b23cbba3e2d0e523c4e8f`;
-- release-specific Runtime trust SHA-256:
-  `919d6fb7eb6ba2c5d4003eed787425b4ee0476ec7a540f3f3bd76836cc943151`;
-- packaged files: `413`; packaged SQLite files: `0`; private markers:
-  `0`.
-
-The ZIP and DMG were both opened and the contained application was rescanned
-and verified. These are ad-hoc signed synthetic mechanics artifacts: they are
-not Developer ID signed or notarized products and must not be distributed as a
-formal macOS release.
-
-### Windows x64 synthetic evidence
-
-- Setup: `BizHub-Desktop-Setup-x64.exe`;
-- Setup size: `168860936` bytes;
-- Setup SHA-256:
-  `a80d9e70a879e293de7741ee95cb0bb70268a1743082502c624516a423225e9e`;
-- full package: `bizhub_desktop-0.1.0-full.nupkg`;
-- full package size: `168162330` bytes;
-- full package SHA-256:
-  `f78774f83c970e346b1b26e7c2fe5d7a1a54694c6174a9617cd536d49b10313b`;
-- `RELEASES` SHA-256:
-  `1a9c6291b78e087fcbb57595e4c9a892a4fbab929cfbe12ade36361ddc68d9dc`;
-- Actions Artifact id: `9608304957`;
-- Actions Artifact size: `336776549` bytes;
-- Actions Artifact digest:
-  `sha256:a31357451e7f037b92d3e8d023028cc8a6283e73a218c99405c846b0ead87c2e`;
-- fixed Runtime archive SHA-256:
-  `7948cdd1fac6bb330320bd3b08cee8b00630e4e47d300ce441626c670054fb27`;
-- Runtime Manifest SHA-256:
-  `3ecd816daa1c1760eef243e3c447a030aa411e9059803db346bd1f6006997fbc`;
-- Runtime tree digest:
-  `22c38e64c1a022994674c58d0a8cfc9650580db61317e3c3826516e793169ea0`;
-- packaged files: `208`; packaged SQLite files: `0`; private markers:
-  `0`.
-
-The Setup, packaged Shell, and installed Shell all reported Authenticode
-`Valid` against one disposable synthetic certificate. Silent uninstall removed
-the application and preserved the formal synthetic local database. The
-certificate was removed after the job. It is not a public publisher identity,
-so these artifacts must not be distributed as a formal Windows release.
-
-## Product and Owner acceptance
-
-Both platforms proved the same customer-neutral product flow in development
-and packaged/installed form:
-
-- account page password fields: `0`;
-- account-directory requests contain account identifier only; passwords: `0`;
-- one correctly signed cloud Workspace connects;
-- an open Workspace survives Descriptor expiry;
-- reconnect with the expired Descriptor fails;
-- a fresh directory query obtains a new Descriptor and reconnects;
-- unknown or known-empty accounts create `0` local instances;
-- Generic Local appears only after explicit user choice;
-- Cookie, localStorage, and HTTP cache are cleared across Desktop restart;
-- cloud Session persistence: `false`;
-- tested viewports: `1280x820`, `960x720`, no horizontal overflow;
-- Owner apply: `applied`;
-- exact replay: `idempotent_noop`;
-- failure path: zero writes;
-- backup: valid;
-- restart formal readback: one record;
-- concurrent starts: one Runtime process maximum;
-- installation/uninstallation preserves formal local data;
-- residual processes: `0`.
-
-The package boundary scanner found one public Ed25519 connection trust root,
-zero customer-private markers, zero bundled SQLite databases, zero source maps,
-and no Dazheng rule or account mapping.
-
-## Additional machine evidence
+Both native workflows derive a distinct semantic prior version from the current
+package version and build actual platform applications/installers for both.
+The test sequence is:
 
 ```text
-install checksum verification
-  184 files verified, including this report on the report-only head
-
-desktop Node tests
-  59 passed, 0 failed
-
-public/private package boundary
-  scanned_text_files=63
-  python_source_files=4
-  sqlite_files=0
-  trusted_connection_keys=1
-  private_markers=0
-
-fixed Runtime archive verification
-  darwin-arm64=passed
-  win32-x64=passed
-
-npm audit --audit-level=moderate
-  0 vulnerabilities
-
-npm audit --omit=dev --audit-level=high
-  0 vulnerabilities
+install/copy vN
+-> create Generic party/product/unit/location through Owner
+-> install/copy vN+1
+-> health and formal location readback
+-> uninstall/replace and reinstall/copy vN
+-> repeat readback
+-> assert same data identity and writer instance
 ```
 
-The branch replaces the vulnerable upstream ZIP extraction path with a bounded,
-path-confined vendored implementation and exercises traversal, Windows path
-ambiguity, and symlink-boundary rejection. The default branch still reports
-its pre-R1 dependency alerts until this reviewed candidate is integrated; the
-fixed candidate itself produced the zero-audit results above.
+All state lives in an OS temporary root and is removed after the test. It never
+uses a production account or database. This proves the installation-level
+upgrade/rollback boundary only; no automatic updater is introduced.
 
-## Remaining formal release blockers
+## Machine evidence
 
-The release mechanism is ready for external narrow review, but a formal
-Desktop Release remains deliberately blocked by three missing production
-identities:
+Local macOS arm64 execution completed the real v`0.0.999` to v`0.1.0` to
+v`0.0.999` chain with `upgrade_readback=true`, `rollback_readback=true`, stable
+data identity, stable writer identity, and zero residual Runtime processes.
 
-1. no Apple Developer ID Application certificate and notarization API
-   credential are configured;
-2. no approved public Windows Authenticode publisher certificate is
-   configured;
-3. the current neutral account-directory URL still uses temporary `nip.io`
-   DNS and port `8443`, while production preflight requires an owned neutral
-   HTTPS hostname on standard port `443`.
+The final native GitHub Actions run, exact implementation head, job IDs,
+Artifact IDs/digests, Windows PE counts, and settings readback will be recorded
+here only after the fixed implementation is pushed and both native jobs pass.
 
-Repository Actions Secrets, Variables, and Environments contained no formal R1
-publisher credentials at the time of this verification. Formal credentials
-must be added only after Owner approval and must remain outside both source
-repositories. The account-directory domain change must preserve the existing
-public Ed25519 trust boundary and private account mapping; it does not authorize
-changing the directory service, login behavior, Profile, Owner, writer,
-migration, or production data.
+Current static evidence:
 
-The next approved production run must rebuild from the exact reviewed public
-`main` commit with the real publisher identities. Its signed artifacts will
-necessarily have new hashes, so their final identities must be captured from
-that production run before the immutable tag and Release are accepted.
+```text
+desktop Node tests: 63 passed, 0 failed
+workflow YAML parse: passed
+PowerShell parse and PSScriptAnalyzer error-level scan: passed
+macOS native upgrade/rollback Owner readback: passed
+```
+
+## Remaining formal-release prerequisites
+
+This narrow fix does not authorize or configure:
+
+- Apple Developer ID Application/notarization credentials;
+- a public Windows Authenticode publisher credential;
+- an owned customer-neutral account-directory hostname on HTTPS 443;
+- a second independent GitHub reviewer;
+- a real signed-candidate run;
+- a tag or GitHub Release.
+
+The current `nip.io:8443` directory remains intentionally rejected by production
+preflight. A formal candidate may begin only after the project Owner separately
+approves those external identities and configuration.
 
 ## Disposition
 
-Desktop-R1 implementation and synthetic native evidence are ready for one
-external code-and-release-gate review. This report does not authorize merge,
-credential provisioning, domain changes, a real-account check, a tag, or a
-GitHub Release.
+The implementation must pass the macOS arm64 and Windows x64 synthetic matrix,
+then receive one report-only evidence update. It must stop for external narrow
+review after that update; this report grants no merge or release authority.

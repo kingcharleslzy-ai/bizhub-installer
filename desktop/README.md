@@ -126,22 +126,30 @@ npm run make
 npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
 ```
 
-Desktop-R1 adds a separate fail-closed release path. A branch push runs only
-`synthetic-ci`; it cannot create a tag or GitHub Release. A production run must
-be manually dispatched from public `main` with an exact 40-character commit,
-a tag matching the current `package.json` version, real macOS and Windows
-publisher credentials, and `publish=true`. The Shell version is therefore not
-globally frozen: every later product version receives its own immutable release
-tag and artifacts.
+Desktop-R1 uses three separate fail-closed workflows. Synthetic CI contains no
+production-secret reference and cannot publish. The protected signed-candidate
+workflow produces fixed native Artifacts plus a `desktop.release-plan.v1` and
+stops. After the Owner approves that exact plan SHA, the separately protected
+publish workflow can download only that source run and publish the same bytes;
+it cannot rebuild or re-sign them. The Shell version is not globally frozen:
+every later product version receives its own immutable release tag and
+Artifacts.
+
+Both native paths also exercise a synthetic previous version, create one formal
+Generic Owner record, move to the current version, read it back, reinstall the
+prior version, and read back the same data/writer identity. This proves the
+installation-level upgrade/rollback boundary; it does not implement automatic
+updates.
 
 The macOS release path first verifies the fixed unsigned Runtime Pack, signs
 every Runtime Mach-O object with the same Developer ID used for the Shell,
 rebuilds a release-specific Manifest/trust record over those signed bytes, then
 signs and notarizes the application and DMG. The ZIP and mounted DMG are both
-read back through the same Runtime and signature verifier. The Windows path
-keeps the externally approved D3 fixed Runtime boundary, Authenticode-signs the
-Shell and Squirrel chain, installs it, runs the Generic Owner lifecycle,
-uninstalls it, and proves formal local data was preserved.
+read back through the same Runtime and signature verifier. Windows verifies the
+accepted fixed D3 Runtime, signs each previously unsigned PE including
+`bizhub-runtime.exe`, regenerates release-specific Manifest/trust over those
+bytes, then signs the Shell and Squirrel chain. Packaged and installed checks
+require every Runtime PE to be Authenticode `Valid`.
 
 The account-flow smoke starts a real Electron window against a temporary HTTPS
 directory and temporary Ed25519 key. It proves an account page with no password,
@@ -178,3 +186,9 @@ domain on standard HTTPS 443. The current `nip.io:8443` W2 transport is
 intentionally rejected by production preflight. No current R1 code path changes
 the directory service, account mapping, cloud login, SQLite, migrations,
 Profile, Owner, writer, or production data.
+
+Production signing and publication use distinct protected GitHub Environments,
+both with required review, self-review prohibited, and `main`-only deployment.
+Because the repository currently has only one collaborator, these gates remain
+intentionally unapprovable until an independent reviewer is added. No formal
+publisher credential is configured by this candidate.

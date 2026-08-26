@@ -14,6 +14,7 @@
     "make": "npm run prepare:runtime && npm run build && electron-forge make --platform=darwin --arch=arm64",
     "make:macos-release": "npm run build && electron-forge package --platform=darwin --arch=arm64",
     "make:windows": "npm run prepare:runtime && npm run build && electron-forge make --platform=win32 --arch=x64",
+    "make:windows-release": "npm run build && electron-forge make --platform=win32 --arch=x64",
     "package": "npm run prepare:runtime && npm run build && electron-forge package --platform=darwin --arch=arm64",
     "prepare:runtime": "node scripts/prepare-runtime-pack.mjs",
     "smoke:cloud": "npm run build && node scripts/cloud-smoke.mjs",
