@@ -55,12 +55,18 @@ if (process.env.BIZHUB_DESKTOP_RELEASE_UPGRADE_SMOKE !== "1") {
 }
 const resources = path.resolve(options.resources || "");
 const userDataRoot = path.resolve(options.user_data_root || "");
-const temporaryRoot = path.resolve(tmpdir());
+const allowedTemporaryRoots = [tmpdir(), process.env.RUNNER_TEMP]
+  .filter(Boolean)
+  .map((value) => path.resolve(value));
+const isWithinAllowedTemporaryRoot = allowedTemporaryRoots.some((root) => {
+  const relative = path.relative(root, userDataRoot);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+});
 if (
   !options.resources
   || !options.user_data_root
   || !options.application_version
-  || !userDataRoot.startsWith(`${temporaryRoot}${path.sep}`)
+  || !isWithinAllowedTemporaryRoot
 ) {
   fail("desktop_versioned_readback_boundary_invalid");
 }
