@@ -167,7 +167,14 @@ try {
     $identity | ConvertTo-Json -Depth 5 -Compress
 } finally {
     if (Test-Path -LiteralPath $installRoot) {
-        try { Uninstall-Application } catch { Write-Warning $_ }
+        Uninstall-Application
+        Stop-InstalledProcesses
+        if (Test-Path -LiteralPath $installRoot) {
+            Remove-Item -LiteralPath $installRoot -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $installRoot) {
+            throw "desktop_windows_upgrade_install_root_cleanup_failed"
+        }
     }
     Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
