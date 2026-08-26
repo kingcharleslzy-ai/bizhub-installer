@@ -26,9 +26,11 @@ function fixture() {
       allowed_origins: ["https://example.com"],
       application_url: "https://example.com/app/",
       connection_id: "synthetic-cloud",
+      data_authority_mode: "cloud",
       display_name: "Synthetic Cloud",
       expires_at: "2026-09-01T00:00:00Z",
       profile_id: "synthetic-profile",
+      runtime_mode: "cloud",
       shell_min_version: "0.1.0",
     },
     signature: "",
@@ -64,9 +66,11 @@ test("accepts a signed bounded HTTPS connection profile", () => {
     allowedOrigins: ["https://example.com"],
     applicationUrl: "https://example.com/app/",
     connectionId: "synthetic-cloud",
+    dataAuthorityMode: "cloud",
     displayName: "Synthetic Cloud",
     expiresAt: "2026-09-01T00:00:00Z",
     profileId: "synthetic-profile",
+    runtimeMode: "cloud",
   });
 });
 
@@ -110,11 +114,39 @@ test("rejects an application origin outside the signed allowlist", () => {
   );
 });
 
+test("rejects a connection that does not preserve cloud data authority", () => {
+  for (const [field, value] of [
+    ["runtime_mode", "local"],
+    ["data_authority_mode", "local"],
+  ]) {
+    const { envelope, privateKey, trustStore } = fixture();
+    envelope.payload[field] = value;
+    envelope.signature = sign(null, signatureInput(envelope), privateKey).toString("base64url");
+    assert.throws(() => validate(envelope, trustStore), /profile_cloud_authority_invalid/);
+  }
+});
+
 test("rejects a profile requiring a newer shell", () => {
   const { envelope, privateKey, trustStore } = fixture();
   envelope.payload.shell_min_version = "0.2.0";
   envelope.signature = sign(null, signatureInput(envelope), privateKey).toString("base64url");
   assert.throws(() => validate(envelope, trustStore), /profile_shell_version_unsupported/);
+});
+
+test("rejects a profile that outlives its signing key", () => {
+  const { envelope, trustStore, privateKey } = fixture();
+  trustStore.keys[0].valid_until = "2026-08-27T00:00:00Z";
+  envelope.payload.expires_at = "2026-08-28T00:00:00Z";
+  envelope.signature = sign(null, signatureInput(envelope), privateKey)
+    .toString("base64url");
+  assert.throws(
+    () => validateConnectionEnvelope(envelope, {
+      trustStore,
+      shellVersion: "0.1.0",
+      now: NOW,
+    }),
+    /profile_expiry_exceeds_signing_key/,
+  );
 });
 
 test("rejects unknown fields and unknown signing keys", () => {

@@ -1,16 +1,18 @@
 const {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   protocol,
   session,
   WebContentsView,
 } = require("electron");
-const { createHash } = require("node:crypto");
 const { readFile, stat } = require("node:fs/promises");
 const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
+const {
+  resolveAccountWorkspaces,
+  workspaceSessionPartition,
+} = require("./account-directory.cjs");
 const {
   localRequestAllowed,
   normalizeLocalOrigin,
@@ -47,6 +49,7 @@ let workspaceView = null;
 let workspaceExpiryTimer = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
+const activeEnterpriseProfiles = new Map();
 let shutdownInProgress = false;
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
@@ -63,6 +66,9 @@ let workspaceState = {
   localStatus: "stopped",
   localError: "",
   localLastBackup: "",
+  accountLookupStatus: "idle",
+  accountNotFound: false,
+  enterpriseWorkspaces: [],
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -102,6 +108,23 @@ function desktopUserDataRoot() {
 
 function localInstanceRoot() {
   return path.join(desktopUserDataRoot(), "local-instance");
+}
+
+function accountDirectoryConfigPath() {
+  if (!app.isPackaged && process.env.BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG) {
+    return path.resolve(process.env.BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG);
+  }
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "account-directory.json")
+    : path.resolve(__dirname, "..", "config", "account-directory.json");
+}
+
+async function connectionValidationOptions() {
+  return {
+    trustStore: await readJsonFile(trustStorePath(), MAX_PROFILE_BYTES),
+    shellVersion: app.getVersion(),
+    now: new Date(),
+  };
 }
 
 function localRuntimePackPath() {
@@ -375,13 +398,12 @@ async function loadConnectionProfile(filePath) {
   });
 }
 
-async function openWorkspace(profile) {
+async function openWorkspace(profile, partitionName = workspaceSessionPartition(
+  profile.connectionId,
+  "standalone.profile",
+)) {
   destroyWorkspaceView();
-  const partitionHash = createHash("sha256")
-    .update(profile.connectionId)
-    .digest("hex")
-    .slice(0, 24);
-  const remoteSession = session.fromPartition(`persist:workspace-${partitionHash}`);
+  const remoteSession = session.fromPartition(partitionName);
   configureRemoteSession(remoteSession, profile.allowedOrigins);
   workspaceView = new WebContentsView({
     webPreferences: {
@@ -589,23 +611,105 @@ async function stopLocalMode() {
   return workspaceState;
 }
 
-async function chooseConnectionProfile() {
-  const selection = await dialog.showOpenDialog(mainWindow, {
-    title: "选择 BizHub 企业连接文件",
-    buttonLabel: "验证并连接",
-    properties: ["openFile"],
-    filters: [{ name: "BizHub connection", extensions: ["json"] }],
+async function lookupAccount(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "accountId"
+    || typeof input.accountId !== "string"
+  ) {
+    throw new Error("desktop_account_lookup_shape_invalid");
+  }
+  activeEnterpriseProfiles.clear();
+  publishState({
+    mode: "none",
+    status: "loading",
+    error: "",
+    accountLookupStatus: "resolving",
+    accountNotFound: false,
+    enterpriseWorkspaces: [],
   });
-  if (selection.canceled || selection.filePaths.length !== 1) return workspaceState;
   try {
-    const profile = await loadConnectionProfile(selection.filePaths[0]);
+    const [config, validationOptions] = await Promise.all([
+      readJsonFile(accountDirectoryConfigPath(), MAX_PROFILE_BYTES),
+      connectionValidationOptions(),
+    ]);
+    const result = await resolveAccountWorkspaces(input.accountId, {
+      config,
+      ...validationOptions,
+    });
+    for (const workspace of result.workspaces) {
+      activeEnterpriseProfiles.set(workspace.profile.connectionId, {
+        envelope: workspace.envelope,
+        partitionName: workspaceSessionPartition(
+          workspace.profile.connectionId,
+          result.accountId,
+        ),
+      });
+    }
+    publishState({
+      status: "idle",
+      error: "",
+      accountLookupStatus: result.status,
+      accountNotFound: result.status === "not_found",
+      enterpriseWorkspaces: result.workspaces.map((workspace) => workspace.summary),
+    });
+  } catch (error) {
+    activeEnterpriseProfiles.clear();
+    publishState({
+      status: "error",
+      error: error instanceof Error ? error.message : "desktop_account_lookup_failed",
+      accountLookupStatus: "error",
+      accountNotFound: false,
+      enterpriseWorkspaces: [],
+    });
+  }
+  return workspaceState;
+}
+
+async function resetAccountLookup() {
+  destroyWorkspaceView();
+  await Promise.all([...activeEnterpriseProfiles.values()].map(async (workspace) => {
+    const remoteSession = session.fromPartition(workspace.partitionName);
+    await remoteSession.clearStorageData();
+    await remoteSession.clearCache();
+  }));
+  activeEnterpriseProfiles.clear();
+  publishState({
+    mode: "none",
+    status: "idle",
+    displayName: "",
+    profileId: "",
+    applicationOrigin: "",
+    error: "",
+    accountLookupStatus: "idle",
+    accountNotFound: false,
+    enterpriseWorkspaces: [],
+  });
+  return workspaceState;
+}
+
+async function connectEnterpriseWorkspace(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "connectionId"
+    || typeof input.connectionId !== "string"
+  ) {
+    throw new Error("desktop_workspace_selection_shape_invalid");
+  }
+  try {
+    const workspace = activeEnterpriseProfiles.get(input.connectionId);
+    if (!workspace) throw new Error("desktop_workspace_not_resolved_for_account");
+    const options = await connectionValidationOptions();
+    const profile = validateConnectionEnvelope(workspace.envelope, options);
     await stopLocalMode();
-    await openWorkspace(profile);
+    await openWorkspace(profile, workspace.partitionName);
   } catch (error) {
     destroyWorkspaceView();
     publishState({
       status: "error",
-      error: error instanceof Error ? error.message : "desktop_connection_failed",
+      error: error instanceof Error ? error.message : "desktop_workspace_connection_failed",
     });
   }
   return workspaceState;
@@ -652,9 +756,17 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return workspaceState;
   });
-  ipcMain.handle("desktop:choose-connection-profile", async (event) => {
+  ipcMain.handle("desktop:lookup-account", async (event, input) => {
     requireTrustedShellSender(event);
-    return chooseConnectionProfile();
+    return lookupAccount(input);
+  });
+  ipcMain.handle("desktop:reset-account-lookup", async (event) => {
+    requireTrustedShellSender(event);
+    return resetAccountLookup();
+  });
+  ipcMain.handle("desktop:connect-enterprise-workspace", async (event, input) => {
+    requireTrustedShellSender(event);
+    return connectEnterpriseWorkspace(input);
   });
   ipcMain.handle("desktop:disconnect-workspace", async (event) => {
     requireTrustedShellSender(event);

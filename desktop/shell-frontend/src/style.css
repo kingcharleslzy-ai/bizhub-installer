@@ -200,6 +200,108 @@ button {
   opacity: 0.62;
 }
 
+.account-lookup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.account-lookup label {
+  display: grid;
+  gap: 7px;
+  color: #536272;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.account-lookup input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #ccd6df;
+  border-radius: 8px;
+  color: #17212b;
+  background: #fff;
+  outline: none;
+}
+
+.account-lookup input:focus {
+  border-color: #4f8db7;
+  box-shadow: 0 0 0 3px rgb(79 141 183 / 14%);
+}
+
+.workspace-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid #dce4eb;
+  border-radius: 12px;
+  background: #f8fafb;
+}
+
+.workspace-option h2 {
+  margin: 6px 0 0;
+  color: #1d2b38;
+  font-size: 17px;
+  font-weight: 680;
+}
+
+.workspace-option p {
+  margin: 6px 0 0;
+  color: #778491;
+  font-size: 11px;
+}
+
+.workspace-kind {
+  color: #55738a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.compact-button {
+  min-width: 118px;
+  padding: 10px 13px;
+  white-space: nowrap;
+}
+
+.empty-workspaces {
+  display: grid;
+  gap: 7px;
+  padding: 19px;
+  border: 1px dashed #cbd7e0;
+  border-radius: 12px;
+  color: #687786;
+  background: #f8fafb;
+}
+
+.empty-workspaces strong {
+  color: #304252;
+  font-size: 13px;
+}
+
+.empty-workspaces span,
+.store-warning {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.add-workspace {
+  margin-top: 16px;
+}
+
+.store-warning {
+  margin: 12px 0 0;
+  color: #8a5d21;
+}
+
 .error-message {
   margin: 18px 0 0;
   padding: 11px 13px;
@@ -347,5 +449,14 @@ button {
 
   .start-card {
     padding: 36px;
+  }
+
+  .workspace-option {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .account-lookup {
+    grid-template-columns: 1fr;
   }
 }

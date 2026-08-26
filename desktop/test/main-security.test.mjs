@@ -8,6 +8,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("remote content uses the hardened WebContentsView boundary", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const accountDirectory = await readFile(
+    path.join(ROOT, "electron", "account-directory.cjs"),
+    "utf8",
+  );
   for (const required of [
     "WebContentsView",
     "allowRunningInsecureContent: false",
@@ -25,8 +29,13 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "will-navigate",
     "will-redirect",
     "persist:workspace-",
+    "account-directory.json",
+    "resolveAccountWorkspaces",
+    "workspaceSessionPartition",
+    "clearStorageData",
+    "clearCache",
   ]) {
-    assert.ok(main.includes(required), required);
+    assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
   for (const prohibited of [
     "BrowserView",
@@ -84,7 +93,15 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   ]) {
     assert.ok(`${main}\n${localRuntime}\n${localLifecycle}`.includes(required), required);
   }
-  for (const api of ["setupLocal", "loginLocal", "backupLocal", "stopLocal"]) {
+  for (const api of [
+    "lookupAccount",
+    "resetAccountLookup",
+    "connectEnterpriseWorkspace",
+    "setupLocal",
+    "loginLocal",
+    "backupLocal",
+    "stopLocal",
+  ]) {
     assert.ok(preload.includes(api), api);
   }
   assert.ok(!preload.includes("node:child_process"));

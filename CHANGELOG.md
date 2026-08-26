@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add the Desktop-W1 account-to-Workspace product-flow candidate. The public
+  Shell submits only an account identifier to a generic HTTPS directory,
+  verifies returned cloud Workspaces against the packaged Ed25519 trust root,
+  requires signed cloud runtime/data authority, and leaves password validation
+  to the selected cloud or local Runtime. Confirmed unknown accounts still
+  require explicit local setup; directory and cloud failures create no SQLite
+  fallback. Production directory, signing keys, real account mapping, merge,
+  signing, and publication remain separately gated.
 - Merge the externally repaired Desktop-D2 Generic local Runtime baseline to
   public `main`, and begin the separately authorized Desktop-D3 Windows x64
   checkpoint with a platform-bound PyInstaller Runtime, Squirrel.Windows

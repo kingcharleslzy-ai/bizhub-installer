@@ -56,6 +56,7 @@ const allowedAsarEntry = (value) => (
   || /^dist\/renderer\/assets\/index-[A-Za-z0-9_-]+\.(?:css|js)$/.test(value)
   || value === "electron"
   || [
+    "electron/account-directory.cjs",
     "electron/connection-profile.cjs",
     "electron/local-lifecycle.cjs",
     "electron/local-runtime.cjs",
@@ -112,10 +113,18 @@ assert.deepEqual(trustStore, {
   schema_version: "bizhub.desktop-trust-store.v1",
   keys: [],
 });
+const accountDirectories = files.filter((value) => path.basename(value) === "account-directory.json");
+assert.equal(accountDirectories.length, 1, "account_directory_count_invalid");
+const accountDirectory = JSON.parse(await readFile(accountDirectories[0], "utf8"));
+assert.deepEqual(accountDirectory, {
+  schema_version: "bizhub.desktop-account-directory.v1",
+  resolve_url: null,
+});
 const packageJson = JSON.parse(asar.extractFile(asarFiles[0], "package.json").toString("utf8"));
 assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present");
 
 for (const sourceName of [
+  "account-directory.cjs",
   "connection-profile.cjs",
   "local-lifecycle.cjs",
   "local-runtime.cjs",

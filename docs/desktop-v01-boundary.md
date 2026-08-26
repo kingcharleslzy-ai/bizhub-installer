@@ -1,8 +1,8 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted boundary; Desktop-D2 merged to public main; Desktop-D3 external-review candidate
+Status: accepted boundary; Desktop-D3 merged to public main; Desktop-W1 account-flow candidate
 
-Date: 2026-08-25
+Date: 2026-08-26
 
 ## Decision
 
@@ -11,8 +11,8 @@ paths:
 
 ```text
 BizHub Desktop
-├── enterprise cloud login -> the enterprise HTTPS Runtime
-└── local login/setup      -> one local Generic Runtime
+├── account lookup -> signed cloud Workspace -> its HTTPS Runtime login
+└── explicit local login/setup               -> one local Generic Runtime
 ```
 
 The desktop package is a delivery mechanism, not a third business Profile. It
@@ -29,14 +29,11 @@ was merged to public `main` at
 repairs and a successful fixed-head macOS arm64 workflow. Its unsigned Artifact
 remains review evidence rather than a distributable release.
 
-Desktop-D3 was separately authorized after that merge. Its implementation
-scope is Windows x64 Generic local Runtime parity, a Squirrel.Windows installer,
-code-signing gates, install/uninstall evidence, and synthetic-data Owner
-readback. It does not authorize installation on a business machine, production
-access, customer-private Runtime, migration, synchronization, or a writer
-switch. A synthetic CI signer may prove the signing path but cannot authorize
-public distribution; formal release requires a separately verified production
-Authenticode identity.
+Desktop-D3 was separately authorized, externally reviewed, and merged to public
+`main` at `cee569717410c45a768e5a144cb1bf7158826513`. Its synthetic signer and
+unsigned fixed Runtime remain evidence rather than public-distribution
+authority. Desktop-W1 now fills the product-flow gap without changing the D3
+Runtime Pack, Windows installer chain, formal data, or writer authority.
 
 ## Installer
 
@@ -56,34 +53,47 @@ boundary. It is not yet claimed to be a complete desktop-ready Generic Runtime.
 
 ## Accounts and connection
 
-The first screen exposes two actions:
+The first screen exposes two explicit routes:
 
-1. **Enterprise cloud** — use an approved connection profile, then authenticate
-   directly with that enterprise Runtime.
+1. **BizHub account lookup** — submit only an account identifier, select a
+   platform-signed cloud Workspace, then authenticate directly with its Runtime.
 2. **Local BizHub** — authenticate locally, or explicitly initialize the first
    local instance when none exists.
 
 No global IAM or Workspace membership platform is required in v0.1.
 
-An enterprise code resolver may return a signed connection profile containing
-only an exact HTTPS origin, Profile ID, shell compatibility, expiry, key ID, and
-signature. It receives no password and stores no business data or account
-membership. The target Runtime remains the authentication and permission owner.
+The account directory returns signed connection envelopes containing an exact
+HTTPS origin, Profile ID, `runtime_mode=cloud`,
+`data_authority_mode=cloud`, shell compatibility, expiry, key ID, and signature.
+It receives no password and stores no business data. The target Runtime remains
+the authentication and permission owner.
 
 The signed connection file is only the Desktop-D1 Workspace bootstrap used to
-prove the shell boundary. Desktop-D1 does not implement account-driven
-Workspace discovery, a unified Account/Workspace membership control plane, or
-automatic discovery of every company available to one account. Those remain a
-later product identity decision; the D1 file must not be renamed or presented
-as if those capabilities already existed.
+prove the shell boundary. Desktop-W1 replaces that manual product step with
+account-driven lookup, but deliberately does not add password authentication,
+refresh tokens, device sessions, organization management, invitations, SSO, or
+billing to the Shell.
 
-A failed cloud login never creates a local account or database. An unknown local
-username never self-registers. The first local setup requires explicit user
+Cloud browser sessions are isolated by the hash of account identifier plus
+Workspace ID. Changing the account clears the active account's Workspace
+storage and cache; closing a Workspace without changing account may preserve
+that account's Runtime session.
+
+A confirmed directory `404` may expose the existing explicit Generic local
+setup action. A directory timeout, invalid response, missing platform key, or
+cloud login failure never becomes “account not found” and never creates a local
+account or database. The first local setup still requires explicit user
 confirmation.
 
 One installation owns at most one local company instance, one SQLite database,
 and one first administrator in v0.1. A username does not select or create a
 database.
+
+The product does not assume a permanently fixed version. The Shell version,
+signed Workspace Descriptor expiry, cloud Runtime release, and platform-specific
+local Runtime Pack are independent identities. Account lookup refreshes signed
+Descriptors; Profile composition remains build-time and Runtime Pack changes
+remain immutable signed releases rather than per-module hot updates.
 
 ## Runtime and data authority
 
@@ -127,6 +137,10 @@ The desktop boundary requires:
 - Runtime-owned authentication and formal writes;
 - operating-system credential storage for secrets;
 - graceful local Runtime shutdown and visible abnormal-exit recovery.
+- account lookup sends no password and accepts only signed, unexpired cloud
+  Descriptors whose expiry does not outlive the signing key;
+- an account-directory error cannot be converted into an unknown-account or
+  local-database fallback.
 
 The v0.1 local Runtime may stop with the desktop/tray. Background work after
 desktop exit requires a separate LaunchAgent, LaunchDaemon, or Windows Service
@@ -169,7 +183,12 @@ Each checkpoint requires separate authorization:
    unsigned fixed sidecar remain review-only; production signing remains a
    separate release gate. See the
    [verification record](verification/desktop-d3-windows-x64-2026-08-26.md).
-5. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
+5. **Desktop-W1:** current account-to-Workspace product-flow candidate. It
+   proves account-only lookup, signed cloud authority, explicit cloud/local
+   selection, cloud launch, unknown-account zero-write, and entry to local setup
+   with synthetic evidence. It does not provision a production directory URL,
+   production trust key, or real account mapping and is not a release approval.
+6. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 
 Machine evidence must also prove that the public package contains no

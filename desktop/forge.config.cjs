@@ -34,6 +34,7 @@ module.exports = {
       },
     },
     extraResource: [
+      "config/account-directory.json",
       "config/trusted-connection-keys.json",
       "runtime-dist/generic-runtime-trust.json",
       "runtime-dist/bizhub-runtime",

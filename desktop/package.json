@@ -16,6 +16,7 @@
     "package": "npm run prepare:runtime && npm run build && electron-forge package --platform=darwin --arch=arm64",
     "prepare:runtime": "node scripts/prepare-runtime-pack.mjs",
     "smoke:cloud": "npm run build && node scripts/cloud-smoke.mjs",
+    "smoke:account-flow": "npm run build && node scripts/account-flow-smoke.mjs",
     "smoke:local": "node scripts/local-runtime-smoke.mjs",
     "smoke:local-shell": "npm run build && node scripts/local-shell-smoke.mjs",
     "smoke:runtime-tamper": "node scripts/runtime-pack-tamper-smoke.mjs",

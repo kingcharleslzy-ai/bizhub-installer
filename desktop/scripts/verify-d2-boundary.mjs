@@ -91,7 +91,9 @@ for (const required of [
   assert.ok(windowsRuntimeBuilder.includes(required), required);
 }
 for (const api of [
-  "chooseConnectionProfile",
+  "lookupAccount",
+  "resetAccountLookup",
+  "connectEnterpriseWorkspace",
   "disconnectWorkspace",
   "prepareLocal",
   "setupLocal",
@@ -126,6 +128,13 @@ const trustStore = JSON.parse(await readFile(path.join(ROOT, "config", "trusted-
 assert.deepEqual(trustStore, {
   schema_version: "bizhub.desktop-trust-store.v1",
   keys: [],
+});
+const accountDirectory = JSON.parse(
+  await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"),
+);
+assert.deepEqual(accountDirectory, {
+  schema_version: "bizhub.desktop-account-directory.v1",
+  resolve_url: null,
 });
 const runtimeTrust = JSON.parse(await readFile(path.join(ROOT, "config", "generic-runtime-trust.json"), "utf8"));
 const commonManifestBytes = await readFile(path.join(REPO, "app", "vendor", "bizhub-common-manifest.json"));

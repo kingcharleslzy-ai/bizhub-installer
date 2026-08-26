@@ -129,6 +129,7 @@ function validateTrustStore(trustStore, nowMs) {
     keys.set(item.key_id, {
       ...item,
       active: validFrom <= nowMs && nowMs < validUntil,
+      validUntilMs: validUntil,
     });
   }
   return keys;
@@ -157,9 +158,11 @@ function validateConnectionEnvelope(
       "allowed_origins",
       "application_url",
       "connection_id",
+      "data_authority_mode",
       "display_name",
       "expires_at",
       "profile_id",
+      "runtime_mode",
       "shell_min_version",
     ],
     "profile_payload_shape_invalid",
@@ -167,6 +170,9 @@ function validateConnectionEnvelope(
   const payload = envelope.payload;
   if (!ID_PATTERN.test(payload.connection_id) || !ID_PATTERN.test(payload.profile_id)) {
     fail("profile_payload_identity_invalid");
+  }
+  if (payload.runtime_mode !== "cloud" || payload.data_authority_mode !== "cloud") {
+    fail("profile_cloud_authority_invalid");
   }
   if (
     typeof payload.display_name !== "string"
@@ -200,6 +206,7 @@ function validateConnectionEnvelope(
   const trustedKey = keys.get(envelope.key_id);
   if (!trustedKey) fail("profile_signing_key_unknown");
   if (!trustedKey.active) fail("profile_signing_key_inactive");
+  if (expiresAt > trustedKey.validUntilMs) fail("profile_expiry_exceeds_signing_key");
 
   if (
     typeof envelope.signature !== "string"
@@ -228,9 +235,11 @@ function validateConnectionEnvelope(
     allowedOrigins,
     applicationUrl: applicationUrl.toString(),
     connectionId: payload.connection_id,
+    dataAuthorityMode: payload.data_authority_mode,
     displayName: payload.display_name.trim(),
     expiresAt: payload.expires_at,
     profileId: payload.profile_id,
+    runtimeMode: payload.runtime_mode,
   };
 }
 

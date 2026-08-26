@@ -12,8 +12,12 @@ const state = ref({
   localStatus: "stopped",
   localError: "",
   localLastBackup: "",
+  accountLookupStatus: "idle",
+  accountNotFound: false,
+  enterpriseWorkspaces: [],
 });
 const setupRequested = ref(false);
+const accountForm = reactive({ accountId: "" });
 const setupForm = reactive({ companyName: "", username: "admin", password: "" });
 const loginForm = reactive({ username: "admin", password: "" });
 let unsubscribe = () => {};
@@ -21,6 +25,7 @@ let unsubscribe = () => {};
 const connected = computed(() => state.value.status === "connected");
 const working = computed(() => (
   state.value.status === "loading"
+  || state.value.accountLookupStatus === "resolving"
   || ["starting", "initializing"].includes(state.value.localStatus)
 ));
 const localLogin = computed(() => (
@@ -29,7 +34,13 @@ const localLogin = computed(() => (
   && ["awaiting_login", "error"].includes(state.value.localStatus)
 ));
 const showSetup = computed(() => !state.value.localInitialized && setupRequested.value);
+const enterpriseWorkspaces = computed(() => state.value.enterpriseWorkspaces || []);
+const accountResolved = computed(() => (
+  state.value.accountLookupStatus === "resolved"
+  || state.value.accountLookupStatus === "not_found"
+));
 const statusLabel = computed(() => {
+  if (state.value.accountLookupStatus === "resolving") return "正在查找账号工作区";
   if (state.value.mode === "cloud" && state.value.status === "loading") return "正在连接云端";
   if (state.value.mode === "cloud" && connected.value) return "企业云端已连接";
   if (state.value.mode === "local" && state.value.localStatus === "initializing") return "正在初始化本地实例";
@@ -37,7 +48,7 @@ const statusLabel = computed(() => {
   if (state.value.mode === "local" && state.value.localStatus === "awaiting_login") return "等待本地登录";
   if (state.value.mode === "local" && connected.value) return "本地 Generic 已连接";
   if (state.value.status === "error") return "操作未完成";
-  return "选择工作方式";
+  return "选择工作区并登录";
 });
 const errorLabel = computed(() => {
   const value = state.value.localError || state.value.error;
@@ -50,23 +61,54 @@ const errorLabel = computed(() => {
     desktop_local_login_failed: "本地管理员账号或密码不正确。",
     desktop_local_setup_in_progress: "本地初始化正在进行，请稍候。",
     desktop_connection_failed: "连接配置无法使用。",
+    desktop_account_id_invalid: "账号格式无效，请使用 3 至 128 位字母、数字或 . _ @ + -。",
+    desktop_account_lookup_shape_invalid: "账号查询请求无效。",
+    desktop_account_directory_not_configured: "当前构建尚未配置正式账号目录，不能查找企业云端。",
+    desktop_account_directory_timeout: "账号目录响应超时，请稍后重试。",
+    desktop_account_directory_unreachable: "账号目录暂时不可达；不会因此创建本地数据库。",
+    desktop_account_directory_response_size_invalid: "账号目录响应超出安全范围。",
+    desktop_account_directory_response_json_invalid: "账号目录返回了无效数据。",
+    desktop_account_directory_response_shape_invalid: "账号目录响应结构无效。",
+    desktop_account_directory_response_invalid: "账号目录响应版本或工作区数量无效。",
+    desktop_account_workspace_duplicate: "账号目录返回了重复工作区。",
+    desktop_workspace_connection_failed: "企业工作区无法使用。",
+    desktop_workspace_selection_shape_invalid: "企业工作区选择无效。",
+    desktop_workspace_not_resolved_for_account: "该工作区不属于本次账号查询，请重新查找账号。",
     desktop_profile_file_size_invalid: "连接文件大小或类型无效。",
+    profile_envelope_shape_invalid: "企业工作区文件结构无效。",
+    profile_envelope_identity_invalid: "企业工作区文件版本或身份无效。",
+    profile_cloud_authority_invalid: "企业工作区没有声明唯一云端数据权威。",
     profile_expired: "企业连接文件已过期，请取得新文件。",
     profile_signature_mismatch: "企业连接文件签名校验失败。",
     profile_signing_key_unknown: "客户端尚未信任该连接签发者。",
     profile_signing_key_inactive: "连接签发密钥当前无效。",
+    profile_expiry_exceeds_signing_key: "企业工作区有效期超过签发密钥有效期。",
     profile_shell_version_unsupported: "客户端版本过低，请先更新 BizHub Desktop。",
     desktop_connection_profile_expired: "企业连接文件已过期，请取得新文件。",
   };
   if (known[value]) return known[value];
   if (value.startsWith("desktop_local_login_failed:401")) return "本地管理员账号或密码不正确。";
+  if (value.startsWith("desktop_account_directory_http_")) return "账号目录暂时无法完成查询；不会自动切换到本地。";
   if (value.startsWith("workspace_load_failed:")) return "企业云端页面加载失败，请检查网络后重试。";
   if (value.startsWith("local_workspace_load_failed:")) return "本地页面加载失败，可停止后重新打开。";
   return "操作未通过安全校验，请查看本机诊断日志。";
 });
 
-async function chooseProfile() {
-  state.value = await window.bizhubDesktop.chooseConnectionProfile();
+async function lookupAccount() {
+  state.value = await window.bizhubDesktop.lookupAccount(accountForm.accountId);
+  if (accountForm.accountId.trim()) {
+    setupForm.username = accountForm.accountId.trim().toLowerCase();
+    loginForm.username = accountForm.accountId.trim().toLowerCase();
+  }
+}
+
+async function changeAccount() {
+  setupRequested.value = false;
+  state.value = await window.bizhubDesktop.resetAccountLookup();
+}
+
+async function connectEnterprise(connectionId) {
+  state.value = await window.bizhubDesktop.connectEnterpriseWorkspace(connectionId);
 }
 
 async function beginLocal() {
@@ -207,24 +249,74 @@ onBeforeUnmount(() => unsubscribe());
       <template v-else>
         <section class="start-card">
           <div class="card-heading">
-            <span class="step">企业云端</span>
-            <h1>连接企业云端 BizHub</h1>
-            <p>
-              选择企业提供的签名连接文件。账号和密码由企业云端系统直接验证，
-              Desktop 不会启动 Python，也不会创建本地数据库作为故障回退。
+            <span class="step">BIZHUB WORKSPACES</span>
+            <h1>{{ accountResolved ? "选择工作区，然后登录" : "输入账号，查找工作区" }}</h1>
+            <p v-if="accountResolved">
+              企业密码只交给所选云端 Runtime；本地密码只交给这台电脑的 Generic Runtime。
+              云端失败不会猜测另一种模式，也不会创建数据库作为回退。
+            </p>
+            <p v-else>
+              这里只提交账号标识来查找可访问的工作区，不提交密码。
+              选择工作区后，密码才由对应的云端或本地 Runtime 验证。
             </p>
           </div>
-          <button class="primary-button" type="button" :disabled="working" @click="chooseProfile">
-            选择企业连接文件
-          </button>
-          <div class="boundary">
-            <div><span>正式 Owner</span><strong>企业云端 Runtime</strong></div>
-            <div><span>数据位置</span><strong>由企业云端管理</strong></div>
+          <form v-if="!accountResolved" class="account-lookup" @submit.prevent="lookupAccount">
+            <label>
+              BizHub 账号
+              <input
+                v-model="accountForm.accountId"
+                autocomplete="username"
+                maxlength="128"
+                placeholder="例如 name@example.com"
+                required
+              >
+            </label>
+            <button class="primary-button" type="submit" :disabled="working">查找工作区</button>
+          </form>
+          <div v-else-if="enterpriseWorkspaces.length" class="workspace-list">
+            <article
+              v-for="workspace in enterpriseWorkspaces"
+              :key="workspace.connectionId"
+              class="workspace-option"
+            >
+              <div>
+                <span class="workspace-kind">企业云端</span>
+                <h2>{{ workspace.displayName }}</h2>
+                <p>
+                  {{ workspace.applicationOrigin }} · {{ workspace.profileId }} ·
+                  数据权威：{{ workspace.dataAuthorityMode }}
+                </p>
+              </div>
+              <button
+                class="primary-button compact-button"
+                type="button"
+                :disabled="working"
+                @click="connectEnterprise(workspace.connectionId)"
+              >
+                打开并登录
+              </button>
+            </article>
           </div>
+          <div v-else class="empty-workspaces">
+            <strong>{{ state.accountNotFound ? "没有找到企业云端工作区" : "尚未查询企业工作区" }}</strong>
+            <span v-if="state.accountNotFound">
+              不会自动创建数据库；如需使用 Generic 本地版，请在右侧明确创建。
+            </span>
+            <span v-else>输入账号标识后，客户端只接受平台签名的工作区结果。</span>
+          </div>
+          <button
+            v-if="accountResolved"
+            class="secondary-button add-workspace"
+            type="button"
+            :disabled="working"
+            @click="changeAccount"
+          >
+            换一个账号
+          </button>
         </section>
 
         <aside class="local-preview enabled">
-          <span class="preview-label">本地 Generic</span>
+          <span class="preview-label">GENERIC LOCAL</span>
           <h2>{{ state.localInitialized ? "打开本地 BizHub" : "创建本地 BizHub" }}</h2>
           <p v-if="state.localInitialized">
             已存在一个本地实例。打开后需使用它自己的管理员账号登录，
@@ -237,7 +329,7 @@ onBeforeUnmount(() => unsubscribe());
           <button type="button" :disabled="working" @click="beginLocal">
             {{ state.localInitialized ? "启动并登录" : "开始本地设置" }}
           </button>
-          <small class="local-boundary">macOS arm64 · 127.0.0.1 随机端口 · 单一本地 SQLite</small>
+          <small class="local-boundary">127.0.0.1 随机端口 · 单一本地 SQLite · 不含客户私有模块</small>
         </aside>
         <p v-if="errorLabel" class="error-message page-error" role="alert">{{ errorLabel }}</p>
       </template>

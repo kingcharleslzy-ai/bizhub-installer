@@ -1,0 +1,146 @@
+name: Desktop Workspace Flow
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/desktop-workspace-login-20260826
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-workspace-flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  product-flow:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            platform: darwin
+            architecture: arm64
+          - runner: windows-2022
+            platform: win32
+            architecture: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - name: Preserve repository byte identity on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+
+      - name: Verify runner target
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          test "$(node -p 'process.platform')" = "${{ matrix.platform }}"
+          test "$(node -p 'process.arch')" = "${{ matrix.architecture }}"
+
+      - name: Verify Windows runner target
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          if ((node -p "process.platform") -ne "${{ matrix.platform }}") { throw "desktop_platform_invalid" }
+          if ((node -p "process.arch") -ne "${{ matrix.architecture }}") { throw "desktop_architecture_invalid" }
+
+      - name: Install fixed Desktop dependencies
+        run: npm ci
+
+      - name: Verify source identity, tests, boundary, and runtime audit
+        run: |
+          python ../scripts/verify_checksums.py
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
+
+      - name: Prepare fixed Generic Runtime and run development flows
+        run: |
+          npm run prepare:runtime
+          npm run smoke:account-flow
+          npm run smoke:local-shell
+
+      - name: Package unsigned macOS application
+        if: runner.os != 'Windows'
+        run: npm run package
+
+      - name: Package unsigned Windows application
+        if: runner.os == 'Windows'
+        run: |
+          npm run build
+          npx electron-forge package --platform=win32 --arch=x64
+
+      - name: Verify packaged macOS product flow
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          product="out/BizHub Desktop-darwin-arm64"
+          executable="$product/BizHub Desktop.app/Contents/MacOS/BizHub Desktop"
+          resources="$product/BizHub Desktop.app/Contents/Resources"
+          npm run verify:artifact -- "$product"
+          node scripts/account-flow-smoke.mjs \
+            --packaged-executable "$executable" \
+            --packaged-trust-store "$resources/trusted-connection-keys.json" \
+            --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs \
+            --packaged-executable "$executable" \
+            --packaged-resources "$resources"
+          npm run verify:artifact -- "$product"
+
+      - name: Verify packaged Windows product flow
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $product = "out/BizHub Desktop-win32-x64"
+          $executable = "$product/BizHub Desktop.exe"
+          $resources = "$product/resources"
+          npm run verify:artifact -- $product
+          node scripts/account-flow-smoke.mjs `
+            --packaged-executable $executable `
+            --packaged-trust-store "$resources/trusted-connection-keys.json" `
+            --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs `
+            --packaged-executable $executable `
+            --packaged-resources $resources
+          npm run verify:artifact -- $product
+
+      - name: Confirm no residual process on macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          sleep 2
+          ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
+
+      - name: Confirm no residual process on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 2
+          $root = (Resolve-Path .).Path
+          $left = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and
+            $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -and
+            ($_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe")
+          }
+          if ($left) {
+            $left | Select-Object ProcessId, Name, ExecutablePath | Format-Table
+            throw "desktop_residual_process_detected"
+          }

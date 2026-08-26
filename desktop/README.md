@@ -1,23 +1,45 @@
-# BizHub Desktop D2 baseline and D3 Windows candidate
+# BizHub Desktop product-flow candidate
 
-This directory contains the Desktop-D1 cloud shell plus the Desktop-D2 macOS
-arm64 and Desktop-D3 Windows x64 local-runtime implementations. One
+This directory contains the merged Desktop-D1/D2/D3 cross-platform baseline
+plus the current account-to-Workspace product-flow candidate. One
 customer-neutral Electron shell exposes two explicit paths:
 
 ```text
-signed enterprise connection -> enterprise HTTPS Runtime
-explicit local setup/login    -> fixed Generic Python Runtime -> local SQLite
+account identifier -> generic HTTPS directory -> signed cloud Workspace -> cloud login
+explicit local setup/login                         -> fixed Generic Runtime -> local SQLite
 ```
+
+The account-directory request contains only a normalized account identifier.
+It never contains a password. Each returned cloud Workspace is an independently
+signed, expiring connection envelope bound to `runtime_mode=cloud` and
+`data_authority_mode=cloud`. After the user selects it, that Workspace Runtime
+owns login, permissions, UI, Owners, and formal data. A confirmed unknown
+account may be used to prefill the explicit Generic local setup form; a
+directory timeout, error, or missing configuration never triggers local setup.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
 not reimplement master data, inventory, procurement, or sales. Formal writes
 remain inside the existing Generic Owners.
 
-The checked-in enterprise trust store remains empty. D2 contains no customer
-private Profile, rule, endpoint, account, credential, production data, model,
-collector, synchronization, background service, automatic update, or authority
-switch.
+The checked-in enterprise trust store and account-directory endpoint remain
+empty. The candidate contains no customer-private Profile, rule, endpoint,
+account, credential, production data, model, collector, synchronization,
+background service, automatic update, or authority switch. Production account
+lookup therefore remains fail-closed until a separately approved generic
+platform endpoint and public signing key are provisioned.
+
+Cloud cookies and browser storage use a persistent Session partition derived
+from the account identifier hash plus Workspace ID. The raw account identifier
+is not used in the partition name. Reopening the same account/Workspace may keep
+its login; choosing “换一个账号” clears the active account's cloud storage and
+cache before returning to account lookup.
+
+Shell, signed Workspace Descriptor, cloud Runtime, and local Runtime versions
+are independent. `shell_min_version` is a compatibility floor, not a fixed
+business version. Each account lookup may return a newer signed Descriptor;
+local Runtime updates still require a separately signed immutable Pack rather
+than hot-installed modules.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
@@ -63,6 +85,7 @@ uv pip sync --python .runtime-venv/bin/python \
 npm test
 npm run verify:boundary
 npm run audit:runtime
+npm run smoke:account-flow
 npm run build:runtime
 npm run prepare:runtime
 npm run smoke:runtime-tamper
@@ -71,6 +94,12 @@ npm run smoke:local-shell
 npm run make
 npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
 ```
+
+The account-flow smoke starts a real Electron window against a temporary HTTPS
+directory and temporary Ed25519 key. It proves an account page with no password,
+signed Workspace selection, cloud launch, an explicit unknown-account state,
+zero fallback database creation, local-setup entry, and desktop layout at
+1280x820 and the supported 960x720 minimum.
 
 The local smoke uses temporary synthetic state. It proves explicit bootstrap,
 authentication, Profile/data/writer identity, Generic Owner preview/apply/
@@ -97,10 +126,10 @@ clean macOS arm64 runner. It separately rebuilds a source candidate, restores
 and verifies the fixed review Pack, then uploads an unsigned review Artifact;
 it does not sign, notarize, or publish a Release.
 
-Desktop-D3 is an external-review candidate on a separate branch. Its native
-Windows x64 workflow passed fixed Runtime rebuild/trust, Squirrel lifecycle,
-Authenticode mechanics, install/local-Owner/uninstall data preservation, and
-zero-residual-process checks. The fixed Runtime subtree remains byte-identical
-and therefore unsigned while the review Shell and installer use an ephemeral CI
-certificate. That certificate is not a production publisher identity, and the
-D3 Artifact is not a formal public release.
+Desktop-D3 is merged to public `main`; its reviewed Windows Artifact remains
+evidence rather than a formal public release. The current account-flow candidate
+does not authorize merge or publication. Formal release additionally requires a
+generic account-directory origin, a production Workspace signing public key,
+real customer cloud read-only/login validation, macOS signing/notarization,
+production Windows Authenticode, and resolution of the retained build-chain
+audit findings.

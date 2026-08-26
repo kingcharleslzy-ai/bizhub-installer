@@ -39,7 +39,9 @@ for (const term of forbiddenCustomerTerms) {
 }
 
 const runtimePaths = [
+  "config/account-directory.json",
   "config/trusted-connection-keys.json",
+  "electron/account-directory.cjs",
   "electron/connection-profile.cjs",
   "electron/main.cjs",
   "electron/network-policy.cjs",
