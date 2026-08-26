@@ -24,9 +24,11 @@ signing, notarization, release upload, or database write was performed.
   `cee569717410c45a768e5a144cb1bf7158826513`;
 - initial Desktop-W1 implementation head:
   `dd11c4794eed42eb5b7620d964881b39d6b58ac3`;
-- final Desktop-W1 implementation head:
+- pre-review Desktop-W1 implementation head:
   `5ee2071a7acdc68011a5a06ef8fff3bff9d51ec6`;
-- implementation-head GitHub Actions run: `32939372759`;
+- narrow-fix Desktop-W1 implementation head:
+  `5d556f1740fcf1060cfcd7dde1ecc7445fce7ec6`;
+- narrow-fix implementation GitHub Actions run: `32942928506`;
 - workflow: `Desktop Workspace Flow`;
 - matrix jobs:
   - `product-flow (macos-14, darwin, arm64)`;
@@ -55,8 +57,17 @@ or
 The client never infers customer identity from an email suffix, display name,
 hostname, or local database. It does not contain a Dazheng account list or
 customer endpoint. Account switching clears the selected account partition's
-remote cookies and cache; closing and reopening the same Workspace preserves
-that partition for normal cloud login continuity.
+remote cookies and cache. Cloud Workspace partitions are non-persistent:
+closing a Workspace may retain its temporary login only in the current Desktop
+process, while quitting Desktop removes Cookie, localStorage, and cache and
+requires cloud login again after restart.
+
+Account lookup is Workspace discovery, not unified identity authentication.
+Knowing an account identifier cannot authorize access; the selected cloud
+Runtime still owns login and permissions. Generic Local remains an explicit
+option for every installation, including when an enterprise Workspace is
+available. A future restriction would require a signed entitlement rather than
+customer or account-name logic.
 
 The directory request is bounded to:
 
@@ -64,11 +75,18 @@ The directory request is bounded to:
 {"schema_version":"bizhub.desktop-account-lookup.v1","account_id":"..."}
 ```
 
-It never contains the password. Responses are bounded to 64 KiB and eight
-Workspaces, redirects are rejected, the timeout is 10 seconds, and every
-Workspace must declare both `runtime_mode=cloud` and
+It never contains the password. One 10-second deadline covers fetch, streamed
+body receipt, JSON parse, and signed Workspace validation. The streaming reader
+cancels and aborts immediately above 64 KiB instead of buffering the complete
+body first. Responses contain at most eight Workspaces, redirects are rejected,
+and every Workspace must declare both `runtime_mode=cloud` and
 `data_authority_mode=cloud`. A Workspace cannot outlive its signing key and
 cannot require an unsupported Desktop shell version.
+
+Each main-process lookup receives a monotonic generation. Results are built in
+a local Map and only the current generation can atomically replace the active
+Workspace set and UI state. A later lookup or account reset invalidates every
+older success and error result.
 
 ## Acceptance evidence
 
@@ -78,12 +96,16 @@ packaged app without weakening the checked-in empty production trust state.
 It proved:
 
 - the initial account screen has zero password fields;
-- the directory receives three account-only requests and zero passwords;
-- a valid signed Workspace is displayed and opens `https://example.com`;
-- changing account removes the prior remote session partition;
+- the directory receives five account-only requests and zero passwords;
+- a valid signed Workspace is displayed and opens a temporary local HTTPS test
+  Runtime;
+- changing account removes the active temporary Session state;
 - a known account with zero Workspaces creates zero local instances;
 - an HTTP `404` unknown account creates zero local instances;
 - Generic local setup appears only after the user explicitly chooses it;
+- account A writes a test Cookie, localStorage value, and cache entry; after
+  application exit, restart, and account B selection, reopening account A sees
+  none of the old state and performs a fresh cache request;
 - both `1280x820` and minimum `960x720` layouts have no horizontal overflow;
 - temporary packaged trust/config substitution is restored before the final
   artifact scan;
@@ -105,18 +127,25 @@ Local machine checks:
 
 ```text
 npm test
-  39 passed, 0 failed
+  44 passed, 0 failed
+  response headers + hanging body: timeout
+  streaming body above 64 KiB: aborted before full receipt
+  valid response below 64 KiB: accepted
+  concurrent A slow / B fast: only B committed
+  lookup followed by reset: stale result rejected
 
 npm run smoke:account-flow
   status=passed
   account_screen_password_fields=0
-  account_directory_requests=3
+  account_directory_requests=5
   account_directory_passwords=0
   signed_cloud_workspaces=1
   cloud_workspace_connected=true
   known_account_without_workspace_local_instances_created=0
   unknown_account_local_instances_created=0
   local_setup_form_reached=true
+  cross_restart_cookie_storage_cache_cleared=true
+  cloud_session_persistent=false
   viewports=1280x820,960x720
 
 npm run verify:boundary
@@ -128,17 +157,17 @@ npm run audit:runtime
   0 vulnerabilities
 
 install checksum verification
-  158 files verified
+  159 files verified
 ```
 
-The implementation-head GitHub Actions run independently completed both matrix jobs with
-`success`. Each job verified source identity, tests, the public/private
-boundary and Runtime dependency audit; prepared the fixed Generic Runtime;
-ran the account and local product flows; packaged an unsigned app for its own
-platform; repeated the flow against that packaged app; rescanned the packaged
-artifact; and confirmed no residual process. The workflow has read-only
-permissions and contains no installer maker, signing, Artifact upload, or
-Release step.
+The narrow-fix implementation GitHub Actions run independently completed both
+matrix jobs with `success`. Each job verified source identity, tests, the
+public/private boundary and Runtime dependency audit; prepared the fixed Generic
+Runtime; ran the account and local product flows; packaged an unsigned app for
+its own platform; repeated the flow against that packaged app; rescanned the
+packaged artifact; and confirmed no residual process. The workflow has
+read-only permissions and contains no installer maker, signing, Artifact
+upload, or Release step.
 
 ## Deliberately empty production configuration
 
@@ -168,3 +197,8 @@ Before a formal Desktop release, the project Owner must separately approve:
 Those steps must not move, copy, synchronize, or create another writer for the
 Dazheng database. Desktop-W1 does not authorize them and does not authorize a
 release.
+
+The version contract permits independent Shell, Descriptor, cloud Runtime, and
+local Runtime identities. W1 does not implement automatic Shell update,
+Runtime Pack download, migration/rollback, or latest/stable channels; those
+remain later Release work.
