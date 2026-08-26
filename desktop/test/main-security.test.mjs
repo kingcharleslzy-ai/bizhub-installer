@@ -28,10 +28,13 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "senderUrl.protocol === \"bizhub-shell:\"",
     "will-navigate",
     "will-redirect",
-    "persist:workspace-",
+    "return `workspace-",
     "account-directory.json",
+    "createAccountLookupGeneration",
     "resolveAccountWorkspaces",
     "workspaceSessionPartition",
+    "activeEnterpriseProfiles = resolvedProfiles",
+    "accountLookupGeneration.invalidate()",
     "clearStorageData",
     "clearCache",
   ]) {
@@ -46,6 +49,7 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "sqlite3",
     "sql.js",
     "0.0.0.0",
+    "persist:workspace-",
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }

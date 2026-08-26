@@ -132,9 +132,73 @@ const certificateKeyPath = path.join(temporaryRoot, "certificate-key.pem");
 let directoryServer = null;
 let child = null;
 let cdp = null;
+let debugPort = null;
 const directoryRequests = [];
+let cacheMarkerRequests = 0;
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
+
+async function stopDesktopProcess() {
+  if (cdp) {
+    cdp.close();
+    cdp = null;
+  }
+  if (child && child.exitCode === null) {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve();
+      }, 5_000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+  child = null;
+}
+
+async function launchDesktopProcess() {
+  debugPort = await unusedPort();
+  const executable = packagedExecutable || require("electron");
+  const executableArguments = packagedExecutable
+    ? ["--ignore-certificate-errors", `--remote-debugging-port=${debugPort}`]
+    : ["--ignore-certificate-errors", `--remote-debugging-port=${debugPort}`, ROOT];
+  child = spawn(executable, executableArguments, {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      BIZHUB_DESKTOP_USER_DATA_ROOT: userDataRoot,
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      ...(packagedExecutable ? {} : {
+        BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG: directoryConfigPath,
+        BIZHUB_DESKTOP_TRUSTED_KEYS: trustStorePath,
+      }),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const target = await waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+    const targets = await response.json();
+    return targets.find((item) => item.url === "bizhub-shell://app/") || null;
+  }, "desktop_account_flow_debug_target_missing");
+  cdp = createCdpClient(target.webSocketDebuggerUrl);
+  await cdp.send("Runtime.enable");
+}
+
+async function workspaceCdpClient() {
+  const target = await waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+    const targets = await response.json();
+    return targets.find((item) => item.url.includes("/workspace")) || null;
+  }, "desktop_account_flow_workspace_debug_target_missing");
+  const client = createCdpClient(target.webSocketDebuggerUrl);
+  await client.send("Runtime.enable");
+  return client;
+}
 
 try {
   execFileSync("openssl", [
@@ -145,16 +209,16 @@ try {
     "-days", "1",
   ], { stdio: "ignore" });
   const directoryPort = await unusedPort();
-  const debugPort = await unusedPort();
   const now = Date.now();
+  const workspaceOrigin = `https://127.0.0.1:${directoryPort}`;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const keyId = "desktop-account-smoke-key";
   const envelope = {
     schema_version: "bizhub.desktop-connection-envelope.v1",
     key_id: keyId,
     payload: {
-      allowed_origins: ["https://example.com"],
-      application_url: "https://example.com/",
+      allowed_origins: [workspaceOrigin],
+      application_url: `${workspaceOrigin}/workspace`,
       connection_id: "synthetic-enterprise",
       data_authority_mode: "cloud",
       display_name: "Synthetic Enterprise",
@@ -207,6 +271,29 @@ try {
     cert: await readFile(certificatePath),
     key: await readFile(certificateKeyPath),
   }, (request, response) => {
+    const requestUrl = new URL(request.url, workspaceOrigin);
+    if (request.method === "GET" && requestUrl.pathname === "/workspace") {
+      response.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      response.end("<!doctype html><html><body><main>Workspace Login</main></body></html>");
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/cache-marker") {
+      cacheMarkerRequests += 1;
+      response.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "public, max-age=3600, immutable",
+      });
+      response.end(`cache-marker-${cacheMarkerRequests}`);
+      return;
+    }
+    if (request.method !== "POST" || requestUrl.pathname !== "/v1/desktop/workspaces/resolve") {
+      response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("not found\n");
+      return;
+    }
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
@@ -237,33 +324,7 @@ try {
     directoryServer.once("error", reject);
     directoryServer.listen(directoryPort, "127.0.0.1", resolve);
   });
-
-  const executable = packagedExecutable || require("electron");
-  const executableArguments = packagedExecutable
-    ? [`--remote-debugging-port=${debugPort}`]
-    : [`--remote-debugging-port=${debugPort}`, ROOT];
-  child = spawn(executable, executableArguments, {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      BIZHUB_DESKTOP_USER_DATA_ROOT: userDataRoot,
-      NODE_TLS_REJECT_UNAUTHORIZED: "0",
-      ...(packagedExecutable ? {} : {
-        BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG: directoryConfigPath,
-        BIZHUB_DESKTOP_TRUSTED_KEYS: trustStorePath,
-      }),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stderr = "";
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const target = await waitFor(async () => {
-    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
-    const targets = await response.json();
-    return targets.find((item) => item.url === "bizhub-shell://app/") || null;
-  }, "desktop_account_flow_debug_target_missing");
-  cdp = createCdpClient(target.webSocketDebuggerUrl);
-  await cdp.send("Runtime.enable");
+  await launchDesktopProcess();
 
   const initial = await waitFor(async () => {
     const value = await evaluate(cdp, `({
@@ -313,6 +374,26 @@ try {
     const text = await evaluate(cdp, "document.body.innerText");
     return text.includes("企业云端已连接");
   }, "desktop_account_flow_cloud_not_connected", 45_000);
+  {
+    const workspaceCdp = await workspaceCdpClient();
+    const firstSession = await evaluate(workspaceCdp, `(async () => {
+      document.cookie = "w1_session=account-a; Secure; SameSite=Lax";
+      localStorage.setItem("w1_session", "account-a");
+      return {
+        cookie: document.cookie,
+        storage: localStorage.getItem("w1_session"),
+        cache: await fetch("/cache-marker").then((response) => response.text()),
+      };
+    })()`);
+    workspaceCdp.close();
+    if (
+      !firstSession.cookie.includes("w1_session=account-a")
+      || firstSession.storage !== "account-a"
+      || firstSession.cache !== "cache-marker-1"
+    ) {
+      fail("desktop_account_flow_first_session_marker_missing");
+    }
+  }
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
     "desktop_account_flow_selection_not_restored");
@@ -350,6 +431,48 @@ try {
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
+  await stopDesktopProcess();
+  await launchDesktopProcess();
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
+    "desktop_account_flow_restart_initial_ui_missing");
+  if (!await enterAccount(cdp, "second.account")) fail("desktop_account_flow_second_account_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
+    "desktop_account_flow_second_workspace_missing");
+  if (!await clickButton(cdp, "打开并登录")) fail("desktop_account_flow_second_cloud_button_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
+    "desktop_account_flow_second_cloud_not_connected", 45_000);
+  await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
+    "desktop_account_flow_second_selection_not_restored");
+  if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_second_change_account_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
+    "desktop_account_flow_second_lookup_not_reset");
+  if (!await enterAccount(cdp, "Charles.Example")) fail("desktop_account_flow_restart_first_account_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
+    "desktop_account_flow_restart_first_workspace_missing");
+  if (!await clickButton(cdp, "打开并登录")) fail("desktop_account_flow_restart_cloud_button_missing");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
+    "desktop_account_flow_restart_cloud_not_connected", 45_000);
+  {
+    const workspaceCdp = await workspaceCdpClient();
+    const restartedSession = await evaluate(workspaceCdp, `(async () => ({
+      cookie: document.cookie,
+      storage: localStorage.getItem("w1_session"),
+      cache: await fetch("/cache-marker").then((response) => response.text()),
+    }))()`);
+    workspaceCdp.close();
+    if (
+      restartedSession.cookie.includes("w1_session=account-a")
+      || restartedSession.storage !== null
+      || restartedSession.cache !== "cache-marker-2"
+    ) {
+      fail("desktop_account_flow_cross_restart_session_not_cleared");
+    }
+  }
+  if (directoryRequests.some((body) => body.includes("password"))) {
+    fail("desktop_account_flow_directory_credential_leak_after_restart");
+  }
+
   process.stdout.write(`${JSON.stringify({
     status: "passed",
     shell_route: "bizhub-shell://app/",
@@ -361,6 +484,8 @@ try {
     known_account_without_workspace_local_instances_created: 0,
     unknown_account_local_instances_created: 0,
     local_setup_form_reached: true,
+    cross_restart_cookie_storage_cache_cleared: true,
+    cloud_session_persistent: false,
     packaged: Boolean(packagedExecutable),
     viewports: ["1280x820", "960x720"],
   })}\n`);
@@ -370,20 +495,7 @@ try {
     child && !child.killed ? "electron_running" : "",
   );
 } finally {
-  if (cdp) cdp.close();
-  if (child && child.exitCode === null) {
-    child.kill("SIGTERM");
-    await new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve();
-      }, 5_000);
-      child.once("exit", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
-  }
+  await stopDesktopProcess();
   if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
   if (packagedTrustStore && originalPackagedTrustStore) {
     await writeFile(packagedTrustStore, originalPackagedTrustStore);

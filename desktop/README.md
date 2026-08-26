@@ -29,17 +29,32 @@ background service, automatic update, or authority switch. Production account
 lookup therefore remains fail-closed until a separately approved generic
 platform endpoint and public signing key are provisioned.
 
-Cloud cookies and browser storage use a persistent Session partition derived
-from the account identifier hash plus Workspace ID. The raw account identifier
-is not used in the partition name. Reopening the same account/Workspace may keep
-its login; choosing “换一个账号” clears the active account's cloud storage and
-cache before returning to account lookup.
+Cloud cookies, browser storage, and cache use a non-persistent Session partition
+derived from the account identifier hash plus Workspace ID. The raw account
+identifier is not used in the partition name. Closing a Workspace in the same
+application process may keep that temporary login, while quitting Desktop
+destroys it and requires cloud login again after restart. Choosing “换一个账号”
+also clears the active temporary Session before returning to account lookup.
 
-Shell, signed Workspace Descriptor, cloud Runtime, and local Runtime versions
-are independent. `shell_min_version` is a compatibility floor, not a fixed
-business version. Each account lookup may return a newer signed Descriptor;
-local Runtime updates still require a separately signed immutable Pack rather
-than hot-installed modules.
+The account directory is Workspace discovery, not unified authentication. Its
+10-second deadline covers response headers, streaming body receipt, JSON parse,
+and signed Workspace validation. The body reader aborts as soon as it exceeds
+64 KiB. A main-process lookup generation ensures that only the most recent
+account request can atomically replace the active Workspace set; reset makes
+every older result stale.
+
+Generic Local is intentionally available to every installation in W1, including
+when an enterprise Workspace is present. It is an independent Generic authority
+and never copies, synchronizes, or writes enterprise data. A future policy that
+restricts Local must use a signed entitlement rather than account-name logic.
+
+The version contract allows the Shell, signed Workspace Descriptor, cloud
+Runtime, and local Runtime to evolve independently. `shell_min_version` is a
+compatibility floor, not a fixed business version. Each account lookup may
+return a newer signed Descriptor; local Runtime changes still require a
+separately signed immutable Pack rather than hot-installed modules. Automatic
+Shell updates, Runtime Pack download, migration/rollback, and update channels
+are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
@@ -98,8 +113,9 @@ npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
 The account-flow smoke starts a real Electron window against a temporary HTTPS
 directory and temporary Ed25519 key. It proves an account page with no password,
 signed Workspace selection, cloud launch, an explicit unknown-account state,
-zero fallback database creation, local-setup entry, and desktop layout at
-1280x820 and the supported 960x720 minimum.
+zero fallback database creation, local-setup entry, cross-restart removal of
+cloud Cookie/localStorage/cache, and desktop layout at 1280x820 and the
+supported 960x720 minimum.
 
 The local smoke uses temporary synthetic state. It proves explicit bootstrap,
 authentication, Profile/data/writer identity, Generic Owner preview/apply/

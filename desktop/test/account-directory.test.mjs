@@ -12,6 +12,8 @@ const {
   DIRECTORY_CONFIG_SCHEMA,
   DIRECTORY_REQUEST_SCHEMA,
   DIRECTORY_RESPONSE_SCHEMA,
+  MAX_DIRECTORY_RESPONSE_BYTES,
+  createAccountLookupGeneration,
   normalizeAccountId,
   resolveAccountWorkspaces,
   validateDirectoryConfig,
@@ -69,13 +71,13 @@ test("normalizes a bounded account identifier and rejects ambiguous input", () =
   }
 });
 
-test("isolates persistent cloud sessions by account and Workspace without exposing either", () => {
+test("isolates non-persistent cloud sessions by account and Workspace without exposing either", () => {
   const first = workspaceSessionPartition("synthetic-cloud", "first.account");
   const repeated = workspaceSessionPartition("synthetic-cloud", "FIRST.ACCOUNT");
   const second = workspaceSessionPartition("synthetic-cloud", "second.account");
   assert.equal(first, repeated);
   assert.notEqual(first, second);
-  assert.match(first, /^persist:workspace-[0-9a-f]{24}$/);
+  assert.match(first, /^workspace-[0-9a-f]{24}$/);
   assert.equal(first.includes("synthetic"), false);
   assert.equal(first.includes("account"), false);
 });
@@ -199,4 +201,115 @@ test("distinguishes a confirmed unknown account from directory failures", async 
     ...options,
     config: { schema_version: DIRECTORY_CONFIG_SCHEMA, resolve_url: null },
   }), /desktop_account_directory_not_configured/);
+});
+
+test("times out when response headers arrive but the body never completes", async () => {
+  const { options } = fixture();
+  let cancelled = false;
+  await assert.rejects(resolveAccountWorkspaces("slow.account", {
+    ...options,
+    config: {
+      schema_version: DIRECTORY_CONFIG_SCHEMA,
+      resolve_url: "https://accounts.example/v1/desktop/workspaces/resolve",
+    },
+    timeoutMs: 20,
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }), { status: 200 }),
+  }), /desktop_account_directory_timeout/);
+  assert.equal(cancelled, true);
+});
+
+test("aborts a streaming response immediately after the 64 KiB limit", async () => {
+  const { options } = fixture();
+  let pulls = 0;
+  let cancelled = false;
+  await assert.rejects(resolveAccountWorkspaces("large.account", {
+    ...options,
+    config: {
+      schema_version: DIRECTORY_CONFIG_SCHEMA,
+      resolve_url: "https://accounts.example/v1/desktop/workspaces/resolve",
+    },
+    fetchImpl: async () => new Response(new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(32 * 1024).fill(32));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }), { status: 200 }),
+  }), /desktop_account_directory_response_size_invalid/);
+  assert.equal(cancelled, true);
+  assert.ok(pulls <= 4, `stream_was_not_stopped:${pulls}`);
+});
+
+test("accepts a valid response immediately below the 64 KiB limit", async () => {
+  const { options } = fixture();
+  const compact = JSON.stringify({
+    schema_version: DIRECTORY_RESPONSE_SCHEMA,
+    workspaces: [],
+  });
+  const body = `${compact}${" ".repeat(MAX_DIRECTORY_RESPONSE_BYTES - compact.length - 1)}`;
+  assert.equal(Buffer.byteLength(body), MAX_DIRECTORY_RESPONSE_BYTES - 1);
+  const result = await resolveAccountWorkspaces("bounded.account", {
+    ...options,
+    config: {
+      schema_version: DIRECTORY_CONFIG_SCHEMA,
+      resolve_url: "https://accounts.example/v1/desktop/workspaces/resolve",
+    },
+    fetchImpl: async () => new Response(body, { status: 200 }),
+  });
+  assert.equal(result.status, "resolved");
+  assert.deepEqual(result.workspaces, []);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("only the last concurrent account lookup can replace the active profiles", async () => {
+  const generation = createAccountLookupGeneration();
+  let activeProfiles = new Map();
+  const slow = deferred();
+  const fast = deferred();
+  const lookup = async (pending) => {
+    const token = generation.begin();
+    const workspaces = await pending.promise;
+    const resolvedProfiles = new Map(workspaces.map((value) => [value, value]));
+    return generation.commit(token, () => { activeProfiles = resolvedProfiles; });
+  };
+  const first = lookup(slow);
+  const second = lookup(fast);
+  fast.resolve(["account-b"]);
+  assert.equal(await second, true);
+  slow.resolve(["account-a"]);
+  assert.equal(await first, false);
+  assert.deepEqual([...activeProfiles.keys()], ["account-b"]);
+});
+
+test("reset invalidates an in-flight lookup and keeps the initial account state", async () => {
+  const generation = createAccountLookupGeneration();
+  let activeProfiles = new Map([["previous", "previous"]]);
+  let state = "resolving";
+  const pending = deferred();
+  const token = generation.begin();
+  const lookup = pending.promise.then((workspaces) => generation.commit(token, () => {
+    activeProfiles = new Map(workspaces.map((value) => [value, value]));
+    state = "resolved";
+  }));
+  const resetToken = generation.invalidate();
+  activeProfiles = new Map();
+  generation.commit(resetToken, () => { state = "idle"; });
+  pending.resolve(["stale-account"]);
+  assert.equal(await lookup, false);
+  assert.equal(state, "idle");
+  assert.deepEqual([...activeProfiles], []);
 });

@@ -10,6 +10,7 @@ const { readFile, stat } = require("node:fs/promises");
 const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
 const {
+  createAccountLookupGeneration,
   resolveAccountWorkspaces,
   workspaceSessionPartition,
 } = require("./account-directory.cjs");
@@ -49,7 +50,8 @@ let workspaceView = null;
 let workspaceExpiryTimer = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
-const activeEnterpriseProfiles = new Map();
+let activeEnterpriseProfiles = new Map();
+const accountLookupGeneration = createAccountLookupGeneration();
 let shutdownInProgress = false;
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
@@ -620,7 +622,8 @@ async function lookupAccount(input) {
   ) {
     throw new Error("desktop_account_lookup_shape_invalid");
   }
-  activeEnterpriseProfiles.clear();
+  const generation = accountLookupGeneration.begin();
+  activeEnterpriseProfiles = new Map();
   publishState({
     mode: "none",
     status: "loading",
@@ -638,8 +641,9 @@ async function lookupAccount(input) {
       config,
       ...validationOptions,
     });
+    const resolvedProfiles = new Map();
     for (const workspace of result.workspaces) {
-      activeEnterpriseProfiles.set(workspace.profile.connectionId, {
+      resolvedProfiles.set(workspace.profile.connectionId, {
         envelope: workspace.envelope,
         partitionName: workspaceSessionPartition(
           workspace.profile.connectionId,
@@ -647,44 +651,53 @@ async function lookupAccount(input) {
         ),
       });
     }
-    publishState({
-      status: "idle",
-      error: "",
-      accountLookupStatus: result.status,
-      accountNotFound: result.status === "not_found",
-      enterpriseWorkspaces: result.workspaces.map((workspace) => workspace.summary),
+    accountLookupGeneration.commit(generation, () => {
+      activeEnterpriseProfiles = resolvedProfiles;
+      publishState({
+        status: "idle",
+        error: "",
+        accountLookupStatus: result.status,
+        accountNotFound: result.status === "not_found",
+        enterpriseWorkspaces: result.workspaces.map((workspace) => workspace.summary),
+      });
     });
   } catch (error) {
-    activeEnterpriseProfiles.clear();
-    publishState({
-      status: "error",
-      error: error instanceof Error ? error.message : "desktop_account_lookup_failed",
-      accountLookupStatus: "error",
-      accountNotFound: false,
-      enterpriseWorkspaces: [],
+    accountLookupGeneration.commit(generation, () => {
+      activeEnterpriseProfiles = new Map();
+      publishState({
+        status: "error",
+        error: error instanceof Error ? error.message : "desktop_account_lookup_failed",
+        accountLookupStatus: "error",
+        accountNotFound: false,
+        enterpriseWorkspaces: [],
+      });
     });
   }
   return workspaceState;
 }
 
 async function resetAccountLookup() {
+  const generation = accountLookupGeneration.invalidate();
+  const profilesToClear = activeEnterpriseProfiles;
+  activeEnterpriseProfiles = new Map();
   destroyWorkspaceView();
-  await Promise.all([...activeEnterpriseProfiles.values()].map(async (workspace) => {
+  await Promise.all([...profilesToClear.values()].map(async (workspace) => {
     const remoteSession = session.fromPartition(workspace.partitionName);
     await remoteSession.clearStorageData();
     await remoteSession.clearCache();
   }));
-  activeEnterpriseProfiles.clear();
-  publishState({
-    mode: "none",
-    status: "idle",
-    displayName: "",
-    profileId: "",
-    applicationOrigin: "",
-    error: "",
-    accountLookupStatus: "idle",
-    accountNotFound: false,
-    enterpriseWorkspaces: [],
+  accountLookupGeneration.commit(generation, () => {
+    publishState({
+      mode: "none",
+      status: "idle",
+      displayName: "",
+      profileId: "",
+      applicationOrigin: "",
+      error: "",
+      accountLookupStatus: "idle",
+      accountNotFound: false,
+      enterpriseWorkspaces: [],
+    });
   });
   return workspaceState;
 }

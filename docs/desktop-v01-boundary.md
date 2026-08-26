@@ -60,7 +60,9 @@ The first screen exposes two explicit routes:
 2. **Local BizHub** — authenticate locally, or explicitly initialize the first
    local instance when none exists.
 
-No global IAM or Workspace membership platform is required in v0.1.
+No global IAM or Workspace membership platform is required in v0.1. Account
+lookup is Workspace discovery only; it does not authenticate the account or
+grant access to the returned Runtime.
 
 The account directory returns signed connection envelopes containing an exact
 HTTPS origin, Profile ID, `runtime_mode=cloud`,
@@ -74,10 +76,17 @@ account-driven lookup, but deliberately does not add password authentication,
 refresh tokens, device sessions, organization management, invitations, SSO, or
 billing to the Shell.
 
-Cloud browser sessions are isolated by the hash of account identifier plus
-Workspace ID. Changing the account clears the active account's Workspace
-storage and cache; closing a Workspace without changing account may preserve
-that account's Runtime session.
+Cloud browser sessions are isolated in non-persistent partitions derived from
+the hash of account identifier plus Workspace ID. Changing the account clears
+the active temporary Workspace storage and cache. Closing a Workspace without
+changing account may preserve that session only inside the current Desktop
+process; quitting Desktop destroys it, so cloud login is required again after
+restart.
+
+The 10-second directory deadline covers fetch, streamed body receipt, JSON
+parse, and Workspace validation. Receipt stops immediately above 64 KiB. Only
+the latest main-process account lookup generation may atomically replace the
+active Workspace set, and reset invalidates every in-flight result.
 
 A confirmed directory `404` may expose the existing explicit Generic local
 setup action. A directory timeout, invalid response, missing platform key, or
@@ -87,13 +96,19 @@ confirmation.
 
 One installation owns at most one local company instance, one SQLite database,
 and one first administrator in v0.1. A username does not select or create a
-database.
+database. W1 allows every installation to explicitly create Generic Local even
+when an enterprise Workspace is available. Restricting Local for selected
+customers would require a future signed entitlement and cannot be inferred from
+an account string.
 
-The product does not assume a permanently fixed version. The Shell version,
-signed Workspace Descriptor expiry, cloud Runtime release, and platform-specific
-local Runtime Pack are independent identities. Account lookup refreshes signed
-Descriptors; Profile composition remains build-time and Runtime Pack changes
-remain immutable signed releases rather than per-module hot updates.
+The product does not assume a permanently fixed version. Its contract allows
+the Shell version, signed Workspace Descriptor expiry, cloud Runtime release,
+and platform-specific local Runtime Pack to carry independent identities.
+Account lookup refreshes signed Descriptors; Profile composition remains
+build-time and Runtime Pack changes remain immutable signed releases rather
+than per-module hot updates. Automatic Shell update, Runtime Pack download,
+cross-version migration/rollback, and update channels remain future Release
+work rather than W1 capability.
 
 ## Runtime and data authority
 
@@ -185,9 +200,11 @@ Each checkpoint requires separate authorization:
    [verification record](verification/desktop-d3-windows-x64-2026-08-26.md).
 5. **Desktop-W1:** current account-to-Workspace product-flow candidate. It
    proves account-only lookup, signed cloud authority, explicit cloud/local
-   selection, cloud launch, unknown-account zero-write, and entry to local setup
-   with synthetic evidence. It does not provision a production directory URL,
-   production trust key, or real account mapping and is not a release approval.
+   selection, cloud launch, bounded streaming directory receipt, last-lookup
+   state ownership, non-persistent cloud Sessions, unknown-account zero-write,
+   and entry to local setup with synthetic evidence. It does not provision a
+   production directory URL, production trust key, or real account mapping and
+   is not a release approval.
 6. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 

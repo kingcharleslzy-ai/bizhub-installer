@@ -12,6 +12,34 @@ function fail(code) {
   throw new Error(code);
 }
 
+function abortError() {
+  const error = new Error("desktop_account_directory_aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function createAccountLookupGeneration() {
+  let current = 0;
+  return Object.freeze({
+    begin() {
+      current += 1;
+      return current;
+    },
+    commit(generation, callback) {
+      if (generation !== current) return false;
+      callback();
+      return true;
+    },
+    invalidate() {
+      current += 1;
+      return current;
+    },
+    isCurrent(generation) {
+      return generation === current;
+    },
+  });
+}
+
 function exactKeys(value, expected, code) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(code);
   const actual = Object.keys(value).sort();
@@ -35,7 +63,7 @@ function workspaceSessionPartition(connectionId, accountId) {
     .update(`${connection}\0${account}`)
     .digest("hex")
     .slice(0, 24);
-  return `persist:workspace-${digest}`;
+  return `workspace-${digest}`;
 }
 
 function parseExactHttpsUrl(value, code) {
@@ -132,16 +160,57 @@ function validateDirectoryResponse(
   });
 }
 
-async function boundedJsonResponse(response) {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length < 2 || bytes.length > MAX_DIRECTORY_RESPONSE_BYTES) {
+async function readChunk(reader, signal) {
+  if (signal.aborted) throw abortError();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      void reader.cancel().catch(() => {});
+      reject(abortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    reader.read().then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
+}
+
+async function boundedJsonResponse(response, { controller, deadline }) {
+  const contentLength = response.headers.get("content-length");
+  if (
+    contentLength !== null
+    && /^\d+$/.test(contentLength)
+    && Number(contentLength) > MAX_DIRECTORY_RESPONSE_BYTES
+  ) {
+    controller.abort();
+    if (response.body) void response.body.cancel().catch(() => {});
     fail("desktop_account_directory_response_size_invalid");
   }
+  if (!response.body) fail("desktop_account_directory_response_size_invalid");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  while (true) {
+    const { done, value } = await readChunk(reader, controller.signal);
+    if (done) break;
+    received += value.byteLength;
+    if (received > MAX_DIRECTORY_RESPONSE_BYTES) {
+      controller.abort();
+      void reader.cancel().catch(() => {});
+      fail("desktop_account_directory_response_size_invalid");
+    }
+    chunks.push(Buffer.from(value));
+  }
+  if (received < 2) fail("desktop_account_directory_response_size_invalid");
+  if (Date.now() > deadline) fail("desktop_account_directory_timeout");
+  const bytes = Buffer.concat(chunks, received);
+  let parsed;
   try {
-    return JSON.parse(bytes.toString("utf8"));
+    parsed = JSON.parse(bytes.toString("utf8"));
   } catch {
     fail("desktop_account_directory_response_json_invalid");
   }
+  if (Date.now() > deadline) fail("desktop_account_directory_timeout");
+  return parsed;
 }
 
 async function resolveAccountWorkspaces(
@@ -159,10 +228,10 @@ async function resolveAccountWorkspaces(
   const { resolveUrl } = validateDirectoryConfig(config);
   if (!resolveUrl) fail("desktop_account_directory_not_configured");
   const controller = new AbortController();
+  const deadline = Date.now() + timeoutMs;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let response;
   try {
-    response = await fetchImpl(resolveUrl, {
+    const response = await fetchImpl(resolveUrl, {
       method: "POST",
       redirect: "error",
       signal: controller.signal,
@@ -175,22 +244,37 @@ async function resolveAccountWorkspaces(
         account_id: account,
       }),
     });
+    if (response.status === 404) {
+      if (response.body) await response.body.cancel();
+      return { accountId: account, status: "not_found", workspaces: [] };
+    }
+    if (!response.ok) {
+      if (response.body) await response.body.cancel();
+      fail(`desktop_account_directory_http_${response.status}`);
+    }
+    const body = await boundedJsonResponse(response, { controller, deadline });
+    const workspaces = validateDirectoryResponse(body, {
+      trustStore,
+      shellVersion,
+      now,
+    });
+    if (Date.now() > deadline) fail("desktop_account_directory_timeout");
+    return { accountId: account, status: "resolved", workspaces };
   } catch (error) {
-    if (error?.name === "AbortError") fail("desktop_account_directory_timeout");
+    if (
+      error instanceof Error
+      && /^(desktop_|profile_|trust_)/.test(error.message)
+      && error.name !== "AbortError"
+    ) {
+      throw error;
+    }
+    if (error?.name === "AbortError" || controller.signal.aborted) {
+      fail("desktop_account_directory_timeout");
+    }
     fail("desktop_account_directory_unreachable");
   } finally {
     clearTimeout(timer);
   }
-  if (response.status === 404) {
-    return { accountId: account, status: "not_found", workspaces: [] };
-  }
-  if (!response.ok) fail(`desktop_account_directory_http_${response.status}`);
-  const workspaces = validateDirectoryResponse(await boundedJsonResponse(response), {
-    trustStore,
-    shellVersion,
-    now,
-  });
-  return { accountId: account, status: "resolved", workspaces };
 }
 
 module.exports = {
@@ -199,6 +283,7 @@ module.exports = {
   DIRECTORY_RESPONSE_SCHEMA,
   MAX_ACCOUNT_WORKSPACES,
   MAX_DIRECTORY_RESPONSE_BYTES,
+  createAccountLookupGeneration,
   normalizeAccountId,
   resolveAccountWorkspaces,
   signerFingerprint,

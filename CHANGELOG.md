@@ -10,6 +10,13 @@
   require explicit local setup; directory and cloud failures create no SQLite
   fallback. Production directory, signing keys, real account mapping, merge,
   signing, and publication remain separately gated.
+- Bound account-directory receipt itself to one 10-second fetch/body/parse/
+  validation deadline and abort streaming bodies above 64 KiB; make only the
+  latest main-process lookup generation eligible to replace active Workspaces.
+  Use non-persistent cloud Session partitions and prove across a real Electron
+  restart that Cookie, localStorage, and cache do not survive. Account lookup
+  remains discovery rather than authentication, and Generic Local remains an
+  explicit option for every installation.
 - Merge the externally repaired Desktop-D2 Generic local Runtime baseline to
   public `main`, and begin the separately authorized Desktop-D3 Windows x64
   checkpoint with a platform-bound PyInstaller Runtime, Squirrel.Windows
