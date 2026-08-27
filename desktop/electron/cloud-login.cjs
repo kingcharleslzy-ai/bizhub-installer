@@ -23,6 +23,24 @@ function validateCloudLoginInput(input) {
   return input;
 }
 
+function sessionStorageScript(session) {
+  const encoded = Buffer.from(JSON.stringify(session), "utf8").toString("base64");
+  return `(() => {
+    const decode = (value) => new TextDecoder().decode(
+      Uint8Array.from(atob(value), (character) => character.charCodeAt(0)),
+    );
+    const session = JSON.parse(decode(${JSON.stringify(encoded)}));
+    localStorage.setItem("bizhub_access_profile", JSON.stringify({
+      version: session.accessProfileVersion,
+      roles: session.roles,
+      permissions: session.permissions,
+    }));
+    localStorage.setItem("token", session.token);
+    localStorage.setItem("bizhub_account_name", session.accountName);
+    return true;
+  })()`;
+}
+
 function cloudLoginScript(password) {
   if (typeof password !== "string" || !password || password.length > 1024) {
     fail("desktop_cloud_password_invalid");
@@ -54,19 +72,23 @@ function cloudLoginScript(password) {
       ) {
         return { ok: false, status: 502 };
       }
-      localStorage.setItem("bizhub_access_profile", JSON.stringify({
-        version: 1,
-        roles: payload.roles,
-        permissions: payload.permissions,
-      }));
-      localStorage.setItem("token", payload.token);
-      localStorage.setItem(
-        "bizhub_account_name",
-        typeof payload.account_name === "string" && payload.account_name.trim()
+      const session = {
+        accessProfileVersion: 1,
+        accountName: typeof payload.account_name === "string" && payload.account_name.trim()
           ? payload.account_name.trim()
           : "BizHub",
-      );
-      return { ok: true, status: response.status };
+        roles: payload.roles,
+        permissions: payload.permissions,
+        token: payload.token,
+      };
+      localStorage.setItem("bizhub_access_profile", JSON.stringify({
+        version: session.accessProfileVersion,
+        roles: session.roles,
+        permissions: session.permissions,
+      }));
+      localStorage.setItem("token", session.token);
+      localStorage.setItem("bizhub_account_name", session.accountName);
+      return { ok: true, status: response.status, session };
     }).catch(() => {
       password = "";
       return { ok: false, status: 0 };
@@ -83,11 +105,20 @@ function cloudLoginError(result) {
 }
 
 function cloudLogoutScript() {
-  return `fetch(new URL(${JSON.stringify(CLOUD_LOGOUT_PATH)}, window.location.origin), {
-    method: "POST",
-    redirect: "error",
-    credentials: "include",
-  }).then(() => true).catch(() => false)`;
+  return `(() => {
+    const token = localStorage.getItem("token") || "";
+    const headers = token ? { Authorization: \`Bearer \${token}\` } : {};
+    return fetch(new URL(${JSON.stringify(CLOUD_LOGOUT_PATH)}, window.location.origin), {
+      method: "POST",
+      redirect: "error",
+      credentials: "include",
+      headers,
+    }).then(() => true).catch(() => false).finally(() => {
+      localStorage.removeItem("bizhub_access_profile");
+      localStorage.removeItem("bizhub_account_name");
+      localStorage.removeItem("token");
+    });
+  })()`;
 }
 
 module.exports = {
@@ -96,5 +127,6 @@ module.exports = {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  sessionStorageScript,
   validateCloudLoginInput,
 };

@@ -20,12 +20,16 @@ authentication, permissions, UI, Owners, and formal data. A confirmed unknown
 account may be used to prefill the explicit Generic local setup form; a
 directory timeout, error, or missing configuration never triggers local setup.
 
-“记住账号和密码” is enabled by default for the private-project experience.
-Electron `safeStorage` encrypts both values through the host operating system
-(macOS Keychain or Windows DPAPI) before writing one bounded local credential
-file. No plaintext credential enters repository files or logs. On the next
-launch, Desktop obtains a fresh signed Descriptor and reauthenticates; “退出并忘记
-账号” deletes the saved ciphertext and clears the temporary Workspace Session.
+“保持登录” is enabled by default for the private-project experience. The cloud
+password is used once and discarded. Desktop keeps only the normalized account
+identifier and the Workspace Runtime's revocable, expiring JWT in one bounded
+`0600` application-data file; Windows relies on the current user's AppData ACL.
+This does not require macOS Keychain or Windows DPAPI. On the next launch,
+Desktop obtains a fresh signed Descriptor and seeds a new non-persistent
+Workspace Session from the still-valid token, without submitting the password
+again. “退出并清除保持登录” sends that bearer token to the cloud logout route for
+revocation, then removes the local token. Expired or malformed tokens are
+discarded and return the user to the account/password form.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
@@ -52,10 +56,11 @@ Cloud cookies, browser storage, and cache use a non-persistent Session partition
 derived from the account identifier hash plus Workspace ID. The raw account
 identifier is not used in the partition name. Closing a Workspace in the same
 application process may keep that temporary login, while quitting Desktop
-destroys it. If encrypted remembered credentials exist, the next launch performs
-a fresh directory lookup and cloud authentication automatically; otherwise the
-user sees the combined login form. Choosing “换一个账号” also clears the active
-temporary Session before returning to login.
+destroys it. If a remembered session token exists, the next launch performs a
+fresh directory lookup and opens the cloud application without another password
+request; otherwise the user sees the combined login form. Choosing “换一个账号”
+revokes and removes any remembered token and clears the active temporary Session
+before returning to login.
 
 The account directory is Workspace discovery, not unified authentication. Its
 10-second deadline covers response headers, streaming body receipt, JSON parse,
@@ -166,10 +171,11 @@ require every Runtime PE to be Authenticode `Valid`.
 The account-flow smoke starts a real Electron window against a temporary HTTPS
 directory and temporary Ed25519 key. It proves one account/password submission,
 zero password bytes in every directory request, password delivery only to the
-verified Workspace, direct authenticated launch, encrypted-at-rest remembered
-credentials, automatic login after restart, explicit forgetting, an explicit
-unknown-account state, zero fallback database creation, cross-restart removal
-of old cloud Cookie/localStorage/cache, and desktop layout at 1280x820 and the
+verified Workspace, direct authenticated launch, zero saved password bytes,
+token reuse without a second password request, automatic login after restart,
+revoking logout, an explicit unknown-account state, zero fallback database
+creation, cross-restart removal of old cloud Cookie/localStorage/cache, and
+desktop layout at 1280x820 and the
 supported 960x720 minimum.
 
 The local smoke uses temporary synthetic state. It proves explicit bootstrap,

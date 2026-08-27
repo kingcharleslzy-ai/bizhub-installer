@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -10,20 +10,38 @@ const {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  sessionStorageScript,
   validateCloudLoginInput,
 } = require("../electron/cloud-login.cjs");
 const {
-  clearRememberedLogin,
-  credentialFilePath,
-  loadRememberedLogin,
-  saveRememberedLogin,
+  clearRememberedSession,
+  legacyCredentialFilePath,
+  loadRememberedSession,
+  rememberedSessionFilePath,
+  saveRememberedSession,
+  tokenExpiresAt,
+  validateRememberedSession,
 } = require("../electron/credential-store.cjs");
 
-function fakeSafeStorage() {
+function jwtWithExpiry(expiresAtSeconds) {
+  return [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify({ exp: expiresAtSeconds, sub: "dashboard-operator" }))
+      .toString("base64url"),
+    "synthetic-signature",
+  ].join(".");
+}
+
+function rememberedFixture(expiresAtSeconds) {
   return {
-    isEncryptionAvailable: () => true,
-    encryptString: (value) => Buffer.from(`encrypted:${value}`, "utf8"),
-    decryptString: (value) => value.toString("utf8").replace(/^encrypted:/, ""),
+    accountId: "demo.user",
+    session: {
+      accessProfileVersion: 1,
+      accountName: "Demo",
+      permissions: ["dashboard.read"],
+      roles: ["admin"],
+      token: jwtWithExpiry(expiresAtSeconds),
+    },
   };
 }
 
@@ -49,53 +67,67 @@ test("cloud login accepts one exact account-password form and rejects extra fiel
   }), /desktop_cloud_login_shape_invalid/);
 });
 
-test("cloud login script sends the password only to the Workspace auth route", () => {
-  const script = cloudLoginScript("correct cloud password");
-  assert.ok(script.includes("/api/auth/login"));
-  assert.ok(script.includes("window.location.origin"));
-  assert.ok(script.includes("bizhub_access_profile"));
-  assert.ok(script.includes("localStorage.setItem(\"token\""));
-  assert.equal(script.includes("correct cloud password"), false);
-  assert.equal(script.includes("account-directory"), false);
+test("cloud scripts route the password once and resume only from a token", () => {
+  const loginScript = cloudLoginScript("correct cloud password");
+  assert.ok(loginScript.includes("/api/auth/login"));
+  assert.ok(loginScript.includes("window.location.origin"));
+  assert.ok(loginScript.includes("bizhub_access_profile"));
+  assert.ok(loginScript.includes("localStorage.setItem(\"token\""));
+  assert.equal(loginScript.includes("correct cloud password"), false);
+  assert.equal(loginScript.includes("account-directory"), false);
   assert.equal(cloudLoginError({ ok: true, status: 200 }), null);
   assert.equal(cloudLoginError({ ok: false, status: 401 }), "desktop_cloud_login_invalid");
   assert.equal(cloudLoginError({ ok: false, status: 429 }), "desktop_cloud_login_rate_limited");
-  assert.ok(cloudLogoutScript().includes("/api/auth/logout"));
-  assert.ok(cloudLogoutScript().includes('method: "POST"'));
+
+  const fixture = rememberedFixture(Math.floor(Date.now() / 1000) + 3600);
+  const resumeScript = sessionStorageScript(fixture.session);
+  assert.ok(resumeScript.includes("localStorage.setItem(\"token\""));
+  assert.equal(resumeScript.includes("password"), false);
+  const logoutScript = cloudLogoutScript();
+  assert.ok(logoutScript.includes("/api/auth/logout"));
+  assert.ok(logoutScript.includes("Authorization"));
+  assert.ok(logoutScript.includes("localStorage.removeItem(\"token\")"));
 });
 
-test("remembered login is encrypted at rest and can be forgotten", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "bizhub-remembered-login-"));
-  const safeStorage = fakeSafeStorage();
+test("remembered session stores no password and can be forgotten", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "bizhub-remembered-session-"));
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  const remembered = rememberedFixture(expiresAt);
   try {
-    await saveRememberedLogin({
-      credential: { accountId: " Demo.User ", password: "correct cloud password" },
-      safeStorage,
-      userDataRoot: root,
-    });
-    const raw = await readFile(credentialFilePath(root), "utf8");
-    assert.equal(raw.includes("demo.user"), false);
+    await writeFile(legacyCredentialFilePath(root), "legacy-password-ciphertext\n");
+    await saveRememberedSession({ remembered, userDataRoot: root });
+    const raw = await readFile(rememberedSessionFilePath(root), "utf8");
+    assert.ok(raw.includes("demo.user"));
+    assert.ok(raw.includes(remembered.session.token));
     assert.equal(raw.includes("correct cloud password"), false);
-    assert.deepEqual(await loadRememberedLogin({ safeStorage, userDataRoot: root }), {
-      accountId: "demo.user",
-      password: "correct cloud password",
-    });
-    await clearRememberedLogin({ userDataRoot: root });
-    await assert.rejects(stat(credentialFilePath(root)), { code: "ENOENT" });
+    assert.deepEqual(await loadRememberedSession({ userDataRoot: root }), remembered);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(rememberedSessionFilePath(root))).mode & 0o777, 0o600);
+    }
+    await assert.rejects(stat(legacyCredentialFilePath(root)), { code: "ENOENT" });
+    await clearRememberedSession({ userDataRoot: root });
+    await assert.rejects(stat(rememberedSessionFilePath(root)), { code: "ENOENT" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("remembering fails closed when OS encryption is unavailable", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "bizhub-remembered-login-unavailable-"));
-  try {
-    await assert.rejects(saveRememberedLogin({
-      credential: { accountId: "demo.user", password: "correct cloud password" },
-      safeStorage: { isEncryptionAvailable: () => false },
-      userDataRoot: root,
-    }), /desktop_secure_storage_unavailable/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test("expired or malformed remembered tokens fail closed", () => {
+  const now = Date.now();
+  const active = rememberedFixture(Math.floor(now / 1000) + 3600);
+  assert.equal(tokenExpiresAt(active.session.token), (Math.floor(now / 1000) + 3600) * 1000);
+  assert.deepEqual(validateRememberedSession(active, { now }), active);
+
+  const expired = rememberedFixture(Math.floor(now / 1000) - 1);
+  assert.throws(
+    () => validateRememberedSession(expired, { now }),
+    /desktop_remembered_session_expired/,
+  );
+  assert.throws(
+    () => validateRememberedSession({
+      ...active,
+      session: { ...active.session, token: "not-a-jwt" },
+    }, { now }),
+    /desktop_remembered_session_invalid/,
+  );
 });

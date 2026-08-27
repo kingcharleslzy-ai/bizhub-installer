@@ -82,9 +82,11 @@ const errorLabel = computed(() => {
     desktop_cloud_login_rate_limited: "登录尝试过多，请稍后再试。",
     desktop_cloud_login_unavailable: "企业云端认证暂不可用，请稍后重试。",
     desktop_cloud_login_failed: "无法完成云端登录，请检查网络后重试。",
-    desktop_secure_storage_unavailable: "本机系统加密存储暂不可用；请取消“记住账号和密码”后登录。",
-    desktop_remembered_login_file_invalid: "本机保存的登录信息已损坏，请重新输入。",
-    desktop_remembered_login_decrypt_failed: "本机保存的登录信息无法解密，请重新输入。",
+    desktop_remembered_session_expired: "保持登录已到期，请重新输入密码。",
+    desktop_remembered_session_invalid: "本机登录令牌无效，请重新输入密码。",
+    desktop_remembered_session_file_invalid: "本机登录状态已损坏，请重新输入密码。",
+    desktop_remembered_session_save_failed: "已经登录，但本机无法保存登录状态；下次需重新输入密码。",
+    desktop_remembered_session_clear_failed: "已经登录，但旧的本机登录状态未能清理。",
     desktop_workspace_connection_failed: "企业工作区无法使用。",
     desktop_workspace_selection_shape_invalid: "企业工作区选择无效。",
     desktop_workspace_not_resolved_for_account: "该工作区不属于本次账号查询，请重新查找账号。",
@@ -119,7 +121,7 @@ async function loginEnterprise() {
 async function changeAccount() {
   setupRequested.value = false;
   accountForm.password = "";
-  state.value = await window.bizhubDesktop.resetAccountLookup();
+  state.value = await window.bizhubDesktop.forgetRememberedLogin();
 }
 
 async function forgetRememberedLogin() {
@@ -199,7 +201,7 @@ onBeforeUnmount(() => unsubscribe());
           type="button"
           @click="forgetRememberedLogin"
         >
-          退出并忘记账号
+          退出并清除保持登录
         </button>
       </div>
     </header>
@@ -278,7 +280,7 @@ onBeforeUnmount(() => unsubscribe());
             <h1>{{ accountResolved && !state.enterpriseWorkspaces.length ? "没有可登录的企业工作区" : "登录 BizHub" }}</h1>
             <p>
               输入账号和密码后直接进入对应系统。账号目录只接收账号标识；
-              密码仅在签名工作区验证通过后交给对应云端。
+              密码只用于本次云端验证，保持登录仅保存可撤销令牌，不保存密码。
             </p>
           </div>
           <form
@@ -309,7 +311,7 @@ onBeforeUnmount(() => unsubscribe());
             </label>
             <label class="remember-login">
               <input v-model="accountForm.remember" type="checkbox">
-              <span>记住账号和密码，下次自动登录（使用系统加密存储）</span>
+              <span>保持登录，下次自动进入（不保存密码）</span>
             </label>
             <button class="primary-button" type="submit" :disabled="working">
               {{ working ? "正在登录…" : "登录并进入" }}
