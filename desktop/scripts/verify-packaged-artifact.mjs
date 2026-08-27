@@ -87,7 +87,9 @@ const allowedAsarEntry = (value) => (
   || value === "electron"
   || [
     "electron/account-directory.cjs",
+    "electron/cloud-login.cjs",
     "electron/connection-profile.cjs",
+    "electron/credential-store.cjs",
     "electron/local-lifecycle.cjs",
     "electron/local-runtime.cjs",
     "electron/main.cjs",
@@ -155,7 +157,9 @@ assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present"
 
 for (const sourceName of [
   "account-directory.cjs",
+  "cloud-login.cjs",
   "connection-profile.cjs",
+  "credential-store.cjs",
   "local-lifecycle.cjs",
   "local-runtime.cjs",
   "main.cjs",
