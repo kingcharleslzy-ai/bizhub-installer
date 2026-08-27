@@ -37,6 +37,9 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "accountLookupGeneration.invalidate()",
     "clearStorageData",
     "clearCache",
+    "safeStorage",
+    "cloudLoginScript",
+    "saveRememberedLogin",
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
@@ -113,6 +116,8 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   }
   for (const api of [
     "lookupAccount",
+    "loginEnterprise",
+    "forgetRememberedLogin",
     "resetAccountLookup",
     "connectEnterpriseWorkspace",
     "setupLocal",

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("bizhubDesktop", {
   lookupAccount: (accountId) => ipcRenderer.invoke("desktop:lookup-account", { accountId }),
+  loginEnterprise: (input) => ipcRenderer.invoke("desktop:login-enterprise", input),
+  forgetRememberedLogin: () => ipcRenderer.invoke("desktop:forget-remembered-login"),
   resetAccountLookup: () => ipcRenderer.invoke("desktop:reset-account-lookup"),
   connectEnterpriseWorkspace: (connectionId) => ipcRenderer.invoke(
     "desktop:connect-enterprise-workspace",

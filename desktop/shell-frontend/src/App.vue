@@ -15,9 +15,11 @@ const state = ref({
   accountLookupStatus: "idle",
   accountNotFound: false,
   enterpriseWorkspaces: [],
+  rememberedLoginAvailable: false,
+  autoLoginStatus: "idle",
 });
 const setupRequested = ref(false);
-const accountForm = reactive({ accountId: "" });
+const accountForm = reactive({ accountId: "", password: "", remember: true });
 const setupForm = reactive({ companyName: "", username: "admin", password: "" });
 const loginForm = reactive({ username: "admin", password: "" });
 let unsubscribe = () => {};
@@ -26,6 +28,7 @@ const connected = computed(() => state.value.status === "connected");
 const working = computed(() => (
   state.value.status === "loading"
   || state.value.accountLookupStatus === "resolving"
+  || ["resolving", "authenticating"].includes(state.value.autoLoginStatus)
   || ["starting", "initializing"].includes(state.value.localStatus)
 ));
 const localLogin = computed(() => (
@@ -34,12 +37,13 @@ const localLogin = computed(() => (
   && ["awaiting_login", "error"].includes(state.value.localStatus)
 ));
 const showSetup = computed(() => !state.value.localInitialized && setupRequested.value);
-const enterpriseWorkspaces = computed(() => state.value.enterpriseWorkspaces || []);
 const accountResolved = computed(() => (
   state.value.accountLookupStatus === "resolved"
   || state.value.accountLookupStatus === "not_found"
 ));
 const statusLabel = computed(() => {
+  if (state.value.autoLoginStatus === "resolving") return "正在自动查找工作区";
+  if (state.value.autoLoginStatus === "authenticating") return "正在自动登录云端";
   if (state.value.accountLookupStatus === "resolving") return "正在查找账号工作区";
   if (state.value.mode === "cloud" && state.value.status === "loading") return "正在连接云端";
   if (state.value.mode === "cloud" && connected.value) return "企业云端已连接";
@@ -71,6 +75,16 @@ const errorLabel = computed(() => {
     desktop_account_directory_response_shape_invalid: "账号目录响应结构无效。",
     desktop_account_directory_response_invalid: "账号目录响应版本或工作区数量无效。",
     desktop_account_workspace_duplicate: "账号目录返回了重复工作区。",
+    desktop_account_multiple_workspaces: "该账号对应多个工作区，当前简化登录暂不支持自动选择。",
+    desktop_cloud_login_shape_invalid: "登录请求格式无效。",
+    desktop_cloud_password_invalid: "请输入云端密码。",
+    desktop_cloud_login_invalid: "账号或云端密码不正确。",
+    desktop_cloud_login_rate_limited: "登录尝试过多，请稍后再试。",
+    desktop_cloud_login_unavailable: "企业云端认证暂不可用，请稍后重试。",
+    desktop_cloud_login_failed: "无法完成云端登录，请检查网络后重试。",
+    desktop_secure_storage_unavailable: "本机系统加密存储暂不可用；请取消“记住账号和密码”后登录。",
+    desktop_remembered_login_file_invalid: "本机保存的登录信息已损坏，请重新输入。",
+    desktop_remembered_login_decrypt_failed: "本机保存的登录信息无法解密，请重新输入。",
     desktop_workspace_connection_failed: "企业工作区无法使用。",
     desktop_workspace_selection_shape_invalid: "企业工作区选择无效。",
     desktop_workspace_not_resolved_for_account: "该工作区不属于本次账号查询，请重新查找账号。",
@@ -93,21 +107,25 @@ const errorLabel = computed(() => {
   return "操作未通过安全校验，请查看本机诊断日志。";
 });
 
-async function lookupAccount() {
-  state.value = await window.bizhubDesktop.lookupAccount(accountForm.accountId);
+async function loginEnterprise() {
+  state.value = await window.bizhubDesktop.loginEnterprise({ ...accountForm });
   if (accountForm.accountId.trim()) {
     setupForm.username = accountForm.accountId.trim().toLowerCase();
     loginForm.username = accountForm.accountId.trim().toLowerCase();
   }
+  accountForm.password = "";
 }
 
 async function changeAccount() {
   setupRequested.value = false;
+  accountForm.password = "";
   state.value = await window.bizhubDesktop.resetAccountLookup();
 }
 
-async function connectEnterprise(connectionId) {
-  state.value = await window.bizhubDesktop.connectEnterpriseWorkspace(connectionId);
+async function forgetRememberedLogin() {
+  accountForm.accountId = "";
+  accountForm.password = "";
+  state.value = await window.bizhubDesktop.forgetRememberedLogin();
 }
 
 async function beginLocal() {
@@ -174,6 +192,14 @@ onBeforeUnmount(() => unsubscribe());
         </button>
         <button v-if="state.mode !== 'none'" class="quiet-button" type="button" @click="closeCurrent">
           {{ state.mode === "local" ? "停止本地" : "关闭工作区" }}
+        </button>
+        <button
+          v-if="connected && state.mode === 'cloud' && state.rememberedLoginAvailable"
+          class="quiet-button"
+          type="button"
+          @click="forgetRememberedLogin"
+        >
+          退出并忘记账号
         </button>
       </div>
     </header>
@@ -249,17 +275,17 @@ onBeforeUnmount(() => unsubscribe());
         <section class="start-card">
           <div class="card-heading">
             <span class="step">BIZHUB WORKSPACES</span>
-            <h1>{{ accountResolved ? "选择工作区，然后登录" : "输入账号，查找工作区" }}</h1>
-            <p v-if="accountResolved">
-              企业密码只交给所选云端 Runtime；本地密码只交给这台电脑的 Generic Runtime。
-              云端失败不会猜测另一种模式，也不会创建数据库作为回退。
-            </p>
-            <p v-else>
-              这里只提交账号标识来查找可访问的工作区，不提交密码。
-              选择工作区后，密码才由对应的云端或本地 Runtime 验证。
+            <h1>{{ accountResolved && !state.enterpriseWorkspaces.length ? "没有可登录的企业工作区" : "登录 BizHub" }}</h1>
+            <p>
+              输入账号和密码后直接进入对应系统。账号目录只接收账号标识；
+              密码仅在签名工作区验证通过后交给对应云端。
             </p>
           </div>
-          <form v-if="!accountResolved" class="account-lookup" @submit.prevent="lookupAccount">
+          <form
+            v-if="!accountResolved || state.enterpriseWorkspaces.length || state.status === 'error'"
+            class="account-lookup login-account-form"
+            @submit.prevent="loginEnterprise"
+          >
             <label>
               BizHub 账号
               <input
@@ -270,32 +296,25 @@ onBeforeUnmount(() => unsubscribe());
                 required
               >
             </label>
-            <button class="primary-button" type="submit" :disabled="working">查找工作区</button>
-          </form>
-          <div v-else-if="enterpriseWorkspaces.length" class="workspace-list">
-            <article
-              v-for="workspace in enterpriseWorkspaces"
-              :key="workspace.connectionId"
-              class="workspace-option"
-            >
-              <div>
-                <span class="workspace-kind">企业云端</span>
-                <h2>{{ workspace.displayName }}</h2>
-                <p>
-                  {{ workspace.applicationOrigin }} · {{ workspace.profileId }} ·
-                  数据权威：{{ workspace.dataAuthorityMode }}
-                </p>
-              </div>
-              <button
-                class="primary-button compact-button"
-                type="button"
-                :disabled="working"
-                @click="connectEnterprise(workspace.connectionId)"
+            <label>
+              密码
+              <input
+                v-model="accountForm.password"
+                type="password"
+                autocomplete="current-password"
+                maxlength="1024"
+                placeholder="请输入云端密码"
+                required
               >
-                打开并登录
-              </button>
-            </article>
-          </div>
+            </label>
+            <label class="remember-login">
+              <input v-model="accountForm.remember" type="checkbox">
+              <span>记住账号和密码，下次自动登录（使用系统加密存储）</span>
+            </label>
+            <button class="primary-button" type="submit" :disabled="working">
+              {{ working ? "正在登录…" : "登录并进入" }}
+            </button>
+          </form>
           <div v-else class="empty-workspaces">
             <strong>{{ state.accountNotFound ? "没有找到企业云端工作区" : "该账号当前没有企业云端工作区" }}</strong>
             <span v-if="state.accountNotFound">

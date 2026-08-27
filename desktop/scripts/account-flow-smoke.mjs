@@ -111,14 +111,22 @@ async function clickButton(cdp, label) {
   })()`);
 }
 
-async function enterAccount(cdp, accountId) {
-  const encoded = JSON.stringify(accountId);
+async function enterCredentials(cdp, accountId, password, remember = false) {
+  const encodedAccount = JSON.stringify(accountId);
+  const encodedPassword = JSON.stringify(password);
+  const encodedRemember = JSON.stringify(remember);
   return evaluate(cdp, `(() => {
-    const input = document.querySelector('input[autocomplete="username"]');
-    if (!input) return false;
-    input.value = ${encoded};
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.form.requestSubmit();
+    const account = document.querySelector('input[autocomplete="username"]');
+    const password = document.querySelector('input[autocomplete="current-password"]');
+    const remember = document.querySelector('input[type="checkbox"]');
+    if (!account || !password || !remember) return false;
+    account.value = ${encodedAccount};
+    account.dispatchEvent(new Event("input", { bubbles: true }));
+    password.value = ${encodedPassword};
+    password.dispatchEvent(new Event("input", { bubbles: true }));
+    remember.checked = ${encodedRemember};
+    remember.dispatchEvent(new Event("change", { bubbles: true }));
+    account.form.requestSubmit();
     return true;
   })()`);
 }
@@ -134,6 +142,8 @@ let child = null;
 let cdp = null;
 let debugPort = null;
 const directoryRequests = [];
+const cloudLoginRequests = [];
+let cloudLogoutRequests = 0;
 const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
 let originalPackagedTrustStore = null;
@@ -295,7 +305,12 @@ try {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      response.end("<!doctype html><html><body><main>Workspace Login</main></body></html>");
+      response.end(`<!doctype html><html><body><main id="workspace-status">Workspace Login</main>
+        <script>
+          if (localStorage.getItem("token")) {
+            document.getElementById("workspace-status").textContent = "Workspace Ready";
+          }
+        </script></body></html>`);
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/cache-marker") {
@@ -305,6 +320,41 @@ try {
         "Cache-Control": "public, max-age=3600, immutable",
       });
       response.end(`cache-marker-${cacheMarkerRequests}`);
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/login") {
+      const chunks = [];
+      request.on("data", (chunk) => chunks.push(chunk));
+      request.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        cloudLoginRequests.push(body);
+        const parsed = JSON.parse(body);
+        if (parsed.password !== "correct-cloud-password") {
+          response.writeHead(401, { "Content-Type": "application/json" });
+          response.end(`${JSON.stringify({ detail: "密码错误" })}\n`);
+          return;
+        }
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "Set-Cookie": "bizhub_auth=synthetic-cookie; HttpOnly; Secure; SameSite=Lax; Path=/",
+        });
+        response.end(`${JSON.stringify({
+          token: "synthetic-cloud-token",
+          account_name: "Synthetic Operator",
+          roles: ["admin"],
+          permissions: ["dashboard.read"],
+          access_profile_version: 1,
+        })}\n`);
+      });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/logout") {
+      cloudLogoutRequests += 1;
+      response.writeHead(200, {
+        "Content-Type": "application/json",
+        "Set-Cookie": "bizhub_auth=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/",
+      });
+      response.end("{\"ok\":true}\n");
       return;
     }
     if (request.method !== "POST" || requestUrl.pathname !== "/v1/desktop/workspaces/resolve") {
@@ -348,34 +398,49 @@ try {
     const value = await evaluate(cdp, `({
       text: document.body.innerText,
       passwords: document.querySelectorAll('input[type="password"]').length,
+      remember: document.querySelectorAll('input[type="checkbox"]').length,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
     })`);
-    return value.text.includes("输入账号，查找工作区") ? value : null;
+    return value.text.includes("登录 BizHub") ? value : null;
   }, "desktop_account_flow_initial_ui_missing");
-  if (initial.passwords !== 0 || initial.overflow > 2) fail("desktop_account_flow_initial_boundary_invalid");
-  if (!await enterAccount(cdp, "Charles.Example")) fail("desktop_account_flow_input_missing");
-  const resolved = await waitFor(async () => {
-    const value = await evaluate(cdp, `({
-      text: document.body.innerText,
-      passwords: document.querySelectorAll('input[type="password"]').length,
-      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
-    })`);
-    return value.text.includes("Synthetic Enterprise") ? value : null;
-  }, "desktop_account_flow_workspace_missing");
-  if (
-    resolved.passwords !== 0
-    || resolved.overflow > 2
-    || !resolved.text.includes("打开并登录")
-    || !resolved.text.includes("GENERIC LOCAL")
-  ) {
-    fail("desktop_account_flow_workspace_ui_invalid");
+  if (initial.passwords !== 1 || initial.remember !== 1 || initial.overflow > 2) {
+    fail("desktop_account_flow_initial_boundary_invalid");
   }
-  if (directoryRequests.length !== 1 || directoryRequests[0].includes("password")) {
-    fail("desktop_account_flow_directory_credential_leak");
+  if (!initial.text.includes("GENERIC LOCAL")) fail("desktop_account_flow_generic_local_missing");
+  if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
+    fail("desktop_account_flow_credentials_input_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "cloud" && value.status === "connected" ? value : null;
+  }, "desktop_account_flow_cloud_not_connected", 45_000);
+  if (
+    directoryRequests.length !== 1
+    || directoryRequests[0].includes("password")
+    || cloudLoginRequests.length !== 1
+    || JSON.parse(cloudLoginRequests[0]).password !== "correct-cloud-password"
+  ) {
+    fail("desktop_account_flow_credential_routing_invalid");
   }
   const firstDescriptorExpiresAt = issuedWorkspaceExpiries[0];
   if (!Number.isSafeInteger(firstDescriptorExpiresAt)) {
     fail("desktop_account_flow_descriptor_expiry_missing");
+  }
+  {
+    const workspaceCdp = await workspaceCdpClient();
+    const state = await evaluate(workspaceCdp, `({
+      text: document.body.innerText,
+      token: localStorage.getItem("token"),
+      profile: localStorage.getItem("bizhub_access_profile")
+    })`);
+    workspaceCdp.close();
+    if (
+      !state.text.includes("Workspace Ready")
+      || state.token !== "synthetic-cloud-token"
+      || !state.profile?.includes("dashboard.read")
+    ) {
+      fail("desktop_account_flow_direct_login_not_ready");
+    }
   }
 
   await cdp.send("Emulation.setDeviceMetricsOverride", {
@@ -391,39 +456,11 @@ try {
   if (compactOverflow > 2) fail("desktop_account_flow_compact_overflow");
   await cdp.send("Emulation.clearDeviceMetricsOverride");
 
-  if (!await clickButton(cdp, "打开并登录")) fail("desktop_account_flow_cloud_button_missing");
-  await waitFor(async () => {
-    const text = await evaluate(cdp, "document.body.innerText");
-    return text.includes("企业云端已连接");
-  }, "desktop_account_flow_cloud_not_connected", 45_000);
-  {
-    const workspaceCdp = await workspaceCdpClient();
-    const firstSession = await evaluate(workspaceCdp, `(async () => {
-      document.cookie = "w1_session=account-a; Secure; SameSite=Lax";
-      localStorage.setItem("w1_session", "account-a");
-      return {
-        cookie: document.cookie,
-        storage: localStorage.getItem("w1_session"),
-        cache: await fetch("/cache-marker").then((response) => response.text()),
-      };
-    })()`);
-    workspaceCdp.close();
-    if (
-      !firstSession.cookie.includes("w1_session=account-a")
-      || firstSession.storage !== "account-a"
-      || firstSession.cache !== "cache-marker-1"
-    ) {
-      fail("desktop_account_flow_first_session_marker_missing");
-    }
-  }
   await new Promise((resolve) => setTimeout(
     resolve,
     Math.max(0, firstDescriptorExpiresAt + 750 - Date.now()),
   ));
-  const connectedAfterDescriptorExpiry = await evaluate(
-    cdp,
-    "window.bizhubDesktop.getState()",
-  );
+  const connectedAfterDescriptorExpiry = await evaluate(cdp, "window.bizhubDesktop.getState()");
   if (
     connectedAfterDescriptorExpiry.mode !== "cloud"
     || connectedAfterDescriptorExpiry.status !== "connected"
@@ -431,20 +468,11 @@ try {
   ) {
     fail("desktop_account_flow_connected_workspace_expired_with_descriptor");
   }
-  {
-    const workspaceCdp = await workspaceCdpClient();
-    const text = await evaluate(workspaceCdp, "document.body.innerText");
-    workspaceCdp.close();
-    if (!text.includes("Workspace Login")) {
-      fail("desktop_account_flow_connected_workspace_not_running_after_expiry");
-    }
-  }
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
-    "desktop_account_flow_selection_not_restored");
-  if (!await clickButton(cdp, "打开并登录")) {
-    fail("desktop_account_flow_expired_reconnect_button_missing");
-  }
+  await evaluate(
+    cdp,
+    'window.bizhubDesktop.connectEnterpriseWorkspace("synthetic-enterprise")',
+  );
   await waitFor(async () => {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     return value.error === "profile_expired" ? value : null;
@@ -453,47 +481,52 @@ try {
     fail("desktop_account_flow_expired_descriptor_reopened_workspace");
   }
   if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_change_account_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
-    "desktop_account_flow_lookup_not_reset");
-  if (!await enterAccount(cdp, "Charles.Example")) {
+  if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_fresh_descriptor_input_missing");
   }
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
-    "desktop_account_flow_fresh_descriptor_missing");
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "cloud" && value.status === "connected" ? value : null;
+  }, "desktop_account_flow_fresh_descriptor_not_connected", 45_000);
   if (
     issuedWorkspaceExpiries.length < 2
     || issuedWorkspaceExpiries[1] <= firstDescriptorExpiresAt
   ) {
     fail("desktop_account_flow_fresh_descriptor_not_issued");
   }
-  if (!await clickButton(cdp, "打开并登录")) {
-    fail("desktop_account_flow_fresh_descriptor_button_missing");
-  }
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
-    "desktop_account_flow_fresh_descriptor_not_connected", 45_000);
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
-    "desktop_account_flow_fresh_descriptor_selection_not_restored");
   if (!await clickButton(cdp, "换一个账号")) {
     fail("desktop_account_flow_fresh_descriptor_change_account_missing");
   }
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
-    "desktop_account_flow_fresh_descriptor_lookup_not_reset");
-  if (!await enterAccount(cdp, "known.empty")) fail("desktop_account_flow_empty_input_missing");
+
+  const cloudLoginsBeforeNoWorkspace = cloudLoginRequests.length;
+  if (!await enterCredentials(cdp, "known.empty", "not-sent", false)) {
+    fail("desktop_account_flow_empty_input_missing");
+  }
   const empty = await waitFor(async () => {
     const text = await evaluate(cdp, "document.body.innerText");
     return text.includes("该账号当前没有企业云端工作区") ? text : null;
   }, "desktop_account_flow_empty_state_missing");
-  if (!empty.includes("不会自动创建数据库")) fail("desktop_account_flow_empty_fallback_copy_missing");
+  if (
+    !empty.includes("不会自动创建数据库")
+    || cloudLoginRequests.length !== cloudLoginsBeforeNoWorkspace
+  ) {
+    fail("desktop_account_flow_empty_fallback_invalid");
+  }
   if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_empty_change_account_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
-    "desktop_account_flow_empty_lookup_not_reset");
-  if (!await enterAccount(cdp, "unknown.account")) fail("desktop_account_flow_unknown_input_missing");
+  if (!await enterCredentials(cdp, "unknown.account", "not-sent", false)) {
+    fail("desktop_account_flow_unknown_input_missing");
+  }
   const unknown = await waitFor(async () => {
     const text = await evaluate(cdp, "document.body.innerText");
     return text.includes("没有找到企业云端工作区") ? text : null;
   }, "desktop_account_flow_unknown_state_missing");
-  if (!unknown.includes("不会自动创建数据库")) fail("desktop_account_flow_unknown_fallback_copy_missing");
+  if (
+    !unknown.includes("不会自动创建数据库")
+    || cloudLoginRequests.length !== cloudLoginsBeforeNoWorkspace
+  ) {
+    fail("desktop_account_flow_unknown_fallback_invalid");
+  }
   try {
     await stat(path.join(userDataRoot, "local-instance"));
     fail("desktop_account_flow_unknown_created_local_instance");
@@ -512,53 +545,100 @@ try {
 
   await stopDesktopProcess();
   await launchDesktopProcess();
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
     "desktop_account_flow_restart_initial_ui_missing");
-  if (!await enterAccount(cdp, "second.account")) fail("desktop_account_flow_second_account_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
-    "desktop_account_flow_second_workspace_missing");
-  if (!await clickButton(cdp, "打开并登录")) fail("desktop_account_flow_second_cloud_button_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
-    "desktop_account_flow_second_cloud_not_connected", 45_000);
-  await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("换一个账号"),
-    "desktop_account_flow_second_selection_not_restored");
-  if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_second_change_account_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("输入账号，查找工作区"),
-    "desktop_account_flow_second_lookup_not_reset");
-  if (!await enterAccount(cdp, "Charles.Example")) fail("desktop_account_flow_restart_first_account_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("Synthetic Enterprise"),
-    "desktop_account_flow_restart_first_workspace_missing");
-  if (!await clickButton(cdp, "打开并登录")) fail("desktop_account_flow_restart_cloud_button_missing");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("企业云端已连接"),
-    "desktop_account_flow_restart_cloud_not_connected", 45_000);
+  if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", true)) {
+    fail("desktop_account_flow_remembered_login_input_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "cloud" && value.status === "connected" && value.rememberedLoginAvailable
+      ? value
+      : null;
+  }, "desktop_account_flow_remembered_login_not_connected", 45_000);
+  const rememberedLoginPath = path.join(userDataRoot, "remembered-login.v1.json");
+  const rememberedLoginBytes = await readFile(rememberedLoginPath, "utf8");
+  if (
+    rememberedLoginBytes.includes("Charles.Example")
+    || rememberedLoginBytes.includes("charles.example")
+    || rememberedLoginBytes.includes("correct-cloud-password")
+  ) {
+    fail("desktop_account_flow_remembered_login_plaintext");
+  }
+  {
+    const workspaceCdp = await workspaceCdpClient();
+    const beforeRestart = await evaluate(workspaceCdp, `(async () => {
+      document.cookie = "w1_session=remembered; Secure; SameSite=Lax";
+      localStorage.setItem("w1_session", "remembered");
+      return {
+        cookie: document.cookie,
+        storage: localStorage.getItem("w1_session"),
+        cache: await fetch("/cache-marker").then((response) => response.text()),
+      };
+    })()`);
+    workspaceCdp.close();
+    if (!beforeRestart.cookie.includes("w1_session=remembered") || beforeRestart.storage !== "remembered") {
+      fail("desktop_account_flow_restart_marker_missing");
+    }
+  }
+  const cacheRequestsBeforeRestart = cacheMarkerRequests;
+  const directoryRequestsBeforeAutoLogin = directoryRequests.length;
+  const cloudLoginRequestsBeforeAutoLogin = cloudLoginRequests.length;
+  await stopDesktopProcess();
+  await launchDesktopProcess();
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "cloud" && value.status === "connected" && value.autoLoginStatus === "connected"
+      ? value
+      : null;
+  }, "desktop_account_flow_auto_login_not_connected", 45_000);
+  if (
+    directoryRequests.length !== directoryRequestsBeforeAutoLogin + 1
+    || cloudLoginRequests.length !== cloudLoginRequestsBeforeAutoLogin + 1
+  ) {
+    fail("desktop_account_flow_auto_login_requests_missing");
+  }
   {
     const workspaceCdp = await workspaceCdpClient();
     const restartedSession = await evaluate(workspaceCdp, `(async () => ({
       cookie: document.cookie,
       storage: localStorage.getItem("w1_session"),
+      token: localStorage.getItem("token"),
       cache: await fetch("/cache-marker").then((response) => response.text()),
     }))()`);
     workspaceCdp.close();
     if (
-      restartedSession.cookie.includes("w1_session=account-a")
+      restartedSession.cookie.includes("w1_session=remembered")
       || restartedSession.storage !== null
-      || restartedSession.cache !== "cache-marker-2"
+      || restartedSession.token !== "synthetic-cloud-token"
+      || cacheMarkerRequests !== cacheRequestsBeforeRestart + 1
     ) {
-      fail("desktop_account_flow_cross_restart_session_not_cleared");
+      fail("desktop_account_flow_cross_restart_auto_login_invalid");
     }
   }
   if (directoryRequests.some((body) => body.includes("password"))) {
     fail("desktop_account_flow_directory_credential_leak_after_restart");
   }
+  await evaluate(cdp, "window.bizhubDesktop.forgetRememberedLogin()");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    "desktop_account_flow_forget_not_returned");
+  try {
+    await stat(rememberedLoginPath);
+    fail("desktop_account_flow_forget_did_not_remove_credentials");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (cloudLogoutRequests !== 1) fail("desktop_account_flow_cloud_logout_missing");
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
     shell_route: "bizhub-shell://app/",
-    account_screen_password_fields: 0,
+    account_screen_password_fields: 1,
+    unified_account_password_submit: true,
     account_directory_requests: directoryRequests.length,
     account_directory_passwords: 0,
     signed_cloud_workspaces: 1,
+    cloud_password_logins: cloudLoginRequests.length,
     cloud_workspace_connected: true,
     descriptor_ttl_ms: descriptorTtlMs,
     connected_workspace_survived_descriptor_expiry: true,
@@ -567,6 +647,10 @@ try {
     known_account_without_workspace_local_instances_created: 0,
     unknown_account_local_instances_created: 0,
     local_setup_form_reached: true,
+    remembered_login_plaintext_fields: 0,
+    remembered_login_auto_connected: true,
+    forget_removes_credentials: true,
+    forget_revokes_cloud_session: true,
     cross_restart_cookie_storage_cache_cleared: true,
     cloud_session_persistent: false,
     packaged: Boolean(packagedExecutable),
