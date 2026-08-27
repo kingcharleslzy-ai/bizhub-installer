@@ -22,24 +22,22 @@ function option(name) {
 const packagedExecutable = option("--packaged-executable");
 const packagedTrustStore = option("--packaged-trust-store");
 const packagedAccountDirectory = option("--packaged-account-directory");
-const skipRememberedLogin = process.argv.includes("--skip-remembered-login");
 const packagedOptions = [packagedExecutable, packagedTrustStore, packagedAccountDirectory];
 if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
 }
-if (
-  skipRememberedLogin
-  && (
-    !packagedExecutable
-    || process.platform !== "darwin"
-    || process.env.BIZHUB_DESKTOP_RELEASE_MODE !== "synthetic-ci"
-  )
-) {
-  throw new Error("desktop_account_flow_skip_remembered_login_not_allowed");
-}
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}:${detail}` : code);
+}
+
+function jwtWithExpiry(expiresAtSeconds) {
+  return [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify({ exp: expiresAtSeconds, sub: "dashboard-operator" }))
+      .toString("base64url"),
+    "synthetic-signature",
+  ].join(".");
 }
 
 async function unusedPort() {
@@ -155,6 +153,8 @@ let debugPort = null;
 const directoryRequests = [];
 const cloudLoginRequests = [];
 let cloudLogoutRequests = 0;
+let cloudLogoutAuthorization = "";
+let syntheticSessionToken = "";
 const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
 let originalPackagedTrustStore = null;
@@ -238,6 +238,7 @@ try {
   ], { stdio: "ignore" });
   const directoryPort = await unusedPort();
   const now = Date.now();
+  syntheticSessionToken = jwtWithExpiry(Math.floor(now / 1000) + 3600);
   const workspaceOrigin = `https://127.0.0.1:${directoryPort}`;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const keyId = "desktop-account-smoke-key";
@@ -350,7 +351,7 @@ try {
           "Set-Cookie": "bizhub_auth=synthetic-cookie; HttpOnly; Secure; SameSite=Lax; Path=/",
         });
         response.end(`${JSON.stringify({
-          token: "synthetic-cloud-token",
+          token: syntheticSessionToken,
           account_name: "Synthetic Operator",
           roles: ["admin"],
           permissions: ["dashboard.read"],
@@ -361,6 +362,7 @@ try {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/auth/logout") {
       cloudLogoutRequests += 1;
+      cloudLogoutAuthorization = String(request.headers.authorization || "");
       response.writeHead(200, {
         "Content-Type": "application/json",
         "Set-Cookie": "bizhub_auth=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/",
@@ -447,7 +449,7 @@ try {
     workspaceCdp.close();
     if (
       !state.text.includes("Workspace Ready")
-      || state.token !== "synthetic-cloud-token"
+      || state.token !== syntheticSessionToken
       || !state.profile?.includes("dashboard.read")
     ) {
       fail("desktop_account_flow_direct_login_not_ready");
@@ -554,7 +556,7 @@ try {
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
-  if (!skipRememberedLogin) {
+  {
     await stopDesktopProcess();
     await launchDesktopProcess();
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
@@ -568,14 +570,14 @@ try {
         ? value
         : null;
     }, "desktop_account_flow_remembered_login_not_connected", 45_000);
-    const rememberedLoginPath = path.join(userDataRoot, "remembered-login.v1.json");
-    const rememberedLoginBytes = await readFile(rememberedLoginPath, "utf8");
+    const rememberedSessionPath = path.join(userDataRoot, "remembered-session.v1.json");
+    const rememberedSessionBytes = await readFile(rememberedSessionPath, "utf8");
     if (
-      rememberedLoginBytes.includes("Charles.Example")
-      || rememberedLoginBytes.includes("charles.example")
-      || rememberedLoginBytes.includes("correct-cloud-password")
+      !rememberedSessionBytes.includes("charles.example")
+      || !rememberedSessionBytes.includes(syntheticSessionToken)
+      || rememberedSessionBytes.includes("correct-cloud-password")
     ) {
-      fail("desktop_account_flow_remembered_login_plaintext");
+      fail("desktop_account_flow_remembered_session_invalid");
     }
     {
       const workspaceCdp = await workspaceCdpClient();
@@ -606,9 +608,9 @@ try {
     }, "desktop_account_flow_auto_login_not_connected", 45_000);
     if (
       directoryRequests.length !== directoryRequestsBeforeAutoLogin + 1
-      || cloudLoginRequests.length !== cloudLoginRequestsBeforeAutoLogin + 1
+      || cloudLoginRequests.length !== cloudLoginRequestsBeforeAutoLogin
     ) {
-      fail("desktop_account_flow_auto_login_requests_missing");
+      fail("desktop_account_flow_auto_login_did_not_reuse_token");
     }
     {
       const workspaceCdp = await workspaceCdpClient();
@@ -622,7 +624,7 @@ try {
       if (
         restartedSession.cookie.includes("w1_session=remembered")
         || restartedSession.storage !== null
-        || restartedSession.token !== "synthetic-cloud-token"
+        || restartedSession.token !== syntheticSessionToken
         || cacheMarkerRequests !== cacheRequestsBeforeRestart + 1
       ) {
         fail("desktop_account_flow_cross_restart_auto_login_invalid");
@@ -635,12 +637,17 @@ try {
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
       "desktop_account_flow_forget_not_returned");
     try {
-      await stat(rememberedLoginPath);
-      fail("desktop_account_flow_forget_did_not_remove_credentials");
+      await stat(rememberedSessionPath);
+      fail("desktop_account_flow_forget_did_not_remove_session");
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
-    if (cloudLogoutRequests !== 1) fail("desktop_account_flow_cloud_logout_missing");
+    if (
+      cloudLogoutRequests !== 1
+      || cloudLogoutAuthorization !== `Bearer ${syntheticSessionToken}`
+    ) {
+      fail("desktop_account_flow_cloud_logout_missing");
+    }
   }
 
   process.stdout.write(`${JSON.stringify({
@@ -660,12 +667,14 @@ try {
     known_account_without_workspace_local_instances_created: 0,
     unknown_account_local_instances_created: 0,
     local_setup_form_reached: true,
-    remembered_login_plaintext_fields: skipRememberedLogin ? null : 0,
-    remembered_login_auto_connected: skipRememberedLogin ? null : true,
-    forget_removes_credentials: skipRememberedLogin ? null : true,
-    forget_revokes_cloud_session: skipRememberedLogin ? null : true,
-    cross_restart_cookie_storage_cache_cleared: skipRememberedLogin ? null : true,
-    remembered_login_test_skipped: skipRememberedLogin,
+    remembered_password_fields: 0,
+    remembered_session_token_saved: true,
+    remembered_session_auto_connected: true,
+    auto_login_reused_token_without_password: true,
+    forget_removes_session: true,
+    forget_revokes_cloud_session: true,
+    cross_restart_cookie_storage_cache_cleared: true,
+    remembered_login_test_skipped: false,
     cloud_session_persistent: false,
     packaged: Boolean(packagedExecutable),
     viewports: ["1280x820", "960x720"],

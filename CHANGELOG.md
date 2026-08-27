@@ -5,11 +5,13 @@
 - Replace the two-step cloud entry with one account/password form. The directory
   still receives only the account identifier; after validating exactly one
   signed Workspace, Desktop sends the password only to that same-origin BizHub
-  authentication route and opens the authenticated application directly. Add
-  optional OS-encrypted remembered credentials, fresh automatic reauthentication
-  on restart, and an explicit “退出并忘记账号” action. Generic Local, SQLite,
-  migrations, Owner, writer, account mapping, and cloud password rules are
-  unchanged.
+  authentication route and opens the authenticated application directly. “保持
+  登录” stores only the server-issued, revocable, time-bounded session token in
+  the current OS user's application-data directory; it never stores the cloud
+  password and does not depend on Keychain or DPAPI. Restart obtains a fresh
+  signed Descriptor and reuses the token without another password request;
+  explicit logout revokes and removes it. Generic Local, SQLite, migrations,
+  Owner, writer, account mapping, and cloud password rules are unchanged.
 - Split Desktop-R1 into secret-free synthetic CI, a protected production
   signing-candidate workflow, and a separately protected exact-Artifact publish
   workflow. The candidate ends with a deterministic release-plan SHA for Owner

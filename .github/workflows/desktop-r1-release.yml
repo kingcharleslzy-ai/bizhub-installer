@@ -86,9 +86,7 @@ jobs:
           resources="$app/Contents/Resources"
           npm run verify:artifact -- "$product" --expected-runtime-trust runtime-dist/generic-runtime-trust.json
           node scripts/verify-macos-release.mjs --app "$app" --expected-runtime-trust runtime-dist/generic-runtime-trust.json --mode synthetic-ci
-          # The full remembered-login roundtrip already runs in Desktop Workspace Flow.
-          # Avoid a headless Keychain prompt after synthetic ad-hoc signing here.
-          node scripts/account-flow-smoke.mjs --skip-remembered-login --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/account-flow-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
           node scripts/local-shell-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-resources "$resources"
           node scripts/make-macos-release-containers.mjs
           node scripts/verify-macos-release-containers.mjs

@@ -37,9 +37,10 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "accountLookupGeneration.invalidate()",
     "clearStorageData",
     "clearCache",
-    "safeStorage",
     "cloudLoginScript",
-    "saveRememberedLogin",
+    "sessionStorageScript",
+    "saveRememberedSession",
+    "clearRememberedSession",
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
@@ -53,6 +54,7 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "sql.js",
     "0.0.0.0",
     "persist:workspace-",
+    "safeStorage",
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }

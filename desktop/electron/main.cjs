@@ -3,7 +3,6 @@ const {
   BrowserWindow,
   ipcMain,
   protocol,
-  safeStorage,
   session,
   WebContentsView,
 } = require("electron");
@@ -20,12 +19,13 @@ const {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  sessionStorageScript,
   validateCloudLoginInput,
 } = require("./cloud-login.cjs");
 const {
-  clearRememberedLogin,
-  loadRememberedLogin,
-  saveRememberedLogin,
+  clearRememberedSession,
+  loadRememberedSession,
+  saveRememberedSession,
 } = require("./credential-store.cjs");
 const {
   localRequestAllowed,
@@ -400,12 +400,13 @@ async function loadConnectionProfile(filePath) {
 async function openWorkspace(
   profile,
   partitionName = workspaceSessionPartition(profile.connectionId, "standalone.profile"),
-  { password = null } = {},
+  { password = null, rememberedSession = null } = {},
 ) {
   destroyWorkspaceView();
   const remoteSession = session.fromPartition(partitionName);
   configureRemoteSession(remoteSession, profile.allowedOrigins);
-  let authenticationPending = typeof password === "string";
+  let authenticationPending = typeof password === "string" || rememberedSession !== null;
+  let authenticatedSession = null;
   workspaceView = new WebContentsView({
     webPreferences: {
       allowRunningInsecureContent: false,
@@ -459,16 +460,26 @@ async function openWorkspace(
     error: "",
   });
   await workspaceView.webContents.loadURL(profile.applicationUrl);
-  if (authenticationPending) {
+  if (typeof password === "string") {
     const result = await workspaceView.webContents.executeJavaScript(
       cloudLoginScript(password),
       true,
     );
     const error = cloudLoginError(result);
     if (error) throw new Error(error);
+    authenticatedSession = result.session;
+    authenticationPending = false;
+    await workspaceView.webContents.loadURL(profile.applicationUrl);
+  } else if (rememberedSession !== null) {
+    const resumed = await workspaceView.webContents.executeJavaScript(
+      sessionStorageScript(rememberedSession),
+      true,
+    );
+    if (resumed !== true) throw new Error("desktop_remembered_session_invalid");
     authenticationPending = false;
     await workspaceView.webContents.loadURL(profile.applicationUrl);
   }
+  return authenticatedSession;
 }
 
 async function launchLocalRuntime() {
@@ -685,7 +696,7 @@ async function lookupAccount(input) {
   return workspaceState;
 }
 
-async function loginEnterprise(input, { automatic = false } = {}) {
+async function loginEnterprise(input) {
   let normalized;
   try {
     const validated = validateCloudLoginInput(input);
@@ -698,25 +709,19 @@ async function loginEnterprise(input, { automatic = false } = {}) {
     publishState({
       status: "error",
       error: error instanceof Error ? error.message : "desktop_cloud_login_shape_invalid",
-      autoLoginStatus: automatic ? "error" : workspaceState.autoLoginStatus,
+      autoLoginStatus: "idle",
     });
     return workspaceState;
   }
 
   await lookupAccount({ accountId: normalized.accountId });
-  if (workspaceState.accountLookupStatus !== "resolved") {
-    if (automatic) publishState({ autoLoginStatus: "error" });
-    return workspaceState;
-  }
-  if (activeEnterpriseProfiles.size === 0) {
-    if (automatic) publishState({ autoLoginStatus: "error" });
-    return workspaceState;
-  }
+  if (workspaceState.accountLookupStatus !== "resolved") return workspaceState;
+  if (activeEnterpriseProfiles.size === 0) return workspaceState;
   if (activeEnterpriseProfiles.size !== 1) {
     publishState({
       status: "error",
       error: "desktop_account_multiple_workspaces",
-      autoLoginStatus: automatic ? "error" : workspaceState.autoLoginStatus,
+      autoLoginStatus: "idle",
     });
     return workspaceState;
   }
@@ -726,73 +731,112 @@ async function loginEnterprise(input, { automatic = false } = {}) {
     const options = await connectionValidationOptions();
     const profile = validateConnectionEnvelope(workspace.envelope, options);
     await stopLocalMode();
-    publishState({ autoLoginStatus: automatic ? "authenticating" : "idle" });
-    await openWorkspace(profile, workspace.partitionName, { password: normalized.password });
+    publishState({ autoLoginStatus: "idle" });
+    const authenticatedSession = await openWorkspace(
+      profile,
+      workspace.partitionName,
+      { password: normalized.password },
+    );
+    let rememberError = "";
     if (normalized.remember) {
-      await saveRememberedLogin({
-        credential: {
-          accountId: normalized.accountId,
-          password: normalized.password,
-        },
-        safeStorage,
-        userDataRoot: desktopUserDataRoot(),
-      });
+      try {
+        await saveRememberedSession({
+          remembered: {
+            accountId: normalized.accountId,
+            session: authenticatedSession,
+          },
+          userDataRoot: desktopUserDataRoot(),
+        });
+      } catch {
+        rememberError = "desktop_remembered_session_save_failed";
+      }
     } else {
-      await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
+      try {
+        await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
+      } catch {
+        rememberError = "desktop_remembered_session_clear_failed";
+      }
     }
     publishState({
-      rememberedLoginAvailable: normalized.remember,
-      autoLoginStatus: automatic ? "connected" : "idle",
-      error: "",
+      rememberedLoginAvailable: normalized.remember && !rememberError,
+      autoLoginStatus: "idle",
+      error: rememberError,
     });
   } catch (error) {
     destroyWorkspaceView();
-    const code = error instanceof Error ? error.message : "desktop_cloud_login_failed";
-    if (automatic && code === "desktop_cloud_login_invalid") {
-      await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
-    }
     publishState({
       mode: "none",
       status: "error",
-      error: code,
-      rememberedLoginAvailable: automatic && code === "desktop_cloud_login_invalid"
-        ? false
-        : workspaceState.rememberedLoginAvailable,
-      autoLoginStatus: automatic ? "error" : "idle",
+      error: error instanceof Error ? error.message : "desktop_cloud_login_failed",
+      autoLoginStatus: "idle",
     });
   }
   return workspaceState;
 }
 
 async function tryRememberedLogin() {
-  let credential;
+  let remembered;
   try {
-    credential = await loadRememberedLogin({
-      safeStorage,
-      userDataRoot: desktopUserDataRoot(),
-    });
+    remembered = await loadRememberedSession({ userDataRoot: desktopUserDataRoot() });
   } catch (error) {
+    await clearRememberedSession({ userDataRoot: desktopUserDataRoot() }).catch(() => {});
     publishState({
       rememberedLoginAvailable: false,
       autoLoginStatus: "error",
-      error: error instanceof Error ? error.message : "desktop_remembered_login_invalid",
+      error: error instanceof Error ? error.message : "desktop_remembered_session_invalid",
     });
     return workspaceState;
   }
-  if (!credential) return workspaceState;
+  if (!remembered) return workspaceState;
   publishState({
     rememberedLoginAvailable: true,
     autoLoginStatus: "resolving",
     error: "",
   });
-  return loginEnterprise({ ...credential, remember: true }, { automatic: true });
+  await lookupAccount({ accountId: remembered.accountId });
+  if (
+    workspaceState.accountLookupStatus !== "resolved"
+    || activeEnterpriseProfiles.size !== 1
+  ) {
+    publishState({ autoLoginStatus: "error" });
+    return workspaceState;
+  }
+  try {
+    const workspace = [...activeEnterpriseProfiles.values()][0];
+    const options = await connectionValidationOptions();
+    const profile = validateConnectionEnvelope(workspace.envelope, options);
+    await stopLocalMode();
+    publishState({ autoLoginStatus: "authenticating" });
+    await openWorkspace(profile, workspace.partitionName, {
+      rememberedSession: remembered.session,
+    });
+    publishState({
+      rememberedLoginAvailable: true,
+      autoLoginStatus: "connected",
+      error: "",
+    });
+  } catch (error) {
+    destroyWorkspaceView();
+    const code = error instanceof Error ? error.message : "desktop_remembered_session_invalid";
+    if (code.startsWith("desktop_remembered_session_")) {
+      await clearRememberedSession({ userDataRoot: desktopUserDataRoot() }).catch(() => {});
+    }
+    publishState({
+      mode: "none",
+      status: "error",
+      error: code,
+      rememberedLoginAvailable: !code.startsWith("desktop_remembered_session_"),
+      autoLoginStatus: "error",
+    });
+  }
+  return workspaceState;
 }
 
 async function forgetRememberedLogin() {
   if (workspaceState.mode === "cloud" && workspaceView && !workspaceView.webContents.isDestroyed()) {
     await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
   }
-  await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
+  await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
   await resetAccountLookup();
   publishState({ rememberedLoginAvailable: false, autoLoginStatus: "idle" });
   return workspaceState;
