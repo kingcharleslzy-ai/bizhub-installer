@@ -184,9 +184,15 @@ async function stopDesktopProcess() {
 async function launchDesktopProcess() {
   debugPort = await unusedPort();
   const executable = packagedExecutable || require("electron");
+  const electronUserDataArgument = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
   const executableArguments = packagedExecutable
-    ? ["--ignore-certificate-errors", `--remote-debugging-port=${debugPort}`]
-    : ["--ignore-certificate-errors", `--remote-debugging-port=${debugPort}`, ROOT];
+    ? ["--ignore-certificate-errors", electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
+    : [
+      "--ignore-certificate-errors",
+      electronUserDataArgument,
+      `--remote-debugging-port=${debugPort}`,
+      ROOT,
+    ];
   child = spawn(executable, executableArguments, {
     cwd: ROOT,
     env: {
@@ -318,10 +324,21 @@ try {
         "Cache-Control": "no-store",
       });
       response.end(`<!doctype html><html><body><main id="workspace-status">Workspace Login</main>
+        <button id="workspace-logout" type="button">退出账号</button>
         <script>
           if (localStorage.getItem("token")) {
             document.getElementById("workspace-status").textContent = "Workspace Ready";
           }
+          document.getElementById("workspace-logout").addEventListener("click", () => {
+            localStorage.removeItem("bizhub_access_profile");
+            localStorage.removeItem("bizhub_account_name");
+            localStorage.removeItem("token");
+            void fetch("/api/auth/logout", {
+              method: "POST",
+              credentials: "include",
+              keepalive: true,
+            });
+          });
         </script></body></html>`);
       return;
     }
@@ -427,6 +444,13 @@ try {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     return value.mode === "cloud" && value.status === "connected" ? value : null;
   }, "desktop_account_flow_cloud_not_connected", 45_000);
+  const connectedShell = await evaluate(cdp, `({
+    shellBarVisible: document.querySelector(".shell-bar") !== null,
+    startPageVisible: document.querySelector(".start-page") !== null
+  })`);
+  if (connectedShell.shellBarVisible || connectedShell.startPageVisible) {
+    fail("desktop_account_flow_cloud_chrome_not_removed");
+  }
   if (
     directoryRequests.length !== 1
     || directoryRequests[0].includes("password")
@@ -633,9 +657,19 @@ try {
     if (directoryRequests.some((body) => body.includes("password"))) {
       fail("desktop_account_flow_directory_credential_leak_after_restart");
     }
-    await evaluate(cdp, "window.bizhubDesktop.forgetRememberedLogin()");
+    {
+      const workspaceCdp = await workspaceCdpClient();
+      const clicked = await evaluate(workspaceCdp, `(() => {
+        const button = document.getElementById("workspace-logout");
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`);
+      workspaceCdp.close();
+      if (!clicked) fail("desktop_account_flow_workspace_logout_control_missing");
+    }
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
-      "desktop_account_flow_forget_not_returned");
+      "desktop_account_flow_workspace_logout_not_returned");
     try {
       await stat(rememberedSessionPath);
       fail("desktop_account_flow_forget_did_not_remove_session");
@@ -644,7 +678,7 @@ try {
     }
     if (
       cloudLogoutRequests !== 1
-      || cloudLogoutAuthorization !== `Bearer ${syntheticSessionToken}`
+      || cloudLogoutAuthorization !== ""
     ) {
       fail("desktop_account_flow_cloud_logout_missing");
     }
@@ -673,6 +707,8 @@ try {
     auto_login_reused_token_without_password: true,
     forget_removes_session: true,
     forget_revokes_cloud_session: true,
+    cloud_workspace_hides_desktop_chrome: true,
+    workspace_logout_clears_desktop_session: true,
     cross_restart_cookie_storage_cache_cleared: true,
     remembered_login_test_skipped: false,
     cloud_session_persistent: false,
