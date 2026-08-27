@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   ipcMain,
   protocol,
+  safeStorage,
   session,
   WebContentsView,
 } = require("electron");
@@ -11,9 +12,21 @@ const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
 const {
   createAccountLookupGeneration,
+  normalizeAccountId,
   resolveAccountWorkspaces,
   workspaceSessionPartition,
 } = require("./account-directory.cjs");
+const {
+  cloudLoginError,
+  cloudLoginScript,
+  cloudLogoutScript,
+  validateCloudLoginInput,
+} = require("./cloud-login.cjs");
+const {
+  clearRememberedLogin,
+  loadRememberedLogin,
+  saveRememberedLogin,
+} = require("./credential-store.cjs");
 const {
   localRequestAllowed,
   normalizeLocalOrigin,
@@ -70,6 +83,8 @@ let workspaceState = {
   accountLookupStatus: "idle",
   accountNotFound: false,
   enterpriseWorkspaces: [],
+  rememberedLoginAvailable: false,
+  autoLoginStatus: "idle",
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -382,13 +397,15 @@ async function loadConnectionProfile(filePath) {
   });
 }
 
-async function openWorkspace(profile, partitionName = workspaceSessionPartition(
-  profile.connectionId,
-  "standalone.profile",
-)) {
+async function openWorkspace(
+  profile,
+  partitionName = workspaceSessionPartition(profile.connectionId, "standalone.profile"),
+  { password = null } = {},
+) {
   destroyWorkspaceView();
   const remoteSession = session.fromPartition(partitionName);
   configureRemoteSession(remoteSession, profile.allowedOrigins);
+  let authenticationPending = typeof password === "string";
   workspaceView = new WebContentsView({
     webPreferences: {
       allowRunningInsecureContent: false,
@@ -425,6 +442,7 @@ async function openWorkspace(profile, partitionName = workspaceSessionPartition(
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    if (authenticationPending) return;
     publishState({ status: "connected", error: "" });
     if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
       void finishSmoke({ status: "connected", origin: profile.allowedOrigins[0] }, 0);
@@ -441,6 +459,16 @@ async function openWorkspace(profile, partitionName = workspaceSessionPartition(
     error: "",
   });
   await workspaceView.webContents.loadURL(profile.applicationUrl);
+  if (authenticationPending) {
+    const result = await workspaceView.webContents.executeJavaScript(
+      cloudLoginScript(password),
+      true,
+    );
+    const error = cloudLoginError(result);
+    if (error) throw new Error(error);
+    authenticationPending = false;
+    await workspaceView.webContents.loadURL(profile.applicationUrl);
+  }
 }
 
 async function launchLocalRuntime() {
@@ -657,6 +685,119 @@ async function lookupAccount(input) {
   return workspaceState;
 }
 
+async function loginEnterprise(input, { automatic = false } = {}) {
+  let normalized;
+  try {
+    const validated = validateCloudLoginInput(input);
+    normalized = {
+      accountId: normalizeAccountId(validated.accountId),
+      password: validated.password,
+      remember: validated.remember,
+    };
+  } catch (error) {
+    publishState({
+      status: "error",
+      error: error instanceof Error ? error.message : "desktop_cloud_login_shape_invalid",
+      autoLoginStatus: automatic ? "error" : workspaceState.autoLoginStatus,
+    });
+    return workspaceState;
+  }
+
+  await lookupAccount({ accountId: normalized.accountId });
+  if (workspaceState.accountLookupStatus !== "resolved") {
+    if (automatic) publishState({ autoLoginStatus: "error" });
+    return workspaceState;
+  }
+  if (activeEnterpriseProfiles.size === 0) {
+    if (automatic) publishState({ autoLoginStatus: "error" });
+    return workspaceState;
+  }
+  if (activeEnterpriseProfiles.size !== 1) {
+    publishState({
+      status: "error",
+      error: "desktop_account_multiple_workspaces",
+      autoLoginStatus: automatic ? "error" : workspaceState.autoLoginStatus,
+    });
+    return workspaceState;
+  }
+
+  try {
+    const workspace = [...activeEnterpriseProfiles.values()][0];
+    const options = await connectionValidationOptions();
+    const profile = validateConnectionEnvelope(workspace.envelope, options);
+    await stopLocalMode();
+    publishState({ autoLoginStatus: automatic ? "authenticating" : "idle" });
+    await openWorkspace(profile, workspace.partitionName, { password: normalized.password });
+    if (normalized.remember) {
+      await saveRememberedLogin({
+        credential: {
+          accountId: normalized.accountId,
+          password: normalized.password,
+        },
+        safeStorage,
+        userDataRoot: desktopUserDataRoot(),
+      });
+    } else {
+      await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
+    }
+    publishState({
+      rememberedLoginAvailable: normalized.remember,
+      autoLoginStatus: automatic ? "connected" : "idle",
+      error: "",
+    });
+  } catch (error) {
+    destroyWorkspaceView();
+    const code = error instanceof Error ? error.message : "desktop_cloud_login_failed";
+    if (automatic && code === "desktop_cloud_login_invalid") {
+      await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
+    }
+    publishState({
+      mode: "none",
+      status: "error",
+      error: code,
+      rememberedLoginAvailable: automatic && code === "desktop_cloud_login_invalid"
+        ? false
+        : workspaceState.rememberedLoginAvailable,
+      autoLoginStatus: automatic ? "error" : "idle",
+    });
+  }
+  return workspaceState;
+}
+
+async function tryRememberedLogin() {
+  let credential;
+  try {
+    credential = await loadRememberedLogin({
+      safeStorage,
+      userDataRoot: desktopUserDataRoot(),
+    });
+  } catch (error) {
+    publishState({
+      rememberedLoginAvailable: false,
+      autoLoginStatus: "error",
+      error: error instanceof Error ? error.message : "desktop_remembered_login_invalid",
+    });
+    return workspaceState;
+  }
+  if (!credential) return workspaceState;
+  publishState({
+    rememberedLoginAvailable: true,
+    autoLoginStatus: "resolving",
+    error: "",
+  });
+  return loginEnterprise({ ...credential, remember: true }, { automatic: true });
+}
+
+async function forgetRememberedLogin() {
+  if (workspaceState.mode === "cloud" && workspaceView && !workspaceView.webContents.isDestroyed()) {
+    await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
+  }
+  await clearRememberedLogin({ userDataRoot: desktopUserDataRoot() });
+  await resetAccountLookup();
+  publishState({ rememberedLoginAvailable: false, autoLoginStatus: "idle" });
+  return workspaceState;
+}
+
 async function resetAccountLookup() {
   const generation = accountLookupGeneration.invalidate();
   const profilesToClear = activeEnterpriseProfiles;
@@ -753,6 +894,14 @@ function installIpcHandlers() {
   ipcMain.handle("desktop:lookup-account", async (event, input) => {
     requireTrustedShellSender(event);
     return lookupAccount(input);
+  });
+  ipcMain.handle("desktop:login-enterprise", async (event, input) => {
+    requireTrustedShellSender(event);
+    return loginEnterprise(input);
+  });
+  ipcMain.handle("desktop:forget-remembered-login", async (event) => {
+    requireTrustedShellSender(event);
+    return forgetRememberedLogin();
   });
   ipcMain.handle("desktop:reset-account-lookup", async (event) => {
     requireTrustedShellSender(event);
@@ -851,7 +1000,9 @@ async function createMainWindow() {
         error: error instanceof Error ? error.message : "desktop_smoke_failed",
       }, 1);
     }
+    return;
   }
+  await tryRememberedLogin();
 }
 
 if (squirrelStartupHandled) {

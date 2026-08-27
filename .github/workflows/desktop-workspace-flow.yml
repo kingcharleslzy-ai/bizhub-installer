@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - codex/desktop-unified-login-20260827
       - codex/desktop-workspace-login-20260826
       - codex/desktop-w2-account-directory-20260826
       - codex/desktop-w2-descriptor-ttl-20260826

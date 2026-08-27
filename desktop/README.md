@@ -5,17 +5,27 @@ plus the current account-to-Workspace product-flow candidate. One
 customer-neutral Electron shell exposes two explicit paths:
 
 ```text
-account identifier -> generic HTTPS directory -> signed cloud Workspace -> cloud login
+account + password -> account-only HTTPS directory -> signed cloud Workspace -> direct cloud login
 explicit local setup/login                         -> fixed Generic Runtime -> local SQLite
 ```
 
-The account-directory request contains only a normalized account identifier.
-It never contains a password. Each returned cloud Workspace is an independently
-signed, expiring connection envelope bound to `runtime_mode=cloud` and
-`data_authority_mode=cloud`. After the user selects it, that Workspace Runtime
-owns login, permissions, UI, Owners, and formal data. A confirmed unknown
+The Shell presents account and password in one form, but the account-directory
+request still contains only the normalized account identifier and never the
+password. After one signed Workspace is verified, the Shell submits the password
+only to that Workspace's same-origin BizHub authentication route and opens the
+authenticated application without a second login page. Each returned cloud
+Workspace is an independently signed, expiring connection envelope bound to
+`runtime_mode=cloud` and `data_authority_mode=cloud`. That Workspace Runtime owns
+authentication, permissions, UI, Owners, and formal data. A confirmed unknown
 account may be used to prefill the explicit Generic local setup form; a
 directory timeout, error, or missing configuration never triggers local setup.
+
+“记住账号和密码” is enabled by default for the private-project experience.
+Electron `safeStorage` encrypts both values through the host operating system
+(macOS Keychain or Windows DPAPI) before writing one bounded local credential
+file. No plaintext credential enters repository files or logs. On the next
+launch, Desktop obtains a fresh signed Descriptor and reauthenticates; “退出并忘记
+账号” deletes the saved ciphertext and clears the temporary Workspace Session.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
@@ -42,8 +52,10 @@ Cloud cookies, browser storage, and cache use a non-persistent Session partition
 derived from the account identifier hash plus Workspace ID. The raw account
 identifier is not used in the partition name. Closing a Workspace in the same
 application process may keep that temporary login, while quitting Desktop
-destroys it and requires cloud login again after restart. Choosing “换一个账号”
-also clears the active temporary Session before returning to account lookup.
+destroys it. If encrypted remembered credentials exist, the next launch performs
+a fresh directory lookup and cloud authentication automatically; otherwise the
+user sees the combined login form. Choosing “换一个账号” also clears the active
+temporary Session before returning to login.
 
 The account directory is Workspace discovery, not unified authentication. Its
 10-second deadline covers response headers, streaming body receipt, JSON parse,
@@ -152,10 +164,12 @@ bytes, then signs the Shell and Squirrel chain. Packaged and installed checks
 require every Runtime PE to be Authenticode `Valid`.
 
 The account-flow smoke starts a real Electron window against a temporary HTTPS
-directory and temporary Ed25519 key. It proves an account page with no password,
-signed Workspace selection, cloud launch, an explicit unknown-account state,
-zero fallback database creation, local-setup entry, cross-restart removal of
-cloud Cookie/localStorage/cache, and desktop layout at 1280x820 and the
+directory and temporary Ed25519 key. It proves one account/password submission,
+zero password bytes in every directory request, password delivery only to the
+verified Workspace, direct authenticated launch, encrypted-at-rest remembered
+credentials, automatic login after restart, explicit forgetting, an explicit
+unknown-account state, zero fallback database creation, cross-restart removal
+of old cloud Cookie/localStorage/cache, and desktop layout at 1280x820 and the
 supported 960x720 minimum.
 
 The local smoke uses temporary synthetic state. It proves explicit bootstrap,
@@ -183,9 +197,10 @@ Formal publication remains blocked until the project Owner separately provides
 an Apple Developer ID/Application notarization identity, a publicly trusted
 Windows Authenticode identity, and an owned customer-neutral account-directory
 domain on standard HTTPS 443. The current `nip.io:8443` W2 transport is
-intentionally rejected by production preflight. No current R1 code path changes
-the directory service, account mapping, cloud login, SQLite, migrations,
-Profile, Owner, writer, or production data.
+intentionally rejected by production preflight. The unified-login candidate
+changes only customer-neutral Shell orchestration and local encrypted credential
+storage; it does not change the directory service, account mapping, cloud
+password rule, SQLite, migrations, Profile, Owner, writer, or production data.
 
 Production signing and publication use distinct protected GitHub Environments,
 both with required review, self-review prohibited, and `main`-only deployment.

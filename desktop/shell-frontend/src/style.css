@@ -230,6 +230,31 @@ button {
   box-shadow: 0 0 0 3px rgb(79 141 183 / 14%);
 }
 
+.login-account-form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.login-account-form .remember-login {
+  grid-column: 1 / -1;
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 9px;
+  font-weight: 500;
+}
+
+.login-account-form .remember-login input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #1e6a9d;
+}
+
+.login-account-form .primary-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
 .workspace-list {
   display: grid;
   gap: 12px;
