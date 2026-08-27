@@ -163,3 +163,13 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   assert.ok(squirrelStartup.includes("--squirrel-install"));
   assert.ok(squirrelStartup.includes("--squirrel-uninstall"));
 });
+
+test("the shared Runtime frontend builder resolves npm correctly on Windows", async () => {
+  const builder = await readFile(
+    path.resolve(ROOT, "runtime", "build_local_runtime.py"),
+    "utf8",
+  );
+  assert.match(builder, /npm_name = "npm\.cmd" if os\.name == "nt" else "npm"/);
+  assert.match(builder, /npm = shutil\.which\(npm_name\)/);
+  assert.ok(!builder.includes('["npm", "run", "build"]'));
+});

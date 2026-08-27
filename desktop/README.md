@@ -97,7 +97,7 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`0d307f2bd18e0c7a02d9ac3f2a1c5a1f768476aa9a6ae6e31fd5f9e33fa85a70`) and
+`55d85fbf7a8be3ea2f04abfb79cbd3e59fe71d6314ffd524b1e399346662a95f`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
 `7948cdd1fac6bb330320bd3b08cee8b00630e4e47d300ce441626c670054fb27`).
 `make` verifies and extracts that exact archive before packaging; it never

@@ -66,15 +66,19 @@ def verify_common(root: Path, staging_common: Path) -> dict[str, Any]:
 
 def build_frontend(root: Path) -> Path:
     frontend = root / "app" / "frontend"
+    npm_name = "npm.cmd" if os.name == "nt" else "npm"
+    npm = shutil.which(npm_name)
+    if npm is None:
+        raise RuntimeError(f"desktop_frontend_npm_missing:{npm_name}")
     if not (frontend / "node_modules" / ".bin" / "vite").exists():
         completed = subprocess.run(
-            ["npm", "ci", "--ignore-scripts"],
+            [npm, "ci", "--ignore-scripts"],
             cwd=frontend,
             check=False,
         )
         if completed.returncode != 0:
             raise RuntimeError(f"desktop_frontend_install_failed:{completed.returncode}")
-    completed = subprocess.run(["npm", "run", "build"], cwd=frontend, check=False)
+    completed = subprocess.run([npm, "run", "build"], cwd=frontend, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"desktop_frontend_build_failed:{completed.returncode}")
     output = root / "app" / "runtime" / "bizhub" / "static"
