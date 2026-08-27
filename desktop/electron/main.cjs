@@ -19,6 +19,7 @@ const {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  isCloudLogoutRequest,
   sessionStorageScript,
   validateCloudLoginInput,
 } = require("./cloud-login.cjs");
@@ -65,6 +66,7 @@ const localSessionPolicies = new WeakMap();
 let activeEnterpriseProfiles = new Map();
 const accountLookupGeneration = createAccountLookupGeneration();
 let shutdownInProgress = false;
+let cloudLogoutCleanupPromise = null;
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
   stopRuntime: stopLocalRuntime,
@@ -201,11 +203,14 @@ function requireTrustedShellSender(event) {
 function setWorkspaceBounds() {
   if (!mainWindow || !workspaceView) return;
   const [width, height] = mainWindow.getContentSize();
+  const topInset = workspaceState.mode === "cloud" && workspaceState.status === "connected"
+    ? 0
+    : HEADER_HEIGHT;
   workspaceView.setBounds({
     x: 0,
-    y: HEADER_HEIGHT,
+    y: topInset,
     width: Math.max(0, width),
-    height: Math.max(0, height - HEADER_HEIGHT),
+    height: Math.max(0, height - topInset),
   });
 }
 
@@ -226,17 +231,42 @@ function allowedNavigation(url, allowedOrigins) {
   }
 }
 
+function handleCloudLogoutRequest(phase) {
+  if (phase === "started") {
+    if (workspaceView && !workspaceView.webContents.isDestroyed()) {
+      workspaceView.setVisible(false);
+    }
+    return;
+  }
+  void finalizeCloudLogout();
+}
+
 function configureRemoteSession(remoteSession, allowedOrigins) {
   const existingPolicy = remoteSessionPolicies.get(remoteSession);
   if (existingPolicy) {
     existingPolicy.allowedOrigins = allowedOrigins;
+    existingPolicy.onCloudLogout = handleCloudLogoutRequest;
     return;
   }
-  const policy = { allowedOrigins };
+  const policy = { allowedOrigins, onCloudLogout: handleCloudLogoutRequest };
   remoteSession.setPermissionCheckHandler(() => false);
   remoteSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   remoteSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: !remoteRequestAllowed(details.url, policy.allowedOrigins) });
+    const requestAllowed = remoteRequestAllowed(details.url, policy.allowedOrigins);
+    if (requestAllowed && isCloudLogoutRequest(details, policy.allowedOrigins)) {
+      policy.onCloudLogout("started");
+    }
+    callback({ cancel: !requestAllowed });
+  });
+  remoteSession.webRequest.onCompleted((details) => {
+    if (isCloudLogoutRequest(details, policy.allowedOrigins)) {
+      policy.onCloudLogout("finished");
+    }
+  });
+  remoteSession.webRequest.onErrorOccurred((details) => {
+    if (isCloudLogoutRequest(details, policy.allowedOrigins)) {
+      policy.onCloudLogout("finished");
+    }
   });
   remoteSession.on("will-download", (event) => {
     event.preventDefault();
@@ -419,6 +449,7 @@ async function openWorkspace(
       webSecurity: true,
     },
   });
+  workspaceView.setVisible(false);
   workspaceView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   workspaceView.webContents.on("will-navigate", (event, url) => {
     if (!allowedNavigation(url, profile.allowedOrigins)) event.preventDefault();
@@ -445,6 +476,8 @@ async function openWorkspace(
   workspaceView.webContents.on("did-finish-load", () => {
     if (authenticationPending) return;
     publishState({ status: "connected", error: "" });
+    setWorkspaceBounds();
+    workspaceView.setVisible(true);
     if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
       void finishSmoke({ status: "connected", origin: profile.allowedOrigins[0] }, 0);
     }
@@ -833,13 +866,30 @@ async function tryRememberedLogin() {
 }
 
 async function forgetRememberedLogin() {
-  if (workspaceState.mode === "cloud" && workspaceView && !workspaceView.webContents.isDestroyed()) {
-    await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
+  return finalizeCloudLogout({ revokeServerSession: true });
+}
+
+async function finalizeCloudLogout({ revokeServerSession = false } = {}) {
+  if (cloudLogoutCleanupPromise) return cloudLogoutCleanupPromise;
+  cloudLogoutCleanupPromise = (async () => {
+    if (
+      revokeServerSession
+      && workspaceState.mode === "cloud"
+      && workspaceView
+      && !workspaceView.webContents.isDestroyed()
+    ) {
+      await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
+    }
+    await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
+    await resetAccountLookup();
+    publishState({ rememberedLoginAvailable: false, autoLoginStatus: "idle" });
+    return workspaceState;
+  })();
+  try {
+    return await cloudLogoutCleanupPromise;
+  } finally {
+    cloudLogoutCleanupPromise = null;
   }
-  await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
-  await resetAccountLookup();
-  publishState({ rememberedLoginAvailable: false, autoLoginStatus: "idle" });
-  return workspaceState;
 }
 
 async function resetAccountLookup() {

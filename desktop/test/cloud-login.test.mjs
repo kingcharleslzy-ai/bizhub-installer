@@ -10,6 +10,7 @@ const {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  isCloudLogoutRequest,
   sessionStorageScript,
   validateCloudLoginInput,
 } = require("../electron/cloud-login.cjs");
@@ -87,6 +88,30 @@ test("cloud scripts route the password once and resume only from a token", () =>
   assert.ok(logoutScript.includes("/api/auth/logout"));
   assert.ok(logoutScript.includes("Authorization"));
   assert.ok(logoutScript.includes("localStorage.removeItem(\"token\")"));
+});
+
+test("only the formal POST logout endpoint in an allowed Workspace ends Desktop login", () => {
+  const allowedOrigins = ["https://workspace.example.com"];
+  assert.equal(isCloudLogoutRequest({
+    method: "POST",
+    url: "https://workspace.example.com/api/auth/logout",
+  }, allowedOrigins), true);
+  assert.equal(isCloudLogoutRequest({
+    method: "POST",
+    url: "https://workspace.example.com/api/auth/logout?source=desktop",
+  }, allowedOrigins), true);
+  assert.equal(isCloudLogoutRequest({
+    method: "GET",
+    url: "https://workspace.example.com/api/auth/logout",
+  }, allowedOrigins), false);
+  assert.equal(isCloudLogoutRequest({
+    method: "POST",
+    url: "https://workspace.example.com/api/auth/logout/other",
+  }, allowedOrigins), false);
+  assert.equal(isCloudLogoutRequest({
+    method: "POST",
+    url: "https://untrusted.example.com/api/auth/logout",
+  }, allowedOrigins), false);
 });
 
 test("remembered session stores no password and can be forgotten", async () => {

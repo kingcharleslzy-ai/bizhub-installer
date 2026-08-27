@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep the cloud WebContentsView hidden while Desktop performs the first
+  same-origin authentication, then reveal the authenticated Workspace at full
+  content height without a second Desktop title bar. The Workspace's existing
+  `/api/auth/logout` action now also clears Desktop's remembered token and
+  returns to the combined account/password form, so cloud users have one logout
+  control. Generic Local layout and every business-data boundary are unchanged.
 - Replace the two-step cloud entry with one account/password form. The directory
   still receives only the account identifier; after validating exactly one
   signed Workspace, Desktop sends the password only to that same-origin BizHub

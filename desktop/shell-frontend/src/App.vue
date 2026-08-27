@@ -25,6 +25,7 @@ const loginForm = reactive({ username: "admin", password: "" });
 let unsubscribe = () => {};
 
 const connected = computed(() => state.value.status === "connected");
+const cloudConnected = computed(() => state.value.mode === "cloud" && connected.value);
 const working = computed(() => (
   state.value.status === "loading"
   || state.value.accountLookupStatus === "resolving"
@@ -124,12 +125,6 @@ async function changeAccount() {
   state.value = await window.bizhubDesktop.forgetRememberedLogin();
 }
 
-async function forgetRememberedLogin() {
-  accountForm.accountId = "";
-  accountForm.password = "";
-  state.value = await window.bizhubDesktop.forgetRememberedLogin();
-}
-
 async function beginLocal() {
   if (!state.value.localInitialized) {
     setupRequested.value = true;
@@ -170,7 +165,7 @@ onBeforeUnmount(() => unsubscribe());
 
 <template>
   <div class="desktop-shell">
-    <header class="shell-bar">
+    <header v-if="!cloudConnected" class="shell-bar">
       <div class="identity">
         <span class="mark">BH</span>
         <div>
@@ -194,14 +189,6 @@ onBeforeUnmount(() => unsubscribe());
         </button>
         <button v-if="state.mode !== 'none'" class="quiet-button" type="button" @click="closeCurrent">
           {{ state.mode === "local" ? "停止本地" : "关闭工作区" }}
-        </button>
-        <button
-          v-if="connected && state.mode === 'cloud' && state.rememberedLoginAvailable"
-          class="quiet-button"
-          type="button"
-          @click="forgetRememberedLogin"
-        >
-          退出并清除保持登录
         </button>
       </div>
     </header>

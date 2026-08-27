@@ -104,6 +104,24 @@ function cloudLoginError(result) {
   return "desktop_cloud_login_failed";
 }
 
+function isCloudLogoutRequest(details, allowedOrigins) {
+  if (
+    !details
+    || details.method !== "POST"
+    || typeof details.url !== "string"
+    || !Array.isArray(allowedOrigins)
+  ) {
+    return false;
+  }
+  try {
+    const requestUrl = new URL(details.url);
+    return allowedOrigins.includes(requestUrl.origin)
+      && requestUrl.pathname === CLOUD_LOGOUT_PATH;
+  } catch {
+    return false;
+  }
+}
+
 function cloudLogoutScript() {
   return `(() => {
     const token = localStorage.getItem("token") || "";
@@ -127,6 +145,7 @@ module.exports = {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  isCloudLogoutRequest,
   sessionStorageScript,
   validateCloudLoginInput,
 };

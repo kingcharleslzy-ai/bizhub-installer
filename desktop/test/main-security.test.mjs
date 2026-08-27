@@ -41,6 +41,10 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "sessionStorageScript",
     "saveRememberedSession",
     "clearRememberedSession",
+    "workspaceView.setVisible(false)",
+    "workspaceView.setVisible(true)",
+    "isCloudLogoutRequest",
+    "finalizeCloudLogout",
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
@@ -58,6 +62,18 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }
+});
+
+test("connected cloud workspaces replace the Desktop chrome and own the logout control", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const shell = await readFile(path.join(ROOT, "shell-frontend", "src", "App.vue"), "utf8");
+  assert.match(
+    main,
+    /workspaceState\.mode === "cloud" && workspaceState\.status === "connected"\s+\? 0\s+: HEADER_HEIGHT/,
+  );
+  assert.match(main, /if \(authenticationPending\) return;[\s\S]*workspaceView\.setVisible\(true\)/);
+  assert.ok(shell.includes('v-if="!cloudConnected" class="shell-bar"'));
+  assert.ok(!shell.includes("退出并清除保持登录"));
 });
 
 test("desktop package keeps Node runtime empty and cloud trust public-only", async () => {

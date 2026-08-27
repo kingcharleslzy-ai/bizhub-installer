@@ -13,7 +13,9 @@ The Shell presents account and password in one form, but the account-directory
 request still contains only the normalized account identifier and never the
 password. After one signed Workspace is verified, the Shell submits the password
 only to that Workspace's same-origin BizHub authentication route and opens the
-authenticated application without a second login page. Each returned cloud
+authenticated application without exposing the intermediate web login page.
+After authentication, the cloud Workspace replaces the Desktop chrome and uses
+the full content area. Each returned cloud
 Workspace is an independently signed, expiring connection envelope bound to
 `runtime_mode=cloud` and `data_authority_mode=cloud`. That Workspace Runtime owns
 authentication, permissions, UI, Owners, and formal data. A confirmed unknown
@@ -27,9 +29,10 @@ identifier and the Workspace Runtime's revocable, expiring JWT in one bounded
 This does not require macOS Keychain or Windows DPAPI. On the next launch,
 Desktop obtains a fresh signed Descriptor and seeds a new non-persistent
 Workspace Session from the still-valid token, without submitting the password
-again. “退出并清除保持登录” sends that bearer token to the cloud logout route for
-revocation, then removes the local token. Expired or malformed tokens are
-discarded and return the user to the account/password form.
+again. The cloud application's existing “退出账号” action is the single logout
+control: its formal `/api/auth/logout` request also tells Desktop to remove the
+local remembered token and return to the account/password form. Expired or
+malformed tokens are discarded and return the user to that same form.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
@@ -173,7 +176,8 @@ directory and temporary Ed25519 key. It proves one account/password submission,
 zero password bytes in every directory request, password delivery only to the
 verified Workspace, direct authenticated launch, zero saved password bytes,
 token reuse without a second password request, automatic login after restart,
-revoking logout, an explicit unknown-account state, zero fallback database
+the absence of duplicate Desktop chrome, Workspace-owned revoking logout, an
+explicit unknown-account state, zero fallback database
 creation, cross-restart removal of old cloud Cookie/localStorage/cache, and
 desktop layout at 1280x820 and the
 supported 960x720 minimum.
@@ -204,7 +208,7 @@ an Apple Developer ID/Application notarization identity, a publicly trusted
 Windows Authenticode identity, and an owned customer-neutral account-directory
 domain on standard HTTPS 443. The current `nip.io:8443` W2 transport is
 intentionally rejected by production preflight. The unified-login candidate
-changes only customer-neutral Shell orchestration and local encrypted credential
+changes only customer-neutral Shell orchestration and bounded remembered-token
 storage; it does not change the directory service, account mapping, cloud
 password rule, SQLite, migrations, Profile, Owner, writer, or production data.
 
