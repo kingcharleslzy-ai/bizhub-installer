@@ -1,0 +1,163 @@
+name: Desktop R1 Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Approved Desktop R1 Signed Candidate Actions run id.
+        required: true
+        type: string
+      release_plan_sha256:
+        description: Exact approved desktop.release-plan.v1 SHA-256.
+        required: true
+        type: string
+      release_commit:
+        description: Exact approved public main commit.
+        required: true
+        type: string
+      release_tag:
+        description: Exact approved release tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-r1-publish-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: desktop-r1-publish-approved-artifacts
+    if: github.ref == 'refs/heads/main'
+    environment: desktop-production-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_commit }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - name: Verify source run and current main identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          test "${{ inputs.source_run_id }}" -gt 0
+          test "$(git rev-parse HEAD)" = "${{ inputs.release_commit }}"
+          test "$(git rev-parse origin/main)" = "${{ inputs.release_commit }}"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${{ inputs.source_run_id }}")"
+          test "$(jq -r .name <<<"$run_json")" = "Desktop R1 Signed Candidate"
+          test "$(jq -r .head_sha <<<"$run_json")" = "${{ inputs.release_commit }}"
+          test "$(jq -r .conclusion <<<"$run_json")" = success
+          test "$(jq -r .event <<<"$run_json")" = workflow_dispatch
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: desktop-r1-release-plan-${{ inputs.release_commit }}
+          path: approved/plan
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: desktop-r1-macos-arm64-${{ inputs.release_commit }}-production
+          path: approved/macos
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: desktop-r1-windows-x64-${{ inputs.release_commit }}-production
+          path: approved/windows
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify plan, Actions Artifact identities, and inner files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          plan=approved/plan/desktop-r1-release-plan.json
+          test "$(sha256sum "$plan" | cut -d' ' -f1)" = "${{ inputs.release_plan_sha256 }}"
+          test "$(cut -d' ' -f1 approved/plan/desktop-r1-release-plan.sha256)" = "${{ inputs.release_plan_sha256 }}"
+          artifacts="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/${{ inputs.source_run_id }}/artifacts?per_page=100" --slurp | jq '[.[].artifacts[]]')"
+          for platform in macos_arm64 windows_x64; do
+            id="$(jq -r ".platforms.$platform.actions_artifact.id" "$plan")"
+            expected_name="$(jq -r ".platforms.$platform.actions_artifact.name" "$plan")"
+            expected_digest="sha256:$(jq -r ".platforms.$platform.actions_artifact.digest" "$plan")"
+            actual="$(jq -c --argjson id "$id" '[.[] | select(.id == $id)]' <<<"$artifacts")"
+            test "$(jq length <<<"$actual")" = 1
+            test "$(jq -r '.[0].name' <<<"$actual")" = "$expected_name"
+            test "$(jq -r '.[0].digest' <<<"$actual")" = "$expected_digest"
+            test "$(jq -r '.[0].expired' <<<"$actual")" = false
+          done
+          node desktop/scripts/release-plan.mjs verify \
+            --plan "$plan" \
+            --plan-sha256 "${{ inputs.release_plan_sha256 }}" \
+            --source-run-id "${{ inputs.source_run_id }}" \
+            --commit "${{ inputs.release_commit }}" \
+            --tag "${{ inputs.release_tag }}" \
+            --mac-root approved/macos \
+            --windows-root approved/windows
+      - name: Assert immutable-releases protection before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases")"
+          test "$(jq -r .enabled <<<"$immutable")" = true
+      - name: Publish only the approved existing candidate files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${{ inputs.release_tag }}"
+          commit="${{ inputs.release_commit }}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "desktop_release_already_exists:$tag" >&2; exit 1; fi
+          version="$(jq -r .release.package_version approved/plan/desktop-r1-release-plan.json)"
+          notes="$RUNNER_TEMP/desktop-release-notes.md"
+          printf '%s\n' "BizHub Desktop $version" "" "Customer-neutral Desktop installer from approved commit $commit and release-plan SHA-256 ${{ inputs.release_plan_sha256 }}." > "$notes"
+          prerelease=()
+          if [[ "$tag" == *-preview.* ]]; then prerelease=(--prerelease); fi
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "BizHub Desktop $version" --notes-file "$notes" --draft "${prerelease[@]}"
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+            approved/macos/BizHub-Desktop-*-macOS-arm64.dmg \
+            approved/macos/BizHub-Desktop-*-macOS-arm64.zip \
+            approved/windows/BizHub-Desktop-Setup-x64.exe \
+            approved/windows/*-full.nupkg \
+            approved/windows/RELEASES \
+            approved/macos/desktop-r1-macos-containers.json \
+            approved/macos/desktop-r1-macos-release-identity.json \
+            approved/macos/desktop-r1-macos-runtime-identity.json \
+            approved/macos/desktop-r1-macos-upgrade-rollback.json \
+            approved/windows/desktop-r1-windows-x64-identity.json \
+            approved/windows/desktop-r1-windows-runtime-identity.json \
+            approved/windows/desktop-r1-windows-upgrade-rollback.json \
+            approved/plan/desktop-r1-release-plan.json \
+            approved/plan/desktop-r1-release-plan.sha256
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+      - name: Read back immutable release, tag, and all install bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/${{ inputs.release_tag }}")"
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .immutable <<<"$release")" = true
+          test "$(jq -r .tag_name <<<"$release")" = "${{ inputs.release_tag }}"
+          test "$(jq -r .target_commitish <<<"$release")" = "${{ inputs.release_commit }}"
+          git fetch origin "refs/tags/${{ inputs.release_tag }}:refs/tags/${{ inputs.release_tag }}"
+          test "$(git rev-list -n 1 "${{ inputs.release_tag }}")" = "${{ inputs.release_commit }}"
+          mkdir published
+          gh release download "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" --dir published
+          node desktop/scripts/release-plan.mjs verify \
+            --plan published/desktop-r1-release-plan.json \
+            --plan-sha256 "${{ inputs.release_plan_sha256 }}" \
+            --source-run-id "${{ inputs.source_run_id }}" \
+            --commit "${{ inputs.release_commit }}" \
+            --tag "${{ inputs.release_tag }}" \
+            --mac-root published \
+            --windows-root published

@@ -1,0 +1,13 @@
+{
+  "name": "extract-zip",
+  "version": "2.0.2-bizhub.1",
+  "description": "BizHub-bounded extract-zip compatibility implementation",
+  "main": "index.js",
+  "license": "BSD-2-Clause",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0"
+  }
+}

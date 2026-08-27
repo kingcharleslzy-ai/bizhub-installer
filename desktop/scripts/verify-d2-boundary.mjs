@@ -77,7 +77,8 @@ for (const prohibited of ["better" + "-sqlite3", "sql" + ".js", "0.0.0.0"] ) {
 assert.ok(!main.includes("node:" + "child_process"));
 assert.ok(!preload.includes("node:" + "child_process"));
 assert.ok(localRuntime.includes("node:" + "child_process"));
-assert.ok(runtimePreparer.includes('import extract from "extract-zip"'));
+assert.ok(runtimePreparer.includes('path.join(ROOT, "scripts", "expand-runtime-archive.ps1")'));
+assert.ok(runtimePreparer.includes('spawn("/usr/bin/ditto"'));
 assert.ok(!runtimePreparer.includes("powershell.exe"));
 for (const required of ["OpenProcess", "GetExitCodeProcess", "CloseHandle"]) {
   assert.ok(runtimeEntry.includes(required), required);
@@ -111,7 +112,19 @@ assert.equal(packageJson.dependencies, undefined);
 assert.equal(packageJson.devDependencies.pyinstaller, undefined);
 assert.equal(packageJson.devDependencies["@electron-forge/maker-squirrel"], "7.11.2");
 assert.equal(packageJson.devDependencies["@electron/windows-sign"], "1.2.2");
-assert.equal(packageJson.devDependencies["extract-zip"], "2.0.1");
+assert.equal(packageJson.devDependencies["extract-zip"], "file:vendor/extract-zip-safe");
+const safeExtractor = await readFile(
+  path.join(ROOT, "vendor", "extract-zip-safe", "index.js"),
+  "utf8",
+);
+for (const required of [
+  "extract_zip_entry_path_invalid",
+  "extract_zip_symlink_target_escape",
+  "extract_zip_total_size_invalid",
+  'flags: "wx"',
+]) {
+  assert.ok(safeExtractor.includes(required), required);
+}
 const forgeConfig = await readFile(path.join(ROOT, "forge.config.cjs"), "utf8");
 for (const required of [
   "windowsSign",

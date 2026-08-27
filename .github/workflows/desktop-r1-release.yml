@@ -1,0 +1,236 @@
+name: Desktop R1 Synthetic
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, codex/desktop-r1-release-20260826]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-r1-synthetic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-arm64:
+    name: desktop-r1-synthetic-macos-arm64
+    runs-on: macos-14
+    timeout-minutes: 55
+    env:
+      BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
+      BIZHUB_MACOS_SIGNING_MODE: synthetic-ci
+      BIZHUB_MACOS_SIGNING_IDENTITY: "-"
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Verify source, tests, dependency, and public boundary
+        run: |
+          test "$(uname -m)" = arm64
+          python ../scripts/verify_checksums.py
+          npm ci
+          node scripts/release-preflight.mjs
+          npm test
+          npm run verify:boundary
+          npm run verify:runtime-archive
+          npm run audit:runtime
+          npm audit --audit-level=moderate
+      - name: Prepare and bind synthetic Runtime
+        run: |
+          npm run prepare:runtime
+          npm run smoke:runtime-tamper
+          npm run smoke:local
+          npm run smoke:account-flow
+          npm run smoke:local-shell
+          node scripts/prepare-signed-macos-runtime.mjs
+      - name: Build old and current signed applications
+        shell: bash
+        run: |
+          current_version="$(node -p 'require("./package.json").version')"
+          old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
+          cp package.json "$RUNNER_TEMP/package.json"
+          cp package-lock.json "$RUNNER_TEMP/package-lock.json"
+          node scripts/package-version-fixture.mjs set "$old_version"
+          npm run make:macos-release
+          node scripts/sign-synthetic-macos-app.mjs
+          /usr/bin/ditto "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" "$RUNNER_TEMP/BizHub Desktop-old.app"
+          cp "$RUNNER_TEMP/package.json" package.json
+          cp "$RUNNER_TEMP/package-lock.json" package-lock.json
+          rm -rf "out/BizHub Desktop-darwin-arm64"
+          npm run make:macos-release
+          node scripts/sign-synthetic-macos-app.mjs
+          node scripts/macos-upgrade-rollback-smoke.mjs \
+            --old-app "$RUNNER_TEMP/BizHub Desktop-old.app" \
+            --new-app "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" \
+            --old-version "$old_version" \
+            --new-version "$current_version" \
+            --output out/desktop-r1-macos-upgrade-rollback.json
+          git diff --exit-code -- package.json package-lock.json
+      - name: Verify current signed product and containers
+        shell: bash
+        run: |
+          product="out/BizHub Desktop-darwin-arm64"
+          app="$product/BizHub Desktop.app"
+          resources="$app/Contents/Resources"
+          npm run verify:artifact -- "$product" --expected-runtime-trust runtime-dist/generic-runtime-trust.json
+          node scripts/verify-macos-release.mjs --app "$app" --expected-runtime-trust runtime-dist/generic-runtime-trust.json --mode synthetic-ci
+          node scripts/account-flow-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-resources "$resources"
+          node scripts/make-macos-release-containers.mjs
+          node scripts/verify-macos-release-containers.mjs
+          sleep 2
+          ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-r1-macos-arm64-${{ github.sha }}-synthetic-ci
+          path: |
+            desktop/out/release/BizHub-Desktop-*-macOS-arm64.zip
+            desktop/out/release/BizHub-Desktop-*-macOS-arm64.dmg
+            desktop/out/release/desktop-r1-macos-containers.json
+            desktop/out/desktop-r1-macos-release-identity.json
+            desktop/out/desktop-r1-macos-runtime-identity.json
+            desktop/out/desktop-r1-macos-upgrade-rollback.json
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-x64:
+    name: desktop-r1-synthetic-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
+      BIZHUB_WINDOWS_SIGNING_MODE: synthetic-ci
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Preserve repository byte identity
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Verify source, tests, dependency, and public boundary
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ((node -p "process.platform") -ne "win32" -or (node -p "process.arch") -ne "x64") { throw "desktop_r1_windows_target_invalid" }
+          python ../scripts/verify_checksums.py
+          npm ci
+          node scripts/release-preflight.mjs
+          npm test
+          npm run verify:boundary
+          npm run verify:runtime-archive
+          npm run audit:runtime
+          npm audit --audit-level=moderate
+      - name: Prepare fixed Runtime and synthetic publisher
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm run prepare:runtime
+          npm run smoke:runtime-tamper
+          npm run smoke:local
+          npm run smoke:account-flow
+          npm run smoke:local-shell
+          $certificatePath = Join-Path $env:RUNNER_TEMP "bizhub-windows-signing.pfx"
+          $certificatePassword = [Guid]::NewGuid().ToString("N")
+          Write-Output "::add-mask::$certificatePassword"
+          $securePassword = ConvertTo-SecureString -String $certificatePassword -AsPlainText -Force
+          $identity = ./scripts/create-synthetic-windows-signing-certificate.ps1 -OutputPfx $certificatePath -Password $securePassword | ConvertFrom-Json
+          "BIZHUB_WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$certificatePassword" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint.Replace(' ', '').ToUpperInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Sign and rebind Runtime
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          node scripts/prepare-signed-windows-runtime.mjs
+          ./scripts/verify-windows-runtime-signatures.ps1 -RuntimeRoot runtime-dist/bizhub-runtime -PreparationIdentity out/desktop-r1-windows-runtime-preparation.json -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -Output out/desktop-r1-windows-runtime-identity.json -SigningMode synthetic-ci
+      - name: Build old and current signed installers
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $currentVersion = node -p "require('./package.json').version"
+          $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
+          Copy-Item package.json "$env:RUNNER_TEMP/package.json"
+          Copy-Item package-lock.json "$env:RUNNER_TEMP/package-lock.json"
+          node scripts/package-version-fixture.mjs set $oldVersion
+          npm run make:windows-release
+          Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe"
+          Copy-Item "$env:RUNNER_TEMP/package.json" package.json
+          Copy-Item "$env:RUNNER_TEMP/package-lock.json" package-lock.json
+          Remove-Item "out/make" -Recurse -Force
+          Remove-Item "out/BizHub Desktop-win32-x64" -Recurse -Force
+          npm run make:windows-release
+          ./scripts/windows-upgrade-rollback-smoke.ps1 -OldSetup "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe" -NewSetup "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -OldVersion $oldVersion -NewVersion $currentVersion -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -Output out/desktop-r1-windows-upgrade-rollback.json -SigningMode synthetic-ci
+          git diff --exit-code -- package.json package-lock.json
+      - name: Verify current product, installation, and identities
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $product = "out/BizHub Desktop-win32-x64"
+          $resources = "$product/resources"
+          npm run verify:artifact -- $product --expected-runtime-trust runtime-dist/generic-runtime-trust.json
+          node scripts/account-flow-smoke.mjs --packaged-executable "$product/BizHub Desktop.exe" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs --packaged-executable "$product/BizHub Desktop.exe" --packaged-resources $resources
+          ./scripts/windows-installer-smoke.ps1 -SetupExe "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -PackagedDirectory $product -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -SigningMode synthetic-ci -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -RuntimeIdentityOutput out/desktop-r1-windows-runtime-identity.json
+          $output = "out/make/squirrel.windows/x64"
+          $setup = Get-Item "$output/BizHub-Desktop-Setup-x64.exe"
+          $nupkgs = @(Get-ChildItem $output -Filter "*-full.nupkg")
+          if ($nupkgs.Count -ne 1) { throw "desktop_windows_full_nupkg_count_invalid:$($nupkgs.Count)" }
+          $signature = Get-AuthenticodeSignature $setup.FullName
+          $identity = [ordered]@{
+            status = "ok"; schema_version = "bizhub.desktop-windows-release-identity.v1"; commit = (git rev-parse HEAD); signing_mode = "synthetic-ci"
+            signer_subject = $signature.SignerCertificate.Subject; signer_thumbprint = $signature.SignerCertificate.Thumbprint.Replace(" ", "").ToUpperInvariant(); timestamp_subject = if ($signature.TimeStamperCertificate) { $signature.TimeStamperCertificate.Subject } else { $null }
+            setup = [ordered]@{ name = $setup.Name; bytes = $setup.Length; sha256 = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+            nupkg = [ordered]@{ name = $nupkgs[0].Name; bytes = $nupkgs[0].Length; sha256 = (Get-FileHash $nupkgs[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+            releases_sha256 = (Get-FileHash "$output/RELEASES" -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $identity | ConvertTo-Json -Depth 5 | Out-File out/desktop-r1-windows-x64-identity.json -Encoding utf8
+      - name: Confirm no residual process
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Start-Sleep -Seconds 2
+          $left = Get-CimInstance Win32_Process | Where-Object { $_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe" -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) }
+          if ($left) { throw "desktop_residual_process_detected" }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-r1-windows-x64-${{ github.sha }}-synthetic-ci
+          path: |
+            desktop/out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe
+            desktop/out/make/squirrel.windows/x64/*-full.nupkg
+            desktop/out/make/squirrel.windows/x64/RELEASES
+            desktop/out/desktop-r1-windows-x64-identity.json
+            desktop/out/desktop-r1-windows-runtime-identity.json
+            desktop/out/desktop-r1-windows-upgrade-rollback.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove synthetic signing material
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
+          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) { Remove-Item "Cert:\LocalMachine\TrustedPeople\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT" -Force -ErrorAction SilentlyContinue }

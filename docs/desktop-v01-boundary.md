@@ -1,6 +1,6 @@
 # BizHub Desktop v0.1 boundary decision
 
-Status: accepted boundary; Desktop-D3 merged; Desktop-W1 passed; Desktop-W2 configured candidate
+Status: accepted boundary; Desktop-D3/W1/W2 merged; Desktop-R1 implementation candidate
 
 Date: 2026-08-26
 
@@ -132,8 +132,15 @@ and platform-specific local Runtime Pack to carry independent identities.
 Account lookup refreshes signed Descriptors; Profile composition remains
 build-time and Runtime Pack changes remain immutable signed releases rather
 than per-module hot updates. Automatic Shell update, Runtime Pack download,
-cross-version migration/rollback, and update channels remain future Release
-work rather than W1 capability.
+and update channels remain future work. R1 proves only the installation-level
+vN to vN+1 to rollback data/readback boundary; it does not add an updater.
+
+Desktop-R1 turns that evolving-version rule into an immutable release rule:
+the current `package.json` version determines the only accepted release tag
+(`desktop-v<version>` or `desktop-v<version>-preview.N`). A later Desktop update
+changes the package version and creates a new tag; it never overwrites an older
+release. Production dispatch also binds the exact public `main` commit, so a
+moving branch cannot silently change a release candidate.
 
 ## Runtime and data authority
 
@@ -236,7 +243,14 @@ Each checkpoint requires separate authorization:
    production Ed25519 public trust key, and deployment-private account-to-
    Workspace mapping. This does not create Desktop installers or approve a
    Release.
-7. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
+7. **Desktop-R1:** three isolated workflows: secret-free dual-platform
+   synthetic CI; protected exact-main signed-candidate generation ending in a
+   fixed release-plan SHA; and independently protected publication of only the
+   approved existing Artifacts. Windows signs previously unsigned Runtime PEs
+   before trust rebinding, and both platforms prove vN to vN+1 to rollback
+   Owner readback. Immutable releases and protected `main` are hard gates. The
+   mechanism is deployment configuration; it adds no business module or writer.
+8. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 
 Machine evidence must also prove that the public package contains no

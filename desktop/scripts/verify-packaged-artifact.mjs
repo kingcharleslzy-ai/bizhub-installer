@@ -9,8 +9,19 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const asar = require("@electron/asar");
 const { verifyRuntimePack } = require("../electron/local-runtime.cjs");
-const artifactRoot = path.resolve(process.argv[2] || "");
-assert.ok(process.argv[2], "artifact_root_required");
+const argv = process.argv.slice(2);
+const artifactArgument = argv.shift() || "";
+let expectedRuntimeTrustArgument = "";
+while (argv.length > 0) {
+  const option = argv.shift();
+  if (option === "--expected-runtime-trust") {
+    expectedRuntimeTrustArgument = argv.shift() || "";
+  } else {
+    assert.fail(`artifact_verifier_option_unknown:${option}`);
+  }
+}
+const artifactRoot = path.resolve(artifactArgument);
+assert.ok(artifactArgument, "artifact_root_required");
 assert.ok((await stat(artifactRoot)).isDirectory(), "artifact_root_invalid");
 
 async function filesUnder(directory) {
@@ -41,6 +52,23 @@ const runtimeTrustFiles = files.filter(
   (value) => path.basename(value) === "generic-runtime-trust.json",
 );
 assert.equal(runtimeTrustFiles.length, 1, "runtime_trust_count_invalid");
+const packagedRuntimeTrustRaw = await readFile(runtimeTrustFiles[0]);
+const packagedRuntimeTrust = JSON.parse(packagedRuntimeTrustRaw.toString("utf8"));
+const expectedRuntimeTrustPath = expectedRuntimeTrustArgument
+  ? path.resolve(expectedRuntimeTrustArgument)
+  : path.join(
+      ROOT,
+      "config",
+      packagedRuntimeTrust.platform === "win32"
+        ? "generic-runtime-trust.win32-x64.json"
+        : "generic-runtime-trust.json",
+    );
+const expectedRuntimeTrust = JSON.parse(await readFile(expectedRuntimeTrustPath, "utf8"));
+assert.deepEqual(
+  packagedRuntimeTrust,
+  expectedRuntimeTrust,
+  "packaged_runtime_trust_mismatch",
+);
 const verifiedRuntime = await verifyRuntimePack(runtimeRoot, runtimeTrustFiles[0]);
 
 const asarFiles = files.filter((value) => path.basename(value).toLowerCase() === "app.asar");
@@ -161,6 +189,9 @@ process.stdout.write(`${JSON.stringify({
   runtime_pack_tree_digest: verifiedRuntime.manifest.pack_tree_digest,
   runtime_manifest_sha256: createHash("sha256")
     .update(await readFile(runtimeManifests[0]))
+    .digest("hex"),
+  runtime_trust_sha256: createHash("sha256")
+    .update(packagedRuntimeTrustRaw)
     .digest("hex"),
   core_artifact_digest: verifiedRuntime.manifest.core_artifact_digest,
 })}\n`);
