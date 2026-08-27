@@ -16,6 +16,7 @@ from typing import Any
 from build_local_runtime import (
     RUNTIME_SCHEMA,
     canonical_tree_digest,
+    build_frontend,
     normalize_zip_member_order,
     sha256,
     verify_common,
@@ -42,6 +43,7 @@ def build(root: Path, python: Path) -> Path:
     common = build_root / "common"
     common.mkdir(parents=True)
     common_manifest = verify_common(root, common)
+    frontend = build_frontend(root)
     data_separator = os.pathsep
 
     command = [
@@ -73,6 +75,8 @@ def build(root: Path, python: Path) -> Path:
         f"{root / 'app' / 'vendor' / 'bizhub-common-manifest.json'}{data_separator}common-artifact",
         "--add-data",
         f"{common / 'backend' / 'generic_kernel' / 'ui'}{data_separator}backend/generic_kernel/ui",
+        "--add-data",
+        f"{frontend}{data_separator}generic-ui",
         "--collect-submodules",
         "uvicorn",
         str(desktop / "runtime" / "bizhub_runtime_entry_windows.py"),
@@ -116,6 +120,12 @@ def build(root: Path, python: Path) -> Path:
         desktop / "runtime" / "requirements-build.in",
         desktop / "runtime" / "requirements-build.windows-x64.lock",
         *sorted((root / "app" / "runtime" / "bizhub").glob("*.py")),
+        root / "app" / "frontend" / "index.html",
+        root / "app" / "frontend" / "package-lock.json",
+        root / "app" / "frontend" / "package.json",
+        root / "app" / "frontend" / "tsconfig.json",
+        root / "app" / "frontend" / "vite.config.ts",
+        *sorted((root / "app" / "frontend" / "src").glob("*")),
     ]
     source_records = [
         {"path": file_path.relative_to(root).as_posix(), "sha256": sha256(file_path)}

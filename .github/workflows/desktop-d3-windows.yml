@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - codex/desktop-d3-windows-x64
+      - codex/desktop-l1-unified-local-20260827
 
 permissions:
   contents: write
@@ -122,12 +123,15 @@ jobs:
           "file_count=$($second.file_count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "source_tree_digest=$($second.source_tree_digest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Capture the first fixed Windows Runtime review input
+      - name: Capture the Windows Runtime when source identity changes
         id: capture
         shell: pwsh
         run: |
           $archive = "runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip"
-          if (Test-Path -LiteralPath $archive) {
+          $trust = Get-Content -LiteralPath "config/generic-runtime-trust.win32-x64.json" -Raw | ConvertFrom-Json
+          $runtimeSourceMatches = $trust.runtime_source_tree_digest -eq "${{ steps.runtime.outputs.source_tree_digest }}"
+          $runtimeManifestMatches = $trust.runtime_manifest_sha256 -eq "${{ steps.runtime.outputs.manifest_sha256 }}"
+          if ((Test-Path -LiteralPath $archive) -and $runtimeSourceMatches -and $runtimeManifestMatches) {
             "captured=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             exit 0
           }

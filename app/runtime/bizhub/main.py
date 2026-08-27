@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from importlib import import_module
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.generic_kernel.app import create_app as create_common_app
@@ -15,10 +15,19 @@ from backend.modules.master_data.owner import apply_catalog, preview_catalog
 from backend.modules.master_data.public import MasterDataError
 
 from . import __version__
-from .config import common_identity, common_root, company_profile, cookie_secure, database_path
+from .config import common_identity, common_root, company_profile, cookie_secure, database_path, static_path
 from .core import database_state, initialize_database, module_ids, registry
 from .identity import runtime_identity
-from .security import authenticated_username, create_session, load_admin, password_matches
+from .read_models import catalog, inventory, orders, overview
+from .security import (
+    authenticated_username,
+    change_password,
+    create_remember_token,
+    create_session,
+    load_admin,
+    password_matches,
+    remembered_username,
+)
 
 
 SESSION_COOKIE = "bizhub_session"
@@ -31,6 +40,17 @@ class StrictModel(BaseModel):
 class LoginRequest(StrictModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=1024)
+    remember: bool = False
+
+
+class RememberLoginRequest(StrictModel):
+    token: str = Field(min_length=40, max_length=8192)
+
+
+class PasswordChangeRequest(StrictModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=12, max_length=1024)
+    remember: bool = False
 
 
 class CatalogDraftRequest(StrictModel):
@@ -85,7 +105,13 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def access_guard(request: Request, call_next):
         path = request.url.path
-        public_path = path in {"/", "/api/health", "/api/version", "/api/auth/login"}
+        public_path = path in {
+            "/",
+            "/api/health",
+            "/api/version",
+            "/api/auth/login",
+            "/api/auth/remember",
+        }
         if path.startswith("/api/") and not public_path:
             username = authenticated_username(request.cookies.get(SESSION_COOKIE))
             if username is None:
@@ -142,8 +168,34 @@ def create_app() -> FastAPI:
     async def system_map() -> dict[str, object]:
         return {**selected_registry.effective_system_map(), **common_identity()}
 
+    @app.get("/api/delivery/overview")
+    async def delivery_overview() -> dict[str, int]:
+        return overview(database_path())
+
+    @app.get("/api/delivery/catalog")
+    async def delivery_catalog() -> dict[str, list[dict[str, Any]]]:
+        return catalog(database_path())
+
+    @app.get("/api/delivery/procurement/orders")
+    async def delivery_procurement_orders(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        return {"items": orders(database_path(), "procurement", limit=limit)}
+
+    @app.get("/api/delivery/sales/orders")
+    async def delivery_sales_orders(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        return {"items": orders(database_path(), "sales", limit=limit)}
+
+    @app.get("/api/delivery/inventory")
+    async def delivery_inventory(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, object]:
+        return inventory(database_path(), limit=limit)
+
     @app.post("/api/auth/login")
-    async def login(payload: LoginRequest, response: Response) -> dict[str, str]:
+    async def login(payload: LoginRequest, response: Response) -> dict[str, object]:
         admin = load_admin()
         if payload.username != admin["username"] or not password_matches(admin["password_hash"], payload.password):
             raise HTTPException(status_code=401, detail="invalid administrator credentials")
@@ -155,7 +207,26 @@ def create_app() -> FastAPI:
             samesite="strict",
             path="/",
         )
-        return {"username": payload.username}
+        return {
+            "username": payload.username,
+            "auth_version": admin["auth_version"],
+            "remember_token": create_remember_token(payload.username) if payload.remember else None,
+        }
+
+    @app.post("/api/auth/remember")
+    async def remember_login(payload: RememberLoginRequest, response: Response) -> dict[str, str]:
+        username = remembered_username(payload.token)
+        if username is None:
+            raise HTTPException(status_code=401, detail="remembered login invalid")
+        response.set_cookie(
+            SESSION_COOKIE,
+            create_session(username),
+            httponly=True,
+            secure=cookie_secure(),
+            samesite="strict",
+            path="/",
+        )
+        return {"username": username}
 
     @app.post("/api/auth/logout")
     async def logout(response: Response) -> dict[str, str]:
@@ -171,6 +242,31 @@ def create_app() -> FastAPI:
     @app.get("/api/auth/me")
     async def me(request: Request) -> dict[str, str]:
         return {"username": str(request.state.username)}
+
+    @app.post("/api/auth/password")
+    async def update_password(
+        payload: PasswordChangeRequest,
+        request: Request,
+        response: Response,
+    ) -> dict[str, object]:
+        username = str(request.state.username)
+        try:
+            updated = change_password(username, payload.current_password, payload.new_password)
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        response.set_cookie(
+            SESSION_COOKIE,
+            create_session(username),
+            httponly=True,
+            secure=cookie_secure(),
+            samesite="strict",
+            path="/",
+        )
+        return {
+            "username": username,
+            "auth_version": updated["auth_version"],
+            "remember_token": create_remember_token(username) if payload.remember else None,
+        }
 
     @app.post("/api/master-data/catalog/preview")
     async def master_data_preview(payload: CatalogPreviewRequest) -> dict[str, object]:
@@ -200,6 +296,21 @@ def create_app() -> FastAPI:
         except (MasterDataError, TypeError, ValueError) as exc:
             code = getattr(exc, "code", "master_data_request_invalid")
             raise HTTPException(status_code=409, detail={"code": code, "message": str(exc)}) from exc
+
+    @app.get("/")
+    async def desktop_ui() -> FileResponse:
+        index = static_path() / "index.html"
+        if not index.is_file():
+            raise HTTPException(status_code=503, detail="generic desktop UI unavailable")
+        return FileResponse(index)
+
+    @app.get("/assets/{asset_path:path}")
+    async def desktop_asset(asset_path: str) -> FileResponse:
+        root = static_path()
+        target = (root / "assets" / asset_path).resolve()
+        if not target.is_file() or root not in target.parents:
+            raise HTTPException(status_code=404, detail="asset not found")
+        return FileResponse(target)
 
     app.mount("/", common_app)
     return app
