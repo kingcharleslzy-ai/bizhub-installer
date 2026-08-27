@@ -18,7 +18,10 @@ const {
   clearRememberedSession,
   legacyCredentialFilePath,
   loadRememberedSession,
+  loadSavedAccounts,
   rememberedSessionFilePath,
+  saveAccount,
+  savedAccountsFilePath,
   saveRememberedSession,
   tokenExpiresAt,
   validateRememberedSession,
@@ -121,17 +124,63 @@ test("remembered session stores no password and can be forgotten", async () => {
   try {
     await writeFile(legacyCredentialFilePath(root), "legacy-password-ciphertext\n");
     await saveRememberedSession({ remembered, userDataRoot: root });
-    const raw = await readFile(rememberedSessionFilePath(root), "utf8");
+    const raw = await readFile(savedAccountsFilePath(root), "utf8");
     assert.ok(raw.includes("demo.user"));
     assert.ok(raw.includes(remembered.session.token));
     assert.equal(raw.includes("correct cloud password"), false);
     assert.deepEqual(await loadRememberedSession({ userDataRoot: root }), remembered);
     if (process.platform !== "win32") {
-      assert.equal((await stat(rememberedSessionFilePath(root))).mode & 0o777, 0o600);
+      assert.equal((await stat(savedAccountsFilePath(root))).mode & 0o777, 0o600);
     }
     await assert.rejects(stat(legacyCredentialFilePath(root)), { code: "ENOENT" });
     await clearRememberedSession({ userDataRoot: root });
+    await assert.rejects(stat(savedAccountsFilePath(root)), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("legacy cloud session migrates once and local/cloud accounts coexist without passwords", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "bizhub-saved-accounts-"));
+  const now = Date.now();
+  const remembered = rememberedFixture(Math.floor(now / 1000) + 3600);
+  const localPayload = {
+    auth_version: 1,
+    expires_at: Math.floor(now / 1000) + 7200,
+    purpose: "remember",
+    username: "local.admin",
+  };
+  const localToken = `${Buffer.from(JSON.stringify(localPayload)).toString("base64url")}.${"a".repeat(64)}`;
+  try {
+    await writeFile(rememberedSessionFilePath(root), `${JSON.stringify({
+      schema_version: "bizhub.desktop-remembered-session.v1",
+      ...remembered,
+    })}\n`);
+    const migrated = await loadSavedAccounts({ userDataRoot: root, now });
+    assert.equal(migrated.accounts.length, 1);
+    assert.equal(migrated.accounts[0].mode, "cloud");
     await assert.rejects(stat(rememberedSessionFilePath(root)), { code: "ENOENT" });
+
+    await saveAccount({
+      account: {
+        accountId: "local.admin",
+        displayName: "Local Admin",
+        mode: "local",
+        savedAt: new Date(now).toISOString(),
+        session: {
+          authVersion: 1,
+          expiresAt: localPayload.expires_at * 1000,
+          token: localToken,
+          username: "local.admin",
+        },
+      },
+      userDataRoot: root,
+    });
+    const saved = await loadSavedAccounts({ userDataRoot: root, now });
+    assert.deepEqual(saved.accounts.map((item) => item.mode).sort(), ["cloud", "local"]);
+    const raw = await readFile(savedAccountsFilePath(root), "utf8");
+    assert.equal(raw.includes("password"), false);
+    assert.ok(raw.includes(localToken));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

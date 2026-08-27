@@ -10,6 +10,7 @@ desktop/node_modules
 desktop/runtime-build/
 desktop/runtime-dist/
 app/backend/bizhub/static/
+app/runtime/bizhub/static/
 .pytest_cache/
 *.db
 *.db-wal

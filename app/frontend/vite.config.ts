@@ -4,7 +4,7 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   plugins: [vue()],
   build: {
-    outDir: "../backend/bizhub/static",
+    outDir: "../runtime/bizhub/static",
     emptyOutDir: true,
   },
   server: {

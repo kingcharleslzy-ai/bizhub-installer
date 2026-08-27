@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,14 @@ def common_manifest_path() -> Path:
     return Path(
         os.getenv("BIZHUB_COMMON_MANIFEST", "/opt/bizhub/bizhub-common-manifest.json")
     ).resolve()
+
+
+def static_path() -> Path:
+    override = os.getenv("BIZHUB_STATIC_DIR", "").strip()
+    if override:
+        return Path(override).resolve()
+    bundled_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return (bundled_root / "generic-ui").resolve()
 
 
 def company_profile() -> dict[str, Any]:

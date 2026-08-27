@@ -1,12 +1,13 @@
 # BizHub Desktop release-gated product candidate
 
 This directory contains the merged Desktop-D1/D2/D3 cross-platform baseline
-plus the current account-to-Workspace product-flow candidate. One
-customer-neutral Electron shell exposes two explicit paths:
+plus the current account-to-Workspace product flow. One customer-neutral
+Electron shell exposes one login form:
 
 ```text
-account + password -> account-only HTTPS directory -> signed cloud Workspace -> direct cloud login
-explicit local setup/login                         -> fixed Generic Runtime -> local SQLite
+account + password -> exact existing local account -> fixed Generic Runtime -> local SQLite
+                   -> otherwise account-only HTTPS directory -> signed cloud Workspace -> direct cloud login
+                   -> confirmed unknown + no local instance -> explicit first-time local creation
 ```
 
 The Shell presents account and password in one form, but the account-directory
@@ -19,25 +20,26 @@ the full content area. Each returned cloud
 Workspace is an independently signed, expiring connection envelope bound to
 `runtime_mode=cloud` and `data_authority_mode=cloud`. That Workspace Runtime owns
 authentication, permissions, UI, Owners, and formal data. A confirmed unknown
-account may be used to prefill the explicit Generic local setup form; a
-directory timeout, error, or missing configuration never triggers local setup.
+account may create the machine's one Generic local instance inline. A registered
+account with no Workspace, directory timeout, error, or missing configuration
+never triggers local setup.
 
-“保持登录” is enabled by default for the private-project experience. The cloud
-password is used once and discarded. Desktop keeps only the normalized account
-identifier and the Workspace Runtime's revocable, expiring JWT in one bounded
-`0600` application-data file; Windows relies on the current user's AppData ACL.
-This does not require macOS Keychain or Windows DPAPI. On the next launch,
-Desktop obtains a fresh signed Descriptor and seeds a new non-persistent
-Workspace Session from the still-valid token, without submitting the password
-again. The cloud application's existing “退出账号” action is the single logout
-control: its formal `/api/auth/logout` request also tells Desktop to remove the
-local remembered token and return to the account/password form. Expired or
-malformed tokens are discarded and return the user to that same form.
+“保持登录” is enabled by default for the private-project experience. Cloud and
+local passwords are used once and discarded. Desktop keeps up to eight account
+labels and only revocable, expiring Runtime tokens in one bounded `0600`
+application-data file; Windows relies on the current user's AppData ACL. It does
+not require macOS Keychain or Windows DPAPI. Existing W1 cloud tokens migrate on
+first read. Selecting a saved account with a valid token logs in directly;
+selecting an expired entry asks for its password. Explicit logout clears that
+account's token and returns to the same form.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
-delivery adapter and the exact vendored `bizhub-common` artifact. Desktop does
-not reimplement master data, inventory, procurement, or sales. Formal writes
-remain inside the existing Generic Owners.
+delivery adapter and the exact vendored `bizhub-common` artifact. Its Vue
+workspace provides overview, master data, procurement, sales, inventory, and a
+small settings page. Bounded delivery read models project existing tables;
+formal mutations still submit typed previews to the existing Generic Owners.
+Procurement and sales actions require a source-evidence reference supplied by
+the user before preview.
 
 Desktop-W2 configures one customer-neutral HTTPS directory transport and one
 Ed25519 public trust root. The package still contains no customer-private
@@ -62,8 +64,9 @@ application process may keep that temporary login, while quitting Desktop
 destroys it. If a remembered session token exists, the next launch performs a
 fresh directory lookup and opens the cloud application without another password
 request; otherwise the user sees the combined login form. Choosing “换一个账号”
-revokes and removes any remembered token and clears the active temporary Session
-before returning to login.
+closes the active view and uses the selected account's token when available.
+Explicit logout clears only the active token, not the account label or local
+business data.
 
 The account directory is Workspace discovery, not unified authentication. Its
 10-second deadline covers response headers, streaming body receipt, JSON parse,
@@ -79,10 +82,10 @@ its Runtime owns login and Session lifetime, so Descriptor expiry does not close
 the running view. After disconnect, the retained expired envelope cannot reopen;
 the user must query the directory for a fresh Descriptor.
 
-Generic Local is intentionally available to every installation in W1, including
-when an enterprise Workspace is present. It is an independent Generic authority
-and never copies, synchronizes, or writes enterprise data. A future policy that
-restricts Local must use a signed entitlement rather than account-name logic.
+Generic Local is one independent authority per installation and never copies,
+synchronizes, or writes enterprise data. Once created, only its exact local
+administrator account routes to it; other accounts continue through cloud
+discovery and cannot create a second local instance.
 
 The version contract allows the Shell, signed Workspace Descriptor, cloud
 Runtime, and local Runtime to evolve independently. `shell_min_version` is a
@@ -94,7 +97,7 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`40d054980ee4f8d22276f5723877e447faec72e9d743f281709dfa9c2137e7eb`) and
+`0d307f2bd18e0c7a02d9ac3f2a1c5a1f768476aa9a6ae6e31fd5f9e33fa85a70`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
 `7948cdd1fac6bb330320bd3b08cee8b00630e4e47d300ce441626c670054fb27`).
 `make` verifies and extracts that exact archive before packaging; it never
@@ -146,14 +149,12 @@ npm run make
 npm run verify:artifact -- "out/BizHub Desktop-darwin-arm64"
 ```
 
-Desktop-R1 uses three separate fail-closed workflows. Synthetic CI contains no
-production-secret reference and cannot publish. The protected signed-candidate
-workflow produces fixed native Artifacts plus a `desktop.release-plan.v1` and
-stops. After the Owner approves that exact plan SHA, the separately protected
-publish workflow can download only that source run and publish the same bytes;
-it cannot rebuild or re-sign them. The Shell version is not globally frozen:
-every later product version receives its own immutable release tag and
-Artifacts.
+The existing advanced Desktop-R1 signing/publish workflows remain available but
+frozen for a future broad public release. They are not the default private-
+project path. Current internal builds run the source tests, build native macOS
+and Windows packages, generate checksums, and stop at downloadable test
+Artifacts. The Shell version is not globally frozen; each build records its own
+commit and Artifact identity.
 
 Both native paths also exercise a synthetic previous version, create one formal
 Generic Owner record, move to the current version, read it back, reinstall the
@@ -203,7 +204,7 @@ Generic Owner chain, ZIP, and DMG while retaining zero npm audit findings at
 the configured threshold. Synthetic signatures establish build mechanics only;
 they are never publisher authority.
 
-Formal publication remains blocked until the project Owner separately provides
+Broad public publication remains blocked until the project Owner separately provides
 an Apple Developer ID/Application notarization identity, a publicly trusted
 Windows Authenticode identity, and an owned customer-neutral account-directory
 domain on standard HTTPS 443. The current `nip.io:8443` W2 transport is
@@ -211,9 +212,5 @@ intentionally rejected by production preflight. The unified-login candidate
 changes only customer-neutral Shell orchestration and bounded remembered-token
 storage; it does not change the directory service, account mapping, cloud
 password rule, SQLite, migrations, Profile, Owner, writer, or production data.
-
-Production signing and publication use distinct protected GitHub Environments,
-both with required review, self-review prohibited, and `main`-only deployment.
-Because the repository currently has only one collaborator, these gates remain
-intentionally unapprovable until an independent reviewer is added. No formal
-publisher credential is configured by this candidate.
+No second reviewer is required for private internal builds. No formal publisher
+credential is configured or used by this candidate.

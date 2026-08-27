@@ -436,7 +436,7 @@ try {
   if (initial.passwords !== 1 || initial.remember !== 1 || initial.overflow > 2) {
     fail("desktop_account_flow_initial_boundary_invalid");
   }
-  if (!initial.text.includes("GENERIC LOCAL")) fail("desktop_account_flow_generic_local_missing");
+  if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_credentials_input_missing");
   }
@@ -446,7 +446,7 @@ try {
   }, "desktop_account_flow_cloud_not_connected", 45_000);
   const connectedShell = await evaluate(cdp, `({
     shellBarVisible: document.querySelector(".shell-bar") !== null,
-    startPageVisible: document.querySelector(".start-page") !== null
+    startPageVisible: document.querySelector(".unified-start") !== null
   })`);
   if (connectedShell.shellBarVisible || connectedShell.startPageVisible) {
     fail("desktop_account_flow_cloud_chrome_not_removed");
@@ -517,7 +517,7 @@ try {
   if (await workspaceTargetPresent()) {
     fail("desktop_account_flow_expired_descriptor_reopened_workspace");
   }
-  if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_change_account_missing");
+  await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_fresh_descriptor_input_missing");
   }
@@ -532,34 +532,38 @@ try {
     fail("desktop_account_flow_fresh_descriptor_not_issued");
   }
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
-  if (!await clickButton(cdp, "换一个账号")) {
-    fail("desktop_account_flow_fresh_descriptor_change_account_missing");
-  }
+  await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
 
   const cloudLoginsBeforeNoWorkspace = cloudLoginRequests.length;
   if (!await enterCredentials(cdp, "known.empty", "not-sent", false)) {
     fail("desktop_account_flow_empty_input_missing");
   }
   const empty = await waitFor(async () => {
-    const text = await evaluate(cdp, "document.body.innerText");
-    return text.includes("该账号当前没有企业云端工作区") ? text : null;
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.error === "desktop_account_no_workspace" ? value : null;
   }, "desktop_account_flow_empty_state_missing");
   if (
-    !empty.includes("不会自动创建数据库")
+    empty.canCreateLocal !== false
     || cloudLoginRequests.length !== cloudLoginsBeforeNoWorkspace
   ) {
     fail("desktop_account_flow_empty_fallback_invalid");
   }
-  if (!await clickButton(cdp, "换一个账号")) fail("desktop_account_flow_empty_change_account_missing");
+  await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
   if (!await enterCredentials(cdp, "unknown.account", "not-sent", false)) {
     fail("desktop_account_flow_unknown_input_missing");
   }
   const unknown = await waitFor(async () => {
-    const text = await evaluate(cdp, "document.body.innerText");
-    return text.includes("没有找到企业云端工作区") ? text : null;
+    const value = await evaluate(cdp, `(async () => ({
+      state: await window.bizhubDesktop.getState(),
+      text: document.body.innerText
+    }))()`);
+    const resolved = value.state;
+    return resolved.canCreateLocal && value.text.includes("创建本地 BizHub")
+      ? { ...resolved, text: value.text }
+      : null;
   }, "desktop_account_flow_unknown_state_missing");
   if (
-    !unknown.includes("不会自动创建数据库")
+    unknown.pendingLocalAccountId !== "unknown.account"
     || cloudLoginRequests.length !== cloudLoginsBeforeNoWorkspace
   ) {
     fail("desktop_account_flow_unknown_fallback_invalid");
@@ -570,13 +574,13 @@ try {
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  if (!await clickButton(cdp, "开始本地设置")) fail("desktop_account_flow_local_setup_button_missing");
   const setup = await waitFor(async () => {
     const value = await evaluate(cdp, `({
       text: document.body.innerText,
-      username: document.querySelector('input[autocomplete="username"]')?.value || ""
+      username: document.querySelector('input[autocomplete="username"]')?.value || "",
+      companyFields: [...document.querySelectorAll("input")].filter((item) => item.placeholder.includes("绿光")).length
     })`);
-    return value.text.includes("创建一个本地 Generic 实例") ? value : null;
+    return value.text.includes("创建本地 BizHub") && value.companyFields === 1 ? value : null;
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
@@ -594,7 +598,7 @@ try {
         ? value
         : null;
     }, "desktop_account_flow_remembered_login_not_connected", 45_000);
-    const rememberedSessionPath = path.join(userDataRoot, "remembered-session.v1.json");
+    const rememberedSessionPath = path.join(userDataRoot, "saved-accounts.v2.json");
     const rememberedSessionBytes = await readFile(rememberedSessionPath, "utf8");
     if (
       !rememberedSessionBytes.includes("charles.example")
@@ -670,11 +674,12 @@ try {
     }
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
       "desktop_account_flow_workspace_logout_not_returned");
-    try {
-      await stat(rememberedSessionPath);
-      fail("desktop_account_flow_forget_did_not_remove_session");
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+    const signedOutSavedAccounts = JSON.parse(await readFile(rememberedSessionPath, "utf8"));
+    const signedOutAccount = signedOutSavedAccounts.accounts.find(
+      (account) => account.accountId === "charles.example",
+    );
+    if (!signedOutAccount || signedOutAccount.session !== null) {
+      fail("desktop_account_flow_forget_did_not_clear_session");
     }
     if (
       cloudLogoutRequests !== 1
@@ -705,7 +710,7 @@ try {
     remembered_session_token_saved: true,
     remembered_session_auto_connected: true,
     auto_login_reused_token_without_password: true,
-    forget_removes_session: true,
+    forget_clears_session_token: true,
     forget_revokes_cloud_session: true,
     cloud_workspace_hides_desktop_chrome: true,
     workspace_logout_clears_desktop_session: true,

@@ -551,6 +551,29 @@ async function loadLocalInstance(instanceRoot) {
   return { paths, payload };
 }
 
+async function loadLocalAdminIdentity(instanceRoot) {
+  const instance = await loadLocalInstance(instanceRoot);
+  const payload = JSON.parse(await readFile(instance.paths.admin, "utf8"));
+  const keys = Object.keys(payload).sort().join(",");
+  if (
+    !["password_hash,schema_version,username", "auth_version,password_hash,schema_version,username"]
+      .includes(keys)
+    || payload.schema_version !== "bizhub.public-admin.v1"
+    || typeof payload.username !== "string"
+    || payload.username.length < 3
+    || payload.username.length > 80
+    || typeof payload.password_hash !== "string"
+    || payload.password_hash.length < 20
+  ) {
+    throw new Error("desktop_local_admin_identity_invalid");
+  }
+  const authVersion = payload.auth_version ?? 1;
+  if (!Number.isSafeInteger(authVersion) || authVersion < 1) {
+    throw new Error("desktop_local_admin_identity_invalid");
+  }
+  return { username: payload.username, authVersion };
+}
+
 async function bootstrapLocalInstance({ userDataRoot, runtimePack, trustPath, input }) {
   const values = validateSetupInput(input);
   const verified = await verifyRuntimePack(runtimePack, trustPath);
@@ -797,21 +820,105 @@ async function stopLocalRuntime(runtime, timeoutMs = 10_000) {
   });
 }
 
-async function loginLocalRuntime(runtime, username, password) {
+function localRememberedSession(token, username, authVersion) {
+  if (
+    typeof token !== "string"
+    || token.length > 8192
+    || !/^[A-Za-z0-9_-]+\.[0-9a-f]{64}$/.test(token)
+  ) throw new Error("desktop_local_remembered_session_invalid");
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(String(token).split(".")[0], "base64url").toString("utf8"));
+  } catch {
+    throw new Error("desktop_local_remembered_session_invalid");
+  }
+  if (
+    payload?.purpose !== "remember"
+    || payload.username !== username
+    || payload.auth_version !== authVersion
+    || !Number.isSafeInteger(payload.expires_at)
+  ) {
+    throw new Error("desktop_local_remembered_session_invalid");
+  }
+  return {
+    authVersion,
+    expiresAt: payload.expires_at * 1000,
+    token,
+    username,
+  };
+}
+
+function captureRuntimeSession(runtime, result) {
+  const setCookie = result.response.headers.get("set-cookie") || "";
+  const sessionCookie = setCookie.split(";", 1)[0];
+  if (!sessionCookie.startsWith("bizhub_session=")) throw new Error("desktop_local_session_missing");
+  runtime.sessionCookie = sessionCookie;
+  return sessionCookie;
+}
+
+async function loginLocalRuntime(runtime, username, password, { remember = false } = {}) {
   const result = await fetchRuntime(runtime, "/api/auth/login", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-BizHub-Request": "1",
     },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, remember }),
   });
   if (!result.response.ok) throw new Error(`desktop_local_login_failed:${result.response.status}`);
-  const setCookie = result.response.headers.get("set-cookie") || "";
-  const sessionCookie = setCookie.split(";", 1)[0];
-  if (!sessionCookie.startsWith("bizhub_session=")) throw new Error("desktop_local_session_missing");
-  runtime.sessionCookie = sessionCookie;
+  const sessionCookie = captureRuntimeSession(runtime, result);
+  const rememberSession = remember
+    ? localRememberedSession(
+      result.body?.remember_token,
+      result.body?.username,
+      result.body?.auth_version,
+    )
+    : null;
+  return { status: "authenticated", username: result.body.username, sessionCookie, rememberSession };
+}
+
+async function resumeLocalRuntime(runtime, token) {
+  const result = await fetchRuntime(runtime, "/api/auth/remember", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-BizHub-Request": "1",
+    },
+    body: JSON.stringify({ token }),
+  });
+  if (!result.response.ok) throw new Error(`desktop_local_remembered_login_failed:${result.response.status}`);
+  const sessionCookie = captureRuntimeSession(runtime, result);
   return { status: "authenticated", username: result.body.username, sessionCookie };
+}
+
+async function changeLocalPasswordRuntime(
+  runtime,
+  currentPassword,
+  newPassword,
+  { remember = false } = {},
+) {
+  const result = await fetchRuntime(runtime, "/api/auth/password", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-BizHub-Request": "1",
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+      remember,
+    }),
+  });
+  if (!result.response.ok) throw new Error(`desktop_local_password_change_failed:${result.response.status}`);
+  const sessionCookie = captureRuntimeSession(runtime, result);
+  const rememberSession = remember
+    ? localRememberedSession(
+      result.body?.remember_token,
+      result.body?.username,
+      result.body?.auth_version,
+    )
+    : null;
+  return { status: "changed", username: result.body.username, sessionCookie, rememberSession };
 }
 
 async function backupLocalInstance({ instanceRoot, runtimePack, trustPath }) {
@@ -836,11 +943,14 @@ module.exports = {
   RUNTIME_COOKIE,
   backupLocalInstance,
   bootstrapLocalInstance,
+  changeLocalPasswordRuntime,
   fetchRuntime,
   instancePaths,
+  loadLocalAdminIdentity,
   loadLocalInstance,
   loginLocalRuntime,
   recoverInterruptedLocalSetup,
+  resumeLocalRuntime,
   runtimeEnvironment,
   startLocalRuntime,
   stopLocalRuntime,

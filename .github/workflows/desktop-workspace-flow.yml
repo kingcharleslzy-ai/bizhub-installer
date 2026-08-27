@@ -8,6 +8,7 @@ on:
       - codex/desktop-workspace-login-20260826
       - codex/desktop-w2-account-directory-20260826
       - codex/desktop-w2-descriptor-ttl-20260826
+      - codex/desktop-l1-unified-local-20260827
 
 permissions:
   contents: read

@@ -11,9 +11,11 @@ const require = createRequire(import.meta.url);
 const {
   backupLocalInstance,
   bootstrapLocalInstance,
+  changeLocalPasswordRuntime,
   fetchRuntime,
   loginLocalRuntime,
   recoverInterruptedLocalSetup,
+  resumeLocalRuntime,
   startLocalRuntime,
   stopLocalRuntime,
   verifyRuntimePack,
@@ -139,7 +141,9 @@ try {
     password,
   });
   assert.equal(wrongLogin.response.status, 401);
-  await loginLocalRuntime(runtime, username, password);
+  const firstLogin = await loginLocalRuntime(runtime, username, password, { remember: true });
+  assert.equal(firstLogin.rememberSession.username, username);
+  assert.equal(firstLogin.rememberSession.authVersion, 1);
 
   const profile = await fetchRuntime(runtime, "/api/profile");
   assert.equal(profile.response.status, 200);
@@ -150,6 +154,10 @@ try {
   assert.equal(systemMap.response.status, 200);
   assert.equal(systemMap.body.profile_id, "generic-kernel-smoke");
   assert.ok(!JSON.stringify(systemMap.body).toLocaleLowerCase().includes("daz" + "heng"));
+  const emptyDelivery = await fetchRuntime(runtime, "/api/delivery/overview");
+  assert.equal(emptyDelivery.response.status, 200);
+  assert.equal(emptyDelivery.body.procurement_orders, 0);
+  assert.equal(emptyDelivery.body.sales_orders, 0);
 
   const drafts = [
     { resource_kind: "party", resource_id: "supplier-1", canonical_name: "Synthetic Supplier" },
@@ -180,6 +188,120 @@ try {
   const afterFailure = await fetchRuntime(runtime, "/api/master-data/locations");
   assert.equal(afterFailure.body.items.length, 1);
   assert.equal(afterFailure.body.items[0].canonical_name, "Synthetic Warehouse");
+  const deliveryCatalog = await fetchRuntime(runtime, "/api/delivery/catalog");
+  assert.equal(deliveryCatalog.response.status, 200);
+  assert.equal(deliveryCatalog.body.locations[0].id, "warehouse-1");
+
+  const inventoryPreview = await mutation(runtime, "/api/inventory/preview", {
+    action: "inbound",
+    idempotency_key: "desktop-smoke:inventory-opening",
+    product_id: "product-1",
+    unit_id: "kg",
+    quantity: "10",
+    from_location_id: null,
+    to_location_id: "warehouse-1",
+    target_movement_id: null,
+    actual_quantity: null,
+    occurred_at: "2026-08-28T01:00:00.000Z",
+    source_ref: "desktop-ui-smoke",
+    reason: "synthetic opening balance",
+  });
+  assert.equal(inventoryPreview.response.status, 200);
+  const inventoryApplied = await mutation(runtime, "/api/inventory/apply", inventoryPreview.body);
+  assert.equal(inventoryApplied.response.status, 200);
+  assert.equal(inventoryApplied.body.owner_ref, "inventory:movement-owner");
+  assert.equal(inventoryApplied.body.disposition, "applied");
+
+  const procurementCreatePreview = await mutation(runtime, "/api/procurement/preview", {
+    action: "create",
+    idempotency_key: "desktop-smoke:procurement-create",
+    order_id: "PO-DESKTOP-1",
+    supplier_party_id: "supplier-1",
+    ordered_at: "2026-08-28T02:00:00.000Z",
+    lines: [{
+      line_id: "PO-DESKTOP-1-L1",
+      product_id: "product-1",
+      unit_id: "kg",
+      quantity: "4",
+      receive_location_id: "warehouse-1",
+    }],
+    source_ref: "desktop-ui-smoke",
+    evidence_refs: ["synthetic:purchase-order:PO-DESKTOP-1"],
+  });
+  assert.equal(procurementCreatePreview.response.status, 200, JSON.stringify(procurementCreatePreview.body));
+  const procurementCreated = await mutation(
+    runtime,
+    "/api/procurement/apply",
+    procurementCreatePreview.body,
+  );
+  assert.equal(procurementCreated.response.status, 200);
+  assert.equal(procurementCreated.body.owner_ref, "procurement:order-owner");
+  const procurementReceivePreview = await mutation(runtime, "/api/procurement/preview", {
+    action: "receive",
+    idempotency_key: "desktop-smoke:procurement-receive",
+    order_id: "PO-DESKTOP-1",
+    target_line_id: "PO-DESKTOP-1-L1",
+    quantity: "4",
+    occurred_at: "2026-08-28T03:00:00.000Z",
+    source_ref: "desktop-ui-smoke",
+    evidence_refs: ["synthetic:receipt:PO-DESKTOP-1"],
+    reason: "synthetic receipt",
+  });
+  assert.equal(procurementReceivePreview.response.status, 200, JSON.stringify(procurementReceivePreview.body));
+  const procurementReceived = await mutation(
+    runtime,
+    "/api/procurement/apply",
+    procurementReceivePreview.body,
+  );
+  assert.equal(procurementReceived.response.status, 200);
+  assert.equal(procurementReceived.body.order.status, "received");
+
+  const salesCreatePreview = await mutation(runtime, "/api/sales/preview", {
+    action: "create",
+    idempotency_key: "desktop-smoke:sales-create",
+    order_id: "SO-DESKTOP-1",
+    customer_party_id: "supplier-1",
+    ordered_at: "2026-08-28T04:00:00.000Z",
+    lines: [{
+      line_id: "SO-DESKTOP-1-L1",
+      product_id: "product-1",
+      unit_id: "kg",
+      quantity: "3",
+      ship_from_location_id: "warehouse-1",
+    }],
+    source_ref: "desktop-ui-smoke",
+    evidence_refs: ["synthetic:sales-order:SO-DESKTOP-1"],
+  });
+  assert.equal(salesCreatePreview.response.status, 200, JSON.stringify(salesCreatePreview.body));
+  const salesCreated = await mutation(runtime, "/api/sales/apply", salesCreatePreview.body);
+  assert.equal(salesCreated.response.status, 200);
+  assert.equal(salesCreated.body.owner_ref, "sales:order-owner");
+  const salesFulfillPreview = await mutation(runtime, "/api/sales/preview", {
+    action: "fulfill",
+    idempotency_key: "desktop-smoke:sales-fulfill",
+    order_id: "SO-DESKTOP-1",
+    target_line_id: "SO-DESKTOP-1-L1",
+    quantity: "3",
+    occurred_at: "2026-08-28T05:00:00.000Z",
+    source_ref: "desktop-ui-smoke",
+    evidence_refs: ["synthetic:shipment:SO-DESKTOP-1"],
+    reason: "synthetic shipment",
+  });
+  assert.equal(salesFulfillPreview.response.status, 200, JSON.stringify(salesFulfillPreview.body));
+  const salesFulfilled = await mutation(runtime, "/api/sales/apply", salesFulfillPreview.body);
+  assert.equal(salesFulfilled.response.status, 200);
+  assert.equal(salesFulfilled.body.order.status, "fulfilled");
+
+  const deliveryOverview = await fetchRuntime(runtime, "/api/delivery/overview");
+  assert.equal(deliveryOverview.body.procurement_orders, 1);
+  assert.equal(deliveryOverview.body.sales_orders, 1);
+  assert.equal(deliveryOverview.body.inventory_movements, 3);
+  const deliveryProcurement = await fetchRuntime(runtime, "/api/delivery/procurement/orders");
+  assert.equal(deliveryProcurement.body.items[0].lines[0].received_quantity, "4");
+  const deliverySales = await fetchRuntime(runtime, "/api/delivery/sales/orders");
+  assert.equal(deliverySales.body.items[0].lines[0].fulfilled_quantity, "3");
+  const deliveryInventory = await fetchRuntime(runtime, "/api/delivery/inventory");
+  assert.equal(deliveryInventory.body.balances[0].quantity, "11");
 
   const backup = await backupLocalInstance({ instanceRoot, runtimePack, trustPath });
   assert.equal(backup.status, "created");
@@ -191,12 +313,27 @@ try {
   assert.ok(runtime.child.exitCode !== null || runtime.child.signalCode !== null);
   assert.equal(liveRuntimePids.size, 0);
   runtime = await lifecycle.start();
-  await loginLocalRuntime(runtime, username, password);
+  await resumeLocalRuntime(runtime, firstLogin.rememberSession.token);
   const restarted = await fetchRuntime(runtime, "/api/master-data/locations");
   assert.equal(restarted.body.items.length, 1);
   assert.equal(restarted.body.items[0].canonical_name, "Synthetic Warehouse");
+  const changedPassword = "synthetic updated horse battery staple";
+  const changed = await changeLocalPasswordRuntime(runtime, password, changedPassword, {
+    remember: true,
+  });
+  assert.equal(changed.rememberSession.authVersion, 2);
   await lifecycle.stop();
   assert.ok(runtime.child.exitCode !== null || runtime.child.signalCode !== null);
+  assert.equal(liveRuntimePids.size, 0);
+  runtime = await lifecycle.start();
+  await assert.rejects(
+    resumeLocalRuntime(runtime, firstLogin.rememberSession.token),
+    /desktop_local_remembered_login_failed:401/,
+  );
+  await resumeLocalRuntime(runtime, changed.rememberSession.token);
+  const passwordChangeReadback = await fetchRuntime(runtime, "/api/auth/me");
+  assert.equal(passwordChangeReadback.body.username, username);
+  await lifecycle.stop();
   assert.equal(liveRuntimePids.size, 0);
   runtime = null;
 
@@ -209,11 +346,24 @@ try {
     apply_disposition: applied.body.disposition,
     replay_disposition: replay.body.disposition,
     failure_zero_write: true,
+    delivery_owner_chain: {
+      inventory: inventoryApplied.body.owner_ref,
+      procurement: procurementCreated.body.owner_ref,
+      sales: salesCreated.body.owner_ref,
+    },
+    delivery_readback: {
+      procurement_orders: deliveryOverview.body.procurement_orders,
+      sales_orders: deliveryOverview.body.sales_orders,
+      inventory_movements: deliveryOverview.body.inventory_movements,
+      inventory_balance: deliveryInventory.body.balances[0].quantity,
+    },
     interrupted_setup_recovery: recovery.status,
     concurrent_start_spawn_count: 1,
     maximum_live_runtime_processes: maximumLiveRuntimeCount,
     backup_status: backup.validation.status,
     restart_readback_locations: restarted.body.items.length,
+    local_remembered_login: true,
+    password_change_invalidated_old_token: true,
     runtime_pack_tree_digest: release.manifest.pack_tree_digest,
     core_artifact_digest: release.manifest.core_artifact_digest,
     residual_runtime_processes: 0,

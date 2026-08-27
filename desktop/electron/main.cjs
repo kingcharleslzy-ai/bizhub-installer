@@ -4,6 +4,7 @@ const {
   ipcMain,
   protocol,
   session,
+  shell,
   WebContentsView,
 } = require("electron");
 const { readFile, stat } = require("node:fs/promises");
@@ -24,9 +25,10 @@ const {
   validateCloudLoginInput,
 } = require("./cloud-login.cjs");
 const {
-  clearRememberedSession,
-  loadRememberedSession,
-  saveRememberedSession,
+  clearAccountSession,
+  loadSavedAccounts,
+  saveAccount,
+  setActiveAccount,
 } = require("./credential-store.cjs");
 const {
   localRequestAllowed,
@@ -37,9 +39,12 @@ const {
   RUNTIME_COOKIE,
   backupLocalInstance,
   bootstrapLocalInstance,
+  changeLocalPasswordRuntime,
+  loadLocalAdminIdentity,
   loadLocalInstance,
   loginLocalRuntime,
   recoverInterruptedLocalSetup,
+  resumeLocalRuntime,
   startLocalRuntime,
   stopLocalRuntime,
 } = require("./local-runtime.cjs");
@@ -79,6 +84,7 @@ let workspaceState = {
   applicationOrigin: "",
   error: "",
   localInitialized: false,
+  localAccountId: "",
   localStatus: "stopped",
   localError: "",
   localLastBackup: "",
@@ -87,6 +93,10 @@ let workspaceState = {
   enterpriseWorkspaces: [],
   rememberedLoginAvailable: false,
   autoLoginStatus: "idle",
+  activeAccountId: "",
+  savedAccounts: [],
+  canCreateLocal: false,
+  pendingLocalAccountId: "",
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -100,6 +110,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 app.enableSandbox();
+if (process.env.BIZHUB_DESKTOP_USER_DATA_ROOT) {
+  app.setPath(
+    "userData",
+    path.join(path.resolve(process.env.BIZHUB_DESKTOP_USER_DATA_ROOT), "electron-profile"),
+  );
+}
 if (process.env.BIZHUB_DESKTOP_SMOKE_EXIT_ON_LOAD === "1") {
   app.disableHardwareAcceleration();
 }
@@ -177,6 +193,45 @@ function publishState(next) {
   }
 }
 
+function savedAccountSummaries(saved) {
+  return saved.accounts.map((account) => ({
+    accountId: account.accountId,
+    displayName: account.displayName,
+    mode: account.mode,
+    savedAt: account.savedAt,
+    canAutoLogin: account.session !== null,
+  }));
+}
+
+async function refreshSavedAccountState() {
+  const saved = await loadSavedAccounts({ userDataRoot: desktopUserDataRoot() });
+  publishState({
+    activeAccountId: saved.activeAccountId || "",
+    savedAccounts: savedAccountSummaries(saved),
+    rememberedLoginAvailable: saved.accounts.some((account) => account.session !== null),
+  });
+  return saved;
+}
+
+async function saveDesktopAccount({ accountId, displayName, mode, session: savedSession }) {
+  const saved = await saveAccount({
+    account: {
+      accountId,
+      displayName,
+      mode,
+      savedAt: new Date().toISOString(),
+      session: savedSession,
+    },
+    userDataRoot: desktopUserDataRoot(),
+  });
+  publishState({
+    activeAccountId: saved.activeAccountId || "",
+    savedAccounts: savedAccountSummaries(saved),
+    rememberedLoginAvailable: saved.accounts.some((account) => account.session !== null),
+  });
+  return saved;
+}
+
 function finishSmoke(result, exitCode) {
   const encoded = `${JSON.stringify(result)}\n`;
   (exitCode === 0 ? process.stdout : process.stderr).write(encoded);
@@ -200,10 +255,28 @@ function requireTrustedShellSender(event) {
   if (!trustedShellSender(event)) throw new Error("desktop_ipc_sender_rejected");
 }
 
+function trustedLocalSender(event) {
+  try {
+    const runtime = localRuntimeLifecycle.current();
+    return (
+      workspaceState.mode === "local"
+      && workspaceState.status === "connected"
+      && event.sender === workspaceView?.webContents
+      && normalizeLocalOrigin(event.senderFrame.url) === normalizeLocalOrigin(runtime?.origin || "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function requireTrustedLocalSender(event) {
+  if (!trustedLocalSender(event)) throw new Error("desktop_local_ipc_sender_rejected");
+}
+
 function setWorkspaceBounds() {
   if (!mainWindow || !workspaceView) return;
   const [width, height] = mainWindow.getContentSize();
-  const topInset = workspaceState.mode === "cloud" && workspaceState.status === "connected"
+  const topInset = workspaceState.status === "connected"
     ? 0
     : HEADER_HEIGHT;
   workspaceView.setBounds({
@@ -297,15 +370,17 @@ function configureLocalSession(runtimeSession, localOrigin) {
 async function refreshLocalState() {
   try {
     const instance = await loadLocalInstance(localInstanceRoot());
+    const admin = await loadLocalAdminIdentity(localInstanceRoot());
     publishState({
       localInitialized: true,
+      localAccountId: normalizeAccountId(admin.username),
       localError: "",
       ...(workspaceState.mode === "none" ? { displayName: instance.payload.display_name } : {}),
     });
     return instance;
   } catch (error) {
     if (error?.code === "ENOENT") {
-      publishState({ localInitialized: false, localError: "" });
+      publishState({ localInitialized: false, localAccountId: "", localError: "" });
       return null;
     }
     publishState({
@@ -356,6 +431,7 @@ async function openLocalWorkspaceView() {
       devTools: !app.isPackaged,
       experimentalFeatures: false,
       nodeIntegration: false,
+      preload: path.join(__dirname, "local-preload.cjs"),
       sandbox: true,
       session: runtimeSession,
       webSecurity: true,
@@ -391,14 +467,36 @@ async function openLocalWorkspaceView() {
     });
     if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
       const origin = runtime.origin;
-      void stopLocalMode().then(() => {
+      void (async () => {
+        const deadline = Date.now() + 10_000;
+        let product = null;
+        while (Date.now() < deadline) {
+          product = await workspaceView.webContents.executeJavaScript(`(() => ({
+            title: document.querySelector("h1")?.textContent?.trim() || "",
+            nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
+            text: document.body.innerText,
+          }))()`, true).catch(() => null);
+          if (product?.title === "经营概览" && product.nav.includes("设置")) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        const productReady = (
+          product?.title === "经营概览"
+          && product.nav.includes("主数据")
+          && product.nav.includes("采购")
+          && product.nav.includes("销售")
+          && product.nav.includes("库存")
+          && product.nav.includes("设置")
+          && !product.text.includes("BizHub is ready")
+        );
+        await stopLocalMode();
         finishSmoke({
-          status: "connected",
+          status: productReady ? "connected" : "error",
           mode: "local",
           origin,
+          generic_workspace_ready: productReady,
           residual_runtime_processes: 0,
-        }, 0);
-      });
+        }, productReady ? 0 : 1);
+      })();
     }
   });
   mainWindow.contentView.addChildView(workspaceView);
@@ -575,6 +673,15 @@ async function prepareLocalLogin() {
 }
 
 async function setupLocalInstance(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "accountId,companyName,password,remember"
+    || typeof input.remember !== "boolean"
+  ) {
+    throw new Error("desktop_local_setup_shape_invalid");
+  }
+  const accountId = normalizeAccountId(input.accountId);
   if (localRuntimeLifecycle.state() !== "stopped") {
     throw new Error("desktop_local_runtime_already_started");
   }
@@ -589,7 +696,11 @@ async function setupLocalInstance(input) {
       userDataRoot: desktopUserDataRoot(),
       runtimePack: localRuntimePackPath(),
       trustPath: localRuntimeTrustPath(),
-      input,
+      input: {
+        companyName: input.companyName,
+        username: accountId,
+        password: input.password,
+      },
     });
     publishState({
       localInitialized: true,
@@ -597,7 +708,15 @@ async function setupLocalInstance(input) {
       profileId: created.instance.profile_id,
     });
     const runtime = await startLocalMode();
-    await loginLocalRuntime(runtime, input.username, input.password);
+    const authenticated = await loginLocalRuntime(runtime, accountId, input.password, {
+      remember: input.remember,
+    });
+    await saveDesktopAccount({
+      accountId,
+      displayName: accountId,
+      mode: "local",
+      session: authenticated.rememberSession,
+    });
     await openLocalWorkspaceView();
   } catch (error) {
     await refreshLocalState();
@@ -615,13 +734,26 @@ async function authenticateLocal(input) {
   if (
     !input
     || typeof input !== "object"
-    || Object.keys(input).sort().join(",") !== "password,username"
+    || Object.keys(input).sort().join(",") !== "password,remember,username"
+    || typeof input.remember !== "boolean"
   ) {
     throw new Error("desktop_local_login_shape_invalid");
   }
   try {
     const runtime = await startLocalMode();
-    await loginLocalRuntime(runtime, String(input.username || ""), String(input.password || ""));
+    const username = normalizeAccountId(String(input.username || ""));
+    const authenticated = await loginLocalRuntime(
+      runtime,
+      username,
+      String(input.password || ""),
+      { remember: input.remember },
+    );
+    await saveDesktopAccount({
+      accountId: username,
+      displayName: username,
+      mode: "local",
+      session: authenticated.rememberSession,
+    });
     await openLocalWorkspaceView();
   } catch (error) {
     publishState({
@@ -771,24 +903,15 @@ async function loginEnterprise(input) {
       { password: normalized.password },
     );
     let rememberError = "";
-    if (normalized.remember) {
-      try {
-        await saveRememberedSession({
-          remembered: {
-            accountId: normalized.accountId,
-            session: authenticatedSession,
-          },
-          userDataRoot: desktopUserDataRoot(),
-        });
-      } catch {
-        rememberError = "desktop_remembered_session_save_failed";
-      }
-    } else {
-      try {
-        await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
-      } catch {
-        rememberError = "desktop_remembered_session_clear_failed";
-      }
+    try {
+      await saveDesktopAccount({
+        accountId: normalized.accountId,
+        displayName: authenticatedSession.accountName,
+        mode: "cloud",
+        session: normalized.remember ? authenticatedSession : null,
+      });
+    } catch {
+      rememberError = "desktop_remembered_session_save_failed";
     }
     publishState({
       rememberedLoginAvailable: normalized.remember && !rememberError,
@@ -807,62 +930,210 @@ async function loginEnterprise(input) {
   return workspaceState;
 }
 
-async function tryRememberedLogin() {
-  let remembered;
-  try {
-    remembered = await loadRememberedSession({ userDataRoot: desktopUserDataRoot() });
-  } catch (error) {
-    await clearRememberedSession({ userDataRoot: desktopUserDataRoot() }).catch(() => {});
-    publishState({
-      rememberedLoginAvailable: false,
-      autoLoginStatus: "error",
-      error: error instanceof Error ? error.message : "desktop_remembered_session_invalid",
-    });
-    return workspaceState;
-  }
-  if (!remembered) return workspaceState;
-  publishState({
-    rememberedLoginAvailable: true,
-    autoLoginStatus: "resolving",
-    error: "",
-  });
-  await lookupAccount({ accountId: remembered.accountId });
+function validateUnifiedLoginInput(input) {
   if (
-    workspaceState.accountLookupStatus !== "resolved"
-    || activeEnterpriseProfiles.size !== 1
-  ) {
-    publishState({ autoLoginStatus: "error" });
+    !input
+    || typeof input !== "object"
+    || Array.isArray(input)
+    || Object.keys(input).sort().join(",") !== "accountId,password,remember"
+    || typeof input.accountId !== "string"
+    || typeof input.password !== "string"
+    || typeof input.remember !== "boolean"
+  ) throw new Error("desktop_login_shape_invalid");
+  return {
+    accountId: normalizeAccountId(input.accountId),
+    password: input.password,
+    remember: input.remember,
+  };
+}
+
+async function loginAccount(input) {
+  let normalized;
+  try {
+    normalized = validateUnifiedLoginInput(input);
+  } catch (error) {
+    publishState({
+      status: "error",
+      error: error instanceof Error ? error.message : "desktop_login_shape_invalid",
+    });
     return workspaceState;
   }
-  try {
-    const workspace = [...activeEnterpriseProfiles.values()][0];
-    const options = await connectionValidationOptions();
-    const profile = validateConnectionEnvelope(workspace.envelope, options);
-    await stopLocalMode();
-    publishState({ autoLoginStatus: "authenticating" });
-    await openWorkspace(profile, workspace.partitionName, {
-      rememberedSession: remembered.session,
-    });
-    publishState({
-      rememberedLoginAvailable: true,
-      autoLoginStatus: "connected",
-      error: "",
-    });
-  } catch (error) {
-    destroyWorkspaceView();
-    const code = error instanceof Error ? error.message : "desktop_remembered_session_invalid";
-    if (code.startsWith("desktop_remembered_session_")) {
-      await clearRememberedSession({ userDataRoot: desktopUserDataRoot() }).catch(() => {});
+  const local = await refreshLocalState();
+  if (local) {
+    const admin = await loadLocalAdminIdentity(localInstanceRoot());
+    if (normalizeAccountId(admin.username) === normalized.accountId) {
+      publishState({ canCreateLocal: false, pendingLocalAccountId: "" });
+      return authenticateLocal({
+        username: normalized.accountId,
+        password: normalized.password,
+        remember: normalized.remember,
+      });
     }
+  }
+  const result = await loginEnterprise(normalized);
+  if (workspaceState.accountLookupStatus === "not_found") {
+    publishState({
+      canCreateLocal: !local,
+      pendingLocalAccountId: local ? "" : normalized.accountId,
+      status: "error",
+      error: local ? "desktop_account_not_found" : "desktop_account_not_found_can_create_local",
+    });
+  } else if (
+    workspaceState.accountLookupStatus === "resolved"
+    && activeEnterpriseProfiles.size === 0
+  ) {
+    publishState({
+      canCreateLocal: false,
+      pendingLocalAccountId: "",
+      status: "error",
+      error: "desktop_account_no_workspace",
+    });
+  } else {
+    publishState({ canCreateLocal: false, pendingLocalAccountId: "" });
+  }
+  return workspaceState;
+}
+
+async function resumeSavedAccount(accountId) {
+  const normalized = normalizeAccountId(accountId);
+  const saved = await loadSavedAccounts({ userDataRoot: desktopUserDataRoot() });
+  const account = saved.accounts.find((item) => item.accountId === normalized);
+  if (!account || !account.session) throw new Error("desktop_saved_account_session_missing");
+  await setActiveAccount({ accountId: normalized, userDataRoot: desktopUserDataRoot() });
+  publishState({ activeAccountId: normalized, autoLoginStatus: "authenticating", error: "" });
+  try {
+    if (account.mode === "local") {
+      const local = await refreshLocalState();
+      if (!local) throw new Error("desktop_local_instance_not_initialized");
+      const admin = await loadLocalAdminIdentity(localInstanceRoot());
+      if (normalizeAccountId(admin.username) !== normalized) {
+        throw new Error("desktop_local_account_mismatch");
+      }
+      const runtime = await startLocalMode();
+      await resumeLocalRuntime(runtime, account.session.token);
+      await openLocalWorkspaceView();
+    } else {
+      await lookupAccount({ accountId: normalized });
+      if (workspaceState.accountLookupStatus !== "resolved") {
+        throw new Error(
+          workspaceState.accountLookupStatus === "not_found"
+            ? "desktop_saved_cloud_workspace_not_found"
+            : "desktop_saved_cloud_workspace_unavailable",
+        );
+      }
+      if (activeEnterpriseProfiles.size !== 1) {
+        throw new Error("desktop_saved_cloud_workspace_invalid");
+      }
+      const workspace = [...activeEnterpriseProfiles.values()][0];
+      const profile = validateConnectionEnvelope(
+        workspace.envelope,
+        await connectionValidationOptions(),
+      );
+      await stopLocalMode();
+      await openWorkspace(profile, workspace.partitionName, { rememberedSession: account.session });
+    }
+    publishState({ autoLoginStatus: "connected", error: "" });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "desktop_saved_account_login_failed";
+    const invalidSession = (
+      code.startsWith("desktop_local_remembered_login_failed:401")
+      || code === "desktop_local_account_mismatch"
+      || code === "desktop_remembered_session_invalid"
+      || code === "desktop_saved_cloud_workspace_not_found"
+      || code === "desktop_saved_cloud_workspace_invalid"
+    );
+    if (invalidSession) {
+      await clearAccountSession({
+        accountId: normalized,
+        removeAccount: false,
+        userDataRoot: desktopUserDataRoot(),
+      }).catch(() => {});
+    }
+    await refreshSavedAccountState().catch(() => {});
+    destroyWorkspaceView();
+    if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop().catch(() => {});
     publishState({
       mode: "none",
       status: "error",
-      error: code,
-      rememberedLoginAvailable: !code.startsWith("desktop_remembered_session_"),
       autoLoginStatus: "error",
+      error: code,
     });
   }
   return workspaceState;
+}
+
+async function trySavedAccountLogin() {
+  let saved;
+  try {
+    saved = await refreshSavedAccountState();
+  } catch (error) {
+    publishState({
+      rememberedLoginAvailable: false,
+      autoLoginStatus: "error",
+      error: error instanceof Error ? error.message : "desktop_saved_accounts_invalid",
+    });
+    return workspaceState;
+  }
+  const active = saved.accounts.find((account) => account.accountId === saved.activeAccountId);
+  if (!active?.session) return workspaceState;
+  return resumeSavedAccount(active.accountId);
+}
+
+async function switchAccount(input = {}) {
+  const accountId = typeof input.accountId === "string" && input.accountId
+    ? normalizeAccountId(input.accountId)
+    : "";
+  destroyWorkspaceView();
+  if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop();
+  accountLookupGeneration.invalidate();
+  activeEnterpriseProfiles = new Map();
+  publishState({
+    mode: "none",
+    status: "idle",
+    displayName: "",
+    profileId: "",
+    applicationOrigin: "",
+    error: "",
+    localStatus: "stopped",
+    accountLookupStatus: "idle",
+    accountNotFound: false,
+    canCreateLocal: false,
+    pendingLocalAccountId: "",
+    autoLoginStatus: "idle",
+  });
+  if (accountId) {
+    await setActiveAccount({ accountId, userDataRoot: desktopUserDataRoot() });
+    await refreshSavedAccountState();
+    const selected = workspaceState.savedAccounts.find((item) => item.accountId === accountId);
+    if (selected?.canAutoLogin) return resumeSavedAccount(accountId);
+  }
+  return workspaceState;
+}
+
+async function changeLocalPassword(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "currentPassword,newPassword,remember"
+    || typeof input.remember !== "boolean"
+  ) throw new Error("desktop_local_password_change_shape_invalid");
+  const runtime = localRuntimeLifecycle.current();
+  if (!runtime) throw new Error("desktop_local_runtime_not_started");
+  const changed = await changeLocalPasswordRuntime(
+    runtime,
+    String(input.currentPassword || ""),
+    String(input.newPassword || ""),
+    { remember: input.remember },
+  );
+  const accountId = normalizeAccountId(changed.username);
+  await saveDesktopAccount({
+    accountId,
+    displayName: changed.username,
+    mode: "local",
+    session: changed.rememberSession,
+  });
+  await setLocalSessionCookies(workspaceView.webContents.session, runtime);
+  return { status: "changed", remembered: changed.rememberSession !== null };
 }
 
 async function forgetRememberedLogin() {
@@ -880,9 +1151,16 @@ async function finalizeCloudLogout({ revokeServerSession = false } = {}) {
     ) {
       await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
     }
-    await clearRememberedSession({ userDataRoot: desktopUserDataRoot() });
+    if (workspaceState.activeAccountId) {
+      await clearAccountSession({
+        accountId: workspaceState.activeAccountId,
+        removeAccount: false,
+        userDataRoot: desktopUserDataRoot(),
+      });
+    }
     await resetAccountLookup();
-    publishState({ rememberedLoginAvailable: false, autoLoginStatus: "idle" });
+    await refreshSavedAccountState();
+    publishState({ autoLoginStatus: "idle" });
     return workspaceState;
   })();
   try {
@@ -993,6 +1271,23 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return loginEnterprise(input);
   });
+  ipcMain.handle("desktop:login-account", async (event, input) => {
+    requireTrustedShellSender(event);
+    return loginAccount(input);
+  });
+  ipcMain.handle("desktop:resume-account", async (event, input) => {
+    requireTrustedShellSender(event);
+    if (
+      !input
+      || typeof input !== "object"
+      || Object.keys(input).sort().join(",") !== "accountId"
+    ) throw new Error("desktop_saved_account_selection_invalid");
+    return resumeSavedAccount(input.accountId);
+  });
+  ipcMain.handle("desktop:switch-account", async (event, input) => {
+    requireTrustedShellSender(event);
+    return switchAccount(input);
+  });
   ipcMain.handle("desktop:forget-remembered-login", async (event) => {
     requireTrustedShellSender(event);
     return forgetRememberedLogin();
@@ -1028,6 +1323,53 @@ function installIpcHandlers() {
   ipcMain.handle("desktop:stop-local", async (event) => {
     requireTrustedShellSender(event);
     return stopLocalMode();
+  });
+  ipcMain.handle("desktop:local-settings", async (event) => {
+    requireTrustedLocalSender(event);
+    const runtime = localRuntimeLifecycle.current();
+    return {
+      appVersion: app.getVersion(),
+      accountId: workspaceState.activeAccountId,
+      displayName: workspaceState.displayName,
+      runtimeVersion: runtime?.release?.runtime_version || "",
+      lastBackup: workspaceState.localLastBackup,
+      remembered: workspaceState.savedAccounts.some((account) => (
+        account.accountId === workspaceState.activeAccountId && account.canAutoLogin
+      )),
+    };
+  });
+  ipcMain.handle("desktop:local-backup", async (event) => {
+    requireTrustedLocalSender(event);
+    await createLocalBackup();
+    if (workspaceState.localError) throw new Error(workspaceState.localError);
+    return { status: "created", path: workspaceState.localLastBackup };
+  });
+  ipcMain.handle("desktop:local-open-backups", async (event) => {
+    requireTrustedLocalSender(event);
+    const instance = await loadLocalInstance(localInstanceRoot());
+    const error = await shell.openPath(instance.paths.backups);
+    if (error) throw new Error("desktop_local_backup_folder_open_failed");
+    return { status: "opened" };
+  });
+  ipcMain.handle("desktop:local-change-password", async (event, input) => {
+    requireTrustedLocalSender(event);
+    return changeLocalPassword(input);
+  });
+  ipcMain.handle("desktop:local-switch-account", async (event) => {
+    requireTrustedLocalSender(event);
+    return switchAccount();
+  });
+  ipcMain.handle("desktop:local-forget-account", async (event) => {
+    requireTrustedLocalSender(event);
+    const accountId = workspaceState.activeAccountId;
+    if (accountId) {
+      await clearAccountSession({
+        accountId,
+        removeAccount: false,
+        userDataRoot: desktopUserDataRoot(),
+      });
+    }
+    return switchAccount();
   });
 }
 
@@ -1069,10 +1411,16 @@ async function createMainWindow() {
   });
   await mainWindow.loadURL(SHELL_URL);
   await refreshLocalState();
+  await refreshSavedAccountState();
 
   if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
     try {
-      await startLocalMode();
+      const runtime = await startLocalMode();
+      await loginLocalRuntime(
+        runtime,
+        process.env.BIZHUB_DESKTOP_SMOKE_LOCAL_USERNAME || "synthetic-admin",
+        process.env.BIZHUB_DESKTOP_SMOKE_LOCAL_PASSWORD || "",
+      );
       await openLocalWorkspaceView();
     } catch (error) {
       finishSmoke({
@@ -1096,7 +1444,7 @@ async function createMainWindow() {
     }
     return;
   }
-  await tryRememberedLogin();
+  await trySavedAccountLogin();
 }
 
 if (squirrelStartupHandled) {

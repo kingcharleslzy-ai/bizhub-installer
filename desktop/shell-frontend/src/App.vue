@@ -6,157 +6,101 @@ const state = ref({
   status: "idle",
   displayName: "",
   profileId: "",
-  applicationOrigin: "",
   error: "",
   localInitialized: false,
+  localAccountId: "",
   localStatus: "stopped",
   localError: "",
-  localLastBackup: "",
   accountLookupStatus: "idle",
-  accountNotFound: false,
-  enterpriseWorkspaces: [],
-  rememberedLoginAvailable: false,
   autoLoginStatus: "idle",
+  activeAccountId: "",
+  savedAccounts: [],
+  canCreateLocal: false,
+  pendingLocalAccountId: "",
 });
-const setupRequested = ref(false);
-const accountForm = reactive({ accountId: "", password: "", remember: true });
-const setupForm = reactive({ companyName: "", username: "admin", password: "" });
-const loginForm = reactive({ username: "admin", password: "" });
+const form = reactive({ accountId: "", password: "", remember: true });
+const companyName = ref("");
 let unsubscribe = () => {};
 
 const connected = computed(() => state.value.status === "connected");
-const cloudConnected = computed(() => state.value.mode === "cloud" && connected.value);
 const working = computed(() => (
   state.value.status === "loading"
   || state.value.accountLookupStatus === "resolving"
   || ["resolving", "authenticating"].includes(state.value.autoLoginStatus)
   || ["starting", "initializing"].includes(state.value.localStatus)
 ));
-const localLogin = computed(() => (
-  state.value.mode === "local"
-  && state.value.localInitialized
-  && ["awaiting_login", "error"].includes(state.value.localStatus)
-));
-const showSetup = computed(() => !state.value.localInitialized && setupRequested.value);
-const accountResolved = computed(() => (
-  state.value.accountLookupStatus === "resolved"
-  || state.value.accountLookupStatus === "not_found"
-));
-const statusLabel = computed(() => {
-  if (state.value.autoLoginStatus === "resolving") return "正在自动查找工作区";
-  if (state.value.autoLoginStatus === "authenticating") return "正在自动登录云端";
-  if (state.value.accountLookupStatus === "resolving") return "正在查找账号工作区";
-  if (state.value.mode === "cloud" && state.value.status === "loading") return "正在连接云端";
-  if (state.value.mode === "cloud" && connected.value) return "企业云端已连接";
-  if (state.value.mode === "local" && state.value.localStatus === "initializing") return "正在初始化本地实例";
-  if (state.value.mode === "local" && state.value.localStatus === "starting") return "正在启动本地 Runtime";
-  if (state.value.mode === "local" && state.value.localStatus === "awaiting_login") return "等待本地登录";
-  if (state.value.mode === "local" && connected.value) return "本地 Generic 已连接";
-  if (state.value.status === "error") return "操作未完成";
-  return "选择工作区并登录";
-});
+const errorCode = computed(() => state.value.localError || state.value.error || "");
 const errorLabel = computed(() => {
-  const value = state.value.localError || state.value.error;
-  if (!value) return "";
   const known = {
-    desktop_admin_password_invalid: "管理员密码至少需要 12 个字符。",
-    desktop_company_name_invalid: "请输入 2 至 80 个字符的本地企业名称。",
-    desktop_local_instance_already_exists: "这台电脑已经初始化过一个本地实例。",
-    desktop_local_instance_not_initialized: "请先明确创建本地实例。",
-    desktop_local_login_failed: "本地管理员账号或密码不正确。",
-    desktop_local_setup_in_progress: "本地初始化正在进行，请稍候。",
-    desktop_connection_failed: "连接配置无法使用。",
-    desktop_account_id_invalid: "账号格式无效，请使用 3 至 128 位字母、数字或 . _ @ + -。",
-    desktop_account_lookup_shape_invalid: "账号查询请求无效。",
-    desktop_account_directory_not_configured: "当前构建尚未配置正式账号目录，不能查找企业云端。",
-    desktop_account_directory_timeout: "账号目录响应超时，请稍后重试。",
-    desktop_account_directory_unreachable: "账号目录暂时不可达；不会因此创建本地数据库。",
-    desktop_account_directory_response_size_invalid: "账号目录响应超出安全范围。",
-    desktop_account_directory_response_json_invalid: "账号目录返回了无效数据。",
-    desktop_account_directory_response_shape_invalid: "账号目录响应结构无效。",
-    desktop_account_directory_response_invalid: "账号目录响应版本或工作区数量无效。",
-    desktop_account_workspace_duplicate: "账号目录返回了重复工作区。",
-    desktop_account_multiple_workspaces: "该账号对应多个工作区，当前简化登录暂不支持自动选择。",
-    desktop_cloud_login_shape_invalid: "登录请求格式无效。",
-    desktop_cloud_password_invalid: "请输入云端密码。",
-    desktop_cloud_login_invalid: "账号或云端密码不正确。",
+    desktop_account_id_invalid: "账号格式无效，请检查后重试。",
+    desktop_account_not_found: "没有找到这个云端账号；本机已有另一个本地账号，不能再创建第二个本地实例。",
+    desktop_account_not_found_can_create_local: "没有找到这个云端账号。你可以用当前账号创建本地 BizHub。",
+    desktop_account_no_workspace: "这个账号已登记，但当前没有可登录的企业工作区。",
+    desktop_account_directory_not_configured: "当前客户端没有配置账号目录，暂时无法登录云端。",
+    desktop_account_directory_timeout: "账号查询超时，请稍后重试。",
+    desktop_account_directory_unreachable: "账号目录暂时不可达；不会因此自动创建本地数据。",
+    desktop_cloud_login_invalid: "账号或密码不正确。",
     desktop_cloud_login_rate_limited: "登录尝试过多，请稍后再试。",
-    desktop_cloud_login_unavailable: "企业云端认证暂不可用，请稍后重试。",
-    desktop_cloud_login_failed: "无法完成云端登录，请检查网络后重试。",
+    desktop_cloud_login_unavailable: "云端登录暂时不可用。",
+    desktop_local_instance_already_exists: "这台电脑已经有一个本地 BizHub。",
+    desktop_local_login_failed: "本地账号或密码不正确。",
+    desktop_local_remembered_login_failed: "本地保持登录已失效，请重新输入密码。",
+    desktop_saved_account_session_missing: "该账号需要重新输入密码。",
+    desktop_company_name_invalid: "本地企业名称需为 2 至 80 个字符。",
+    desktop_admin_password_invalid: "本地密码至少需要 12 个字符。",
     desktop_remembered_session_expired: "保持登录已到期，请重新输入密码。",
-    desktop_remembered_session_invalid: "本机登录令牌无效，请重新输入密码。",
-    desktop_remembered_session_file_invalid: "本机登录状态已损坏，请重新输入密码。",
-    desktop_remembered_session_save_failed: "已经登录，但本机无法保存登录状态；下次需重新输入密码。",
-    desktop_remembered_session_clear_failed: "已经登录，但旧的本机登录状态未能清理。",
-    desktop_workspace_connection_failed: "企业工作区无法使用。",
-    desktop_workspace_selection_shape_invalid: "企业工作区选择无效。",
-    desktop_workspace_not_resolved_for_account: "该工作区不属于本次账号查询，请重新查找账号。",
-    desktop_profile_file_size_invalid: "连接文件大小或类型无效。",
-    profile_envelope_shape_invalid: "企业工作区文件结构无效。",
-    profile_envelope_identity_invalid: "企业工作区文件版本或身份无效。",
-    profile_cloud_authority_invalid: "企业工作区没有声明唯一云端数据权威。",
-    profile_expired: "企业连接文件已过期，请取得新文件。",
-    profile_signature_mismatch: "企业连接文件签名校验失败。",
-    profile_signing_key_unknown: "客户端尚未信任该连接签发者。",
-    profile_signing_key_inactive: "连接签发密钥当前无效。",
-    profile_expiry_exceeds_signing_key: "企业工作区有效期超过签发密钥有效期。",
-    profile_shell_version_unsupported: "客户端版本过低，请先更新 BizHub Desktop。",
+    desktop_remembered_session_invalid: "保持登录已失效，请重新输入密码。",
   };
-  if (known[value]) return known[value];
-  if (value.startsWith("desktop_local_login_failed:401")) return "本地管理员账号或密码不正确。";
-  if (value.startsWith("desktop_account_directory_http_")) return "账号目录暂时无法完成查询；不会自动切换到本地。";
-  if (value.startsWith("workspace_load_failed:")) return "企业云端页面加载失败，请检查网络后重试。";
-  if (value.startsWith("local_workspace_load_failed:")) return "本地页面加载失败，可停止后重新打开。";
-  return "操作未通过安全校验，请查看本机诊断日志。";
+  if (known[errorCode.value]) return known[errorCode.value];
+  if (errorCode.value.startsWith("desktop_local_login_failed:401")) return "本地账号或密码不正确。";
+  if (errorCode.value.startsWith("desktop_account_directory_http_")) return "账号目录暂时无法完成查询。";
+  return errorCode.value ? "操作未完成，请检查账号、密码或网络后重试。" : "";
+});
+const statusLabel = computed(() => {
+  if (state.value.autoLoginStatus === "authenticating") return "正在自动登录";
+  if (state.value.accountLookupStatus === "resolving") return "正在识别账号";
+  if (state.value.localStatus === "initializing") return "正在创建本地 BizHub";
+  if (state.value.localStatus === "starting") return "正在启动本地 BizHub";
+  if (working.value) return "正在登录";
+  if (errorLabel.value) return "操作未完成";
+  return "登录后自动进入云端或本地 BizHub";
 });
 
-async function loginEnterprise() {
-  state.value = await window.bizhubDesktop.loginEnterprise({ ...accountForm });
-  if (accountForm.accountId.trim()) {
-    setupForm.username = accountForm.accountId.trim().toLowerCase();
-    loginForm.username = accountForm.accountId.trim().toLowerCase();
-  }
-  accountForm.password = "";
+function syncActiveAccount() {
+  if (!form.accountId && state.value.activeAccountId) form.accountId = state.value.activeAccountId;
 }
 
-async function changeAccount() {
-  setupRequested.value = false;
-  accountForm.password = "";
-  state.value = await window.bizhubDesktop.forgetRememberedLogin();
+async function login() {
+  state.value = await window.bizhubDesktop.loginAccount({ ...form });
+  if (state.value.status === "connected") form.password = "";
 }
 
-async function beginLocal() {
-  if (!state.value.localInitialized) {
-    setupRequested.value = true;
-    return;
-  }
-  state.value = await window.bizhubDesktop.prepareLocal();
+async function selectSaved(account) {
+  form.accountId = account.accountId;
+  form.password = "";
+  if (account.canAutoLogin) state.value = await window.bizhubDesktop.resumeAccount(account.accountId);
 }
 
-async function setupLocal() {
-  state.value = await window.bizhubDesktop.setupLocal({ ...setupForm });
-  setupForm.password = "";
+async function createLocal() {
+  state.value = await window.bizhubDesktop.setupLocal({
+    accountId: state.value.pendingLocalAccountId || form.accountId,
+    companyName: companyName.value,
+    password: form.password,
+    remember: form.remember,
+  });
+  if (state.value.status === "connected") form.password = "";
 }
 
-async function loginLocal() {
-  state.value = await window.bizhubDesktop.loginLocal({ ...loginForm });
-  loginForm.password = "";
-}
-
-async function closeCurrent() {
-  state.value = state.value.mode === "local"
-    ? await window.bizhubDesktop.stopLocal()
-    : await window.bizhubDesktop.disconnectWorkspace();
-}
-
-async function backupLocal() {
-  state.value = await window.bizhubDesktop.backupLocal();
+function cancelLocalCreation() {
+  state.value = { ...state.value, canCreateLocal: false, pendingLocalAccountId: "", error: "" };
 }
 
 onMounted(async () => {
   state.value = await window.bizhubDesktop.getState();
+  syncActiveAccount();
   unsubscribe = window.bizhubDesktop.onStateChange((next) => {
     state.value = next;
+    syncActiveAccount();
   });
 });
 
@@ -165,183 +109,59 @@ onBeforeUnmount(() => unsubscribe());
 
 <template>
   <div class="desktop-shell">
-    <header v-if="!cloudConnected" class="shell-bar">
+    <header v-if="!connected" class="shell-bar">
       <div class="identity">
         <span class="mark">BH</span>
-        <div>
-          <strong>BizHub Desktop</strong>
-          <small v-if="state.displayName && state.mode !== 'none'">
-            {{ state.displayName }} · {{ state.profileId }}
-          </small>
-          <small v-else>通用企业客户端</small>
-        </div>
+        <div><strong>BizHub Desktop</strong><small>通用企业客户端</small></div>
       </div>
       <div class="connection-state">
-        <span class="status-dot" :class="state.status"></span>
-        <span>{{ statusLabel }}</span>
-        <button
-          v-if="connected && state.mode === 'local'"
-          class="quiet-button"
-          type="button"
-          @click="backupLocal"
-        >
-          创建备份
-        </button>
-        <button v-if="state.mode !== 'none'" class="quiet-button" type="button" @click="closeCurrent">
-          {{ state.mode === "local" ? "停止本地" : "关闭工作区" }}
-        </button>
+        <span class="status-dot" :class="state.status"></span><span>{{ statusLabel }}</span>
       </div>
     </header>
 
-    <main v-if="!connected" class="start-page">
-      <section v-if="localLogin" class="start-card focused-card">
+    <main v-if="!connected" class="unified-start">
+      <section class="login-panel">
         <div class="card-heading">
-          <span class="step">本地 BizHub</span>
-          <h1>登录本地 Generic 实例</h1>
-          <p>
-            Runtime 只监听本次随机的 127.0.0.1 端口。未知账号不会创建数据库，
-            云端连接失败也不会切换到这里。
-          </p>
+          <span class="step">BIZHUB WORKSPACES</span>
+          <h1>登录 BizHub</h1>
+          <p>输入一个账号和密码。客户端会自动识别并进入企业云端或本机 Generic；密码不会保存在电脑上。</p>
         </div>
-        <form class="local-form" @submit.prevent="loginLocal">
-          <label>
-            管理员账号
-            <input v-model="loginForm.username" autocomplete="username" maxlength="80" required>
-          </label>
-          <label>
-            密码
-            <input
-              v-model="loginForm.password"
-              type="password"
-              autocomplete="current-password"
-              maxlength="1024"
-              required
-            >
-          </label>
-          <button class="primary-button" type="submit" :disabled="working">登录并打开</button>
-        </form>
-        <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
-      </section>
 
-      <section v-else-if="showSetup" class="start-card focused-card">
-        <div class="card-heading">
-          <span class="step">首次本地设置</span>
-          <h1>创建一个本地 Generic 实例</h1>
-          <p>
-            只有提交本表后才会创建本地目录、合成 SQLite 和首位管理员。
-            本地实例与任何企业云端数据库互不同步，也不会获得客户私有模块。
-          </p>
-        </div>
-        <form class="local-form" @submit.prevent="setupLocal">
-          <label>
-            本地企业名称
-            <input v-model="setupForm.companyName" maxlength="80" required>
-          </label>
-          <label>
-            首位管理员账号
-            <input v-model="setupForm.username" autocomplete="username" maxlength="80" required>
-          </label>
-          <label>
-            管理员密码（至少 12 个字符）
-            <input
-              v-model="setupForm.password"
-              type="password"
-              autocomplete="new-password"
-              minlength="12"
-              maxlength="1024"
-              required
+        <div v-if="state.savedAccounts.length" class="saved-accounts">
+          <span>已保存账号</span>
+          <div>
+            <button
+              v-for="account in state.savedAccounts"
+              :key="account.accountId"
+              type="button"
+              :class="{ active: form.accountId === account.accountId }"
+              :disabled="working"
+              @click="selectSaved(account)"
             >
-          </label>
-          <div class="form-actions">
-            <button class="secondary-button" type="button" @click="setupRequested = false">返回</button>
-            <button class="primary-button" type="submit" :disabled="working">明确创建</button>
-          </div>
-        </form>
-        <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
-      </section>
-
-      <template v-else>
-        <section class="start-card">
-          <div class="card-heading">
-            <span class="step">BIZHUB WORKSPACES</span>
-            <h1>{{ accountResolved && !state.enterpriseWorkspaces.length ? "没有可登录的企业工作区" : "登录 BizHub" }}</h1>
-            <p>
-              输入账号和密码后直接进入对应系统。账号目录只接收账号标识；
-              密码只用于本次云端验证，保持登录仅保存可撤销令牌，不保存密码。
-            </p>
-          </div>
-          <form
-            v-if="!accountResolved || state.enterpriseWorkspaces.length || state.status === 'error'"
-            class="account-lookup login-account-form"
-            @submit.prevent="loginEnterprise"
-          >
-            <label>
-              BizHub 账号
-              <input
-                v-model="accountForm.accountId"
-                autocomplete="username"
-                maxlength="128"
-                placeholder="例如 name@example.com"
-                required
-              >
-            </label>
-            <label>
-              密码
-              <input
-                v-model="accountForm.password"
-                type="password"
-                autocomplete="current-password"
-                maxlength="1024"
-                placeholder="请输入云端密码"
-                required
-              >
-            </label>
-            <label class="remember-login">
-              <input v-model="accountForm.remember" type="checkbox">
-              <span>保持登录，下次自动进入（不保存密码）</span>
-            </label>
-            <button class="primary-button" type="submit" :disabled="working">
-              {{ working ? "正在登录…" : "登录并进入" }}
+              <strong>{{ account.displayName }}</strong>
+              <small>{{ account.mode === 'cloud' ? '云端' : '本地' }} · {{ account.canAutoLogin ? '可自动登录' : '需密码' }}</small>
             </button>
-          </form>
-          <div v-else class="empty-workspaces">
-            <strong>{{ state.accountNotFound ? "没有找到企业云端工作区" : "该账号当前没有企业云端工作区" }}</strong>
-            <span v-if="state.accountNotFound">
-              不会自动创建数据库；如需使用 Generic 本地版，请在右侧明确创建。
-            </span>
-            <span v-else>
-              不会自动创建数据库；请确认账号权限，或在右侧明确创建 Generic 本地版。
-            </span>
           </div>
-          <button
-            v-if="accountResolved"
-            class="secondary-button add-workspace"
-            type="button"
-            :disabled="working"
-            @click="changeAccount"
-          >
-            换一个账号
-          </button>
+        </div>
+
+        <form class="unified-form" @submit.prevent="login">
+          <label>账号<input v-model="form.accountId" autocomplete="username" maxlength="128" required></label>
+          <label>密码<input v-model="form.password" type="password" autocomplete="current-password" maxlength="1024" required></label>
+          <label class="remember-login"><input v-model="form.remember" type="checkbox"><span>保持登录，下次自动进入（只保存可撤销令牌）</span></label>
+          <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在登录…' : '登录并进入' }}</button>
+        </form>
+
+        <section v-if="state.canCreateLocal" class="local-create">
+          <div><strong>创建本地 BizHub</strong><p>账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区。这台电脑尚无本地实例，可以创建一个独立 Generic Local。</p></div>
+          <form @submit.prevent="createLocal">
+            <label>本地企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>
+            <div class="form-actions"><button class="secondary-button" type="button" @click="cancelLocalCreation">取消</button><button class="primary-button" type="submit" :disabled="working">明确创建并进入</button></div>
+          </form>
         </section>
 
-        <aside class="local-preview enabled">
-          <span class="preview-label">GENERIC LOCAL</span>
-          <h2>{{ state.localInitialized ? "打开本地 BizHub" : "创建本地 BizHub" }}</h2>
-          <p v-if="state.localInitialized">
-            已存在一个本地实例。打开后需使用它自己的管理员账号登录，
-            正式写入只经过固定 Generic Owner。
-          </p>
-          <p v-else>
-            首次使用需要明确确认。客户端会创建一个独立本地实例，
-            不会导入企业云端或客户私有数据。
-          </p>
-          <button type="button" :disabled="working" @click="beginLocal">
-            {{ state.localInitialized ? "启动并登录" : "开始本地设置" }}
-          </button>
-          <small class="local-boundary">127.0.0.1 随机端口 · 单一本地 SQLite · 不含客户私有模块</small>
-        </aside>
-        <p v-if="errorLabel" class="error-message page-error" role="alert">{{ errorLabel }}</p>
-      </template>
+        <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
+        <p class="boundary-note">企业账号只连接签名云端工作区；本地账号只使用本机单一 SQLite，二者不会互相复制或同步数据。</p>
+      </section>
     </main>
   </div>
 </template>

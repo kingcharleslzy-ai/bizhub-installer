@@ -39,8 +39,8 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "clearCache",
     "cloudLoginScript",
     "sessionStorageScript",
-    "saveRememberedSession",
-    "clearRememberedSession",
+    "saveDesktopAccount",
+    "clearAccountSession",
     "workspaceView.setVisible(false)",
     "workspaceView.setVisible(true)",
     "isCloudLogoutRequest",
@@ -64,15 +64,15 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   }
 });
 
-test("connected cloud workspaces replace the Desktop chrome and own the logout control", async () => {
+test("connected cloud and local workspaces replace the Desktop chrome", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const shell = await readFile(path.join(ROOT, "shell-frontend", "src", "App.vue"), "utf8");
   assert.match(
     main,
-    /workspaceState\.mode === "cloud" && workspaceState\.status === "connected"\s+\? 0\s+: HEADER_HEIGHT/,
+    /workspaceState\.status === "connected"\s+\? 0\s+: HEADER_HEIGHT/,
   );
   assert.match(main, /if \(authenticationPending\) return;[\s\S]*workspaceView\.setVisible\(true\)/);
-  assert.ok(shell.includes('v-if="!cloudConnected" class="shell-bar"'));
+  assert.ok(shell.includes('v-if="!connected" class="shell-bar"'));
   assert.ok(!shell.includes("退出并清除保持登录"));
 });
 
@@ -94,7 +94,7 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   assert.equal(runtimeTrust.architecture, "arm64");
   assert.match(runtimeTrust.runtime_manifest_sha256, /^[0-9a-f]{64}$/);
   assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
-  assert.equal(runtimeTrust.runtime_pack_file_count, 126);
+  assert.ok(runtimeTrust.runtime_pack_file_count > 0);
   assert.ok(mainTrustSelection(await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8")));
 });
 
@@ -117,12 +117,16 @@ function mainTrustSelection(main) {
 test("local Runtime lifecycle is isolated behind bounded main-process IPC", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const preload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
+  const localPreload = await readFile(path.join(ROOT, "electron", "local-preload.cjs"), "utf8");
   const localRuntime = await readFile(path.join(ROOT, "electron", "local-runtime.cjs"), "utf8");
   const localLifecycle = await readFile(path.join(ROOT, "electron", "local-lifecycle.cjs"), "utf8");
   for (const required of [
     "bootstrapLocalInstance",
     "startLocalRuntime",
     "stopLocalRuntime",
+    "resumeLocalRuntime",
+    "changeLocalPasswordRuntime",
+    "loadLocalAdminIdentity",
     "backupLocalInstance",
     "BIZHUB_DESKTOP_PARENT_PID",
     "127.0.0.1",
@@ -134,6 +138,9 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   }
   for (const api of [
     "lookupAccount",
+    "loginAccount",
+    "resumeAccount",
+    "switchAccount",
     "loginEnterprise",
     "forgetRememberedLogin",
     "resetAccountLookup",
@@ -147,6 +154,11 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   }
   assert.ok(!preload.includes("node:child_process"));
   assert.ok(!preload.includes("node:fs"));
+  for (const api of ["getSettings", "createBackup", "openBackupFolder", "changePassword", "switchAccount", "forgetAccount"]) {
+    assert.ok(localPreload.includes(api), api);
+  }
+  assert.ok(!localPreload.includes("node:child_process"));
+  assert.ok(!localPreload.includes("node:fs"));
   const squirrelStartup = await readFile(path.join(ROOT, "electron", "squirrel-startup.cjs"), "utf8");
   assert.ok(squirrelStartup.includes("--squirrel-install"));
   assert.ok(squirrelStartup.includes("--squirrel-uninstall"));

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Complete Desktop-L1 as one private-project product slice. One account/password
+  form now routes an exact existing local account to Generic Local and every
+  other account to the signed cloud directory; only a confirmed directory 404
+  can offer first-time local creation, and only when this machine has no local
+  instance. Cloud and local accounts share one remembered-account switcher.
+  Desktop stores revocable time-bounded tokens in a `0600` file and never stores
+  passwords; existing W1 cloud tokens migrate automatically.
+- Replace the Generic Local placeholder with a usable modular workspace for
+  overview, master data, procurement, sales, inventory, and minimal settings.
+  Reads use bounded delivery projections; writes still use the existing typed
+  preview/apply Owners, with an explicit source-evidence reference required for
+  procurement and sales. Password change increments administrator `auth_version`
+  and invalidates every older local session without a SQLite migration.
 - Keep the cloud WebContentsView hidden while Desktop performs the first
   same-origin authentication, then reveal the authenticated Workspace at full
   content height without a second Desktop title bar. The Workspace's existing

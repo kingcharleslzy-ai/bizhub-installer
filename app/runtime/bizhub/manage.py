@@ -38,6 +38,7 @@ def initialize_admin(username: str, password: str) -> dict[str, str]:
             "schema_version": "bizhub.public-admin.v1",
             "username": normalized,
             "password_hash": password_hash(password.rstrip("\r\n")),
+            "auth_version": 1,
         },
     )
     return {"status": "created", "username": normalized}
