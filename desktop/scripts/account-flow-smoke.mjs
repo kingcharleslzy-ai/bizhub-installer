@@ -900,6 +900,17 @@ try {
   ) {
     fail("desktop_account_flow_confirmed_local_saved_account_boundary_invalid");
   }
+  const stoppedLocalState = await evaluate(cdp, "window.bizhubDesktop.stopLocal()");
+  if (
+    stoppedLocalState.mode !== "none"
+    || stoppedLocalState.status !== "idle"
+    || stoppedLocalState.localStatus !== "stopped"
+  ) {
+    fail("desktop_account_flow_confirmed_local_runtime_not_stopped");
+  }
+  if (await workspaceTargetPresent()) {
+    fail("desktop_account_flow_confirmed_local_workspace_not_closed");
+  }
 
   process.stdout.write(`${JSON.stringify({
     status: "passed",
@@ -923,6 +934,7 @@ try {
     confirmed_not_found_local_instances_created: 1,
     final_local_create_directory_lookup: true,
     saved_cloud_account_preserved: true,
+    confirmed_local_runtime_stopped: true,
     local_setup_form_reached: true,
     remembered_password_fields: 0,
     remembered_session_token_saved: true,

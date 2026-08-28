@@ -105,7 +105,7 @@ d3fcdf84335fc2f64b9b45ba2395163ee4f7cb41f834ce6343693c068bf6071b  desktop/runtim
 55d85fbf7a8be3ea2f04abfb79cbd3e59fe71d6314ffd524b1e399346662a95f  desktop/runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip
 f37efea4e23d2183ad3a1e8e1d453e69258604265e666bc5126a0046d97ae098  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.sha256
 76462083376acd82b0ca2a303b8250599ce9560f35a7190882da0c697b1f938f  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip
-2db1bb59b353dab43b7c26429b02483ab89a02051160bb8f53429bcafabc8644  desktop/scripts/account-flow-smoke.mjs
+6cbdb671c0c821b66b0e18296cfba89cb289003472c7feec531380424c566430  desktop/scripts/account-flow-smoke.mjs
 5435092b54d89408aad1e1b55eef5054d0d1445848d172634a558987fbdd9cf4  desktop/scripts/cloud-smoke.mjs
 9d771086f0be22df3200f17dbfc92cb4a08420fc283a514668265105d822a896  desktop/scripts/create-synthetic-windows-signing-certificate.ps1
 ef6e9c30344260ad6e194bcc170ed334641bd38c61b347dfabee98c0364585b2  desktop/scripts/expand-runtime-archive.ps1
