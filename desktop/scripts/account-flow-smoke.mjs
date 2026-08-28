@@ -1116,5 +1116,10 @@ try {
   if (packagedAccountDirectory && originalPackagedAccountDirectory) {
     await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
   }
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await rm(temporaryRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 10 : 0,
+    retryDelay: 200,
+  });
 }
