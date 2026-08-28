@@ -5,9 +5,11 @@ const {
   ipcMain,
   Menu,
   net,
+  nativeImage,
   protocol,
   session,
   shell,
+  Tray,
   WebContentsView,
 } = require("electron");
 const { mkdir, readFile, stat, writeFile } = require("node:fs/promises");
@@ -80,11 +82,13 @@ const MIME_TYPES = new Map([
 
 let mainWindow = null;
 let workspaceView = null;
+let backgroundTray = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
 let activeEnterpriseProfiles = new Map();
 const accountLookupGeneration = createAccountLookupGeneration();
 let shutdownInProgress = false;
+let quitRequested = false;
 let cloudLogoutCleanupPromise = null;
 let updateCheckPromise = null;
 let updateDownloadPromise = null;
@@ -1628,6 +1632,18 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return workspaceState;
   });
+  if (process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1") {
+    ipcMain.handle("desktop:smoke-hide-window", (event) => {
+      requireTrustedShellSender(event);
+      setTimeout(() => mainWindow?.hide(), 100);
+      return { status: "hiding" };
+    });
+    ipcMain.handle("desktop:smoke-restore-window", (event) => {
+      requireTrustedShellSender(event);
+      showMainWindow();
+      return { status: "visible" };
+    });
+  }
   ipcMain.handle("desktop:get-update-state", (event) => {
     requireTrustedShellSender(event);
     return publicUpdateState();
@@ -1810,6 +1826,47 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createWindowsTrayIcon() {
+  const size = 16;
+  const pixels = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const border = x < 2 || x >= size - 2 || y < 2 || y >= size - 2;
+      pixels[offset] = border ? 38 : 82;
+      pixels[offset + 1] = border ? 48 : 129;
+      pixels[offset + 2] = border ? 37 : 41;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return nativeImage.createFromBitmap(pixels, { width: size, height: size, scaleFactor: 1 });
+}
+
+function installBackgroundTray() {
+  if (process.platform !== "win32" || backgroundTray) return;
+  backgroundTray = new Tray(createWindowsTrayIcon());
+  backgroundTray.setToolTip("BizHub Desktop");
+  backgroundTray.setContextMenu(Menu.buildFromTemplate([
+    { label: "打开 BizHub", click: showMainWindow },
+    { type: "separator" },
+    {
+      label: "退出 BizHub",
+      click: () => {
+        quitRequested = true;
+        app.quit();
+      },
+    },
+  ]));
+  backgroundTray.on("click", showMainWindow);
+}
+
 async function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -1845,6 +1902,11 @@ async function createMainWindow() {
     }
   });
   mainWindow.on("resize", setWorkspaceBounds);
+  mainWindow.on("close", (event) => {
+    if (quitRequested || shutdownInProgress) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
   mainWindow.on("closed", () => {
     destroyWorkspaceView();
     mainWindow = null;
@@ -1904,6 +1966,7 @@ if (squirrelStartupHandled) {
     protocol.handle("bizhub-shell", serveShellAsset);
     installIpcHandlers();
     installApplicationMenu();
+    installBackgroundTray();
     let recoveryError = null;
     try {
       await recoverInterruptedLocalSetup(desktopUserDataRoot());
@@ -1918,16 +1981,19 @@ if (squirrelStartupHandled) {
   });
 
   app.on("second-instance", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMainWindow();
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      void createMainWindow();
+    } else {
+      showMainWindow();
+    }
   });
 
   app.on("before-quit", (event) => {
+    quitRequested = true;
     destroyWorkspaceView();
     if (localRuntimeLifecycle.state() === "stopped" || shutdownInProgress) return;
     event.preventDefault();

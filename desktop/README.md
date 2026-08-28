@@ -73,6 +73,12 @@ closes the active view and uses the selected account's token when available.
 Explicit logout clears only the active token, not the account label or local
 business data.
 
+Closing the main window on macOS or Windows hides BizHub Desktop in the
+background without destroying the connected Workspace or stopping Generic
+Local. Clicking the macOS Dock icon, the Windows tray icon, or starting BizHub
+Desktop again restores the same Session. Only the explicit operating-system
+quit action or Windows tray “退出 BizHub” ends the process and local Runtime.
+
 The account directory is Workspace discovery, not unified authentication. Its
 10-second deadline covers response headers, streaming body receipt, JSON parse,
 and signed Workspace validation. The body reader aborts as soon as it exceeds
@@ -172,7 +178,10 @@ boundary: the packaged Shell checks only versioned `desktop-v*` GitHub Releases,
 downloads the matching macOS arm64 or Windows x64 artifact, enforces its declared
 size and SHA-256, and offers one restart action. Generic Local creates a verified
 backup and stops its Runtime before the installer starts. The update entry is in
-the native application menu and combined login screen;
+the native application menu and exactly one status area beside the combined login
+flow; available and downloaded versions are emphasized without blocking account
+authentication. Compatible cloud/PWA frontend revisions activate and refresh in
+their shared web lifecycle without adding a second Desktop update prompt;
 it does not restore duplicate Desktop chrome over a connected Workspace. See
 [`desktop-u1-update-contract.md`](../docs/desktop-u1-update-contract.md).
 

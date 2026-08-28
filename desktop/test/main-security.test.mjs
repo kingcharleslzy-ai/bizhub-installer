@@ -51,6 +51,12 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "cloud-preload.cjs",
     'titleBarStyle: "hiddenInset"',
     "trafficLightPosition",
+    "new Tray(createWindowsTrayIcon())",
+    'mainWindow.on("close", (event)',
+    "event.preventDefault()",
+    "mainWindow.hide()",
+    "showMainWindow()",
+    'label: "退出 BizHub"',
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
@@ -68,6 +74,18 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }
+});
+
+test("closing the window keeps the workspace alive in the background", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  assert.match(
+    main,
+    /mainWindow\.on\("close", \(event\) => \{\s+if \(quitRequested \|\| shutdownInProgress\) return;\s+event\.preventDefault\(\);\s+mainWindow\.hide\(\);/,
+  );
+  assert.match(main, /app\.on\("second-instance", \(\) => \{\s+showMainWindow\(\);/);
+  assert.match(main, /app\.on\("activate", \(\) => \{[\s\S]*showMainWindow\(\);/);
+  assert.match(main, /app\.on\("before-quit", \(event\) => \{\s+quitRequested = true;/);
+  assert.ok(!main.includes('mainWindow.on("close", destroyWorkspaceView'));
 });
 
 test("connected cloud and local workspaces replace the Desktop chrome", async () => {
