@@ -70,7 +70,7 @@ const {
 } = require("./update-installer.cjs");
 const {
   checkForUpdate,
-  downloadUpdateArtifact,
+  downloadUpdateArtifactWithFallback,
   normalizeUpdateConfig,
 } = require("./update-manager.cjs");
 
@@ -831,11 +831,13 @@ async function downloadDesktopUpdate({ promptAfterDownload = false } = {}) {
     );
     let lastPercent = -1;
     try {
-      const downloaded = await downloadUpdateArtifact({
+      const downloaded = await downloadUpdateArtifactWithFallback({
         fetchImpl: net.fetch,
         asset: availableUpdate.manifest.asset,
+        fallbackAsset: availableUpdate.fallbackManifest?.asset,
         allowedHosts: availableUpdate.config.allowedHosts,
         destination,
+        source: availableUpdate.source,
         onProgress: ({ bytes, totalBytes }) => {
           const percent = Math.min(100, Math.floor((bytes / totalBytes) * 100));
           if (percent === lastPercent) return;

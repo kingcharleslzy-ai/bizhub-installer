@@ -6,19 +6,22 @@ mapping, or cloud authentication rule.
 
 ## Product flow
 
-The packaged app checks the public repository's versioned `desktop-v*` GitHub
-Releases after startup. Development and synthetic smoke processes never contact
-the update service. A user can also check from the native application menu or
-the combined login screen. That login flow owns exactly one visible client-update
-status area; it does not duplicate the compatible frontend hot-refresh state.
-The native menu remains available while either a cloud or Generic workspace is
-open.
+The packaged app checks the bounded manifest at
+`https://qilinshuzhi.com/bizhub-updates/latest.json` after startup and also
+checks the public repository's versioned `desktop-v*` GitHub Releases. The
+Qilin-hosted manifest and artifact are preferred. GitHub remains the independent
+fallback when the mirror is unavailable, invalid, or stale. Development and
+synthetic smoke processes never contact either update service. A user can also
+check from the native application menu or the combined login screen. That login
+flow owns exactly one visible client-update status area; it does not duplicate
+the compatible frontend hot-refresh state. The native menu remains available
+while either a cloud or Generic workspace is open.
 
 ```text
-versioned GitHub Release
--> bounded desktop-update.json
+Qilin-hosted latest.json + versioned GitHub Release
+-> prefer the newest valid bounded desktop-update.json
 -> platform/architecture match
--> background download
+-> Qilin artifact download, then identical GitHub artifact fallback
 -> exact byte count + SHA-256
 -> user chooses restart
 -> Generic Local verified backup (when present)
@@ -27,10 +30,14 @@ versioned GitHub Release
 -> relaunch
 ```
 
-The release list is limited to non-draft tags beginning with `desktop-v`. The
-manifest and downloads must use HTTPS and one of the public hosts in
-`desktop/config/update-channel.json`. The release list, manifest, artifact size,
-filename, version, bundle identity, byte count, and SHA-256 all fail closed.
+The GitHub release list is limited to non-draft tags beginning with `desktop-v`.
+The mirror and GitHub manifests and downloads must use HTTPS and one of the
+public hosts in `desktop/config/update-channel.json`. A stale mirror never
+suppresses a newer GitHub version. GitHub can serve as the artifact fallback for
+a mirrored version only when both validated manifests declare the same version,
+kind, filename, byte count, and SHA-256. The release list, manifest, artifact
+size, filename, version, bundle identity, byte count, and SHA-256 all fail
+closed.
 
 macOS expands the verified ZIP into private application data, verifies
 `com.bizhub.desktop` and the expected bundle version, then atomically keeps the
@@ -58,8 +65,12 @@ and Generic Local Runtime.
 `Desktop Internal Update` is a manual GitHub workflow. The project Owner starts
 it explicitly; it runs native tests, builds macOS arm64 and Windows x64, creates
 `desktop-update.json`, and publishes one prerelease whose immutable tag begins
-with `desktop-v`. The advanced R1 production signing workflows remain frozen
-and are not called by U1.
+with `desktop-v`. A bounded mirror step copies those already-published bytes to
+Qilin hosting, verifies the declared size and SHA-256, rewrites only the asset
+URLs, and atomically advances `latest.json`. The GitHub Release remains the
+bootstrap source for older clients and the fallback source for current clients.
+The advanced R1 production signing workflows remain frozen and are not called
+by U1.
 
 Internal macOS and Windows artifacts are not broad-public publisher authority.
 Formal Apple notarization and stable Windows Authenticode can be added later

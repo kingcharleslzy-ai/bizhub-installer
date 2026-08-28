@@ -97,6 +97,13 @@ function normalizeUpdateConfig(value) {
     allowedHosts,
     "desktop_update_release_api_url_invalid",
   );
+  const primaryManifestUrl = value.primary_manifest_url
+    ? validateHttpsUrl(
+      value.primary_manifest_url,
+      allowedHosts,
+      "desktop_update_primary_manifest_url_invalid",
+    )
+    : "";
   const tagPrefix = String(value.tag_prefix || "");
   const manifestAssetName = String(value.manifest_asset_name || "");
   if (!/^desktop-v[0-9A-Za-z._-]*$/.test(tagPrefix)) fail("desktop_update_tag_prefix_invalid");
@@ -109,10 +116,22 @@ function normalizeUpdateConfig(value) {
     allowedHosts,
     checkIntervalHours: intervalHours,
     includePrerelease: value.include_prerelease === true,
+    primaryManifestUrl,
     releaseApiUrl,
     tagPrefix,
     manifestAssetName,
   };
+}
+
+function assetsMatch(left, right) {
+  return Boolean(
+    left
+    && right
+    && left.kind === right.kind
+    && left.bytes === right.bytes
+    && left.filename === right.filename
+    && left.sha256 === right.sha256,
+  );
 }
 
 async function readBoundedBody(response, maximumBytes, sizeError) {
@@ -226,10 +245,28 @@ function validateUpdateManifest(value, { allowedHosts, platform, arch }) {
   };
 }
 
-async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, platform, arch }) {
-  const config = normalizeUpdateConfig(rawConfig);
-  parseVersion(currentVersion);
-  if (!config.enabled) return { status: "disabled", config };
+async function fetchPrimaryManifest({ fetchImpl, config, platform, arch }) {
+  if (!config.primaryManifestUrl) return null;
+  const rawManifest = await fetchBoundedJson({
+    fetchImpl,
+    url: config.primaryManifestUrl,
+    allowedHosts: config.allowedHosts,
+    maximumBytes: MANIFEST_MAX_BYTES,
+    timeoutMs: 10_000,
+    sizeError: "desktop_update_manifest_size_invalid",
+  });
+  return {
+    manifest: validateUpdateManifest(rawManifest, {
+      allowedHosts: config.allowedHosts,
+      platform,
+      arch,
+    }),
+    manifestUrl: config.primaryManifestUrl,
+    source: "primary",
+  };
+}
+
+async function fetchGithubManifest({ fetchImpl, config, platform, arch }) {
   const releases = await fetchBoundedJson({
     fetchImpl,
     url: config.releaseApiUrl,
@@ -239,7 +276,7 @@ async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, pl
     sizeError: "desktop_update_release_list_size_invalid",
   });
   const manifestUrl = selectManifestUrl(releases, config);
-  if (!manifestUrl) return { status: "up-to-date", config };
+  if (!manifestUrl) return null;
   const rawManifest = await fetchBoundedJson({
     fetchImpl,
     url: manifestUrl,
@@ -248,15 +285,73 @@ async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, pl
     timeoutMs: 10_000,
     sizeError: "desktop_update_manifest_size_invalid",
   });
-  const manifest = validateUpdateManifest(rawManifest, {
-    allowedHosts: config.allowedHosts,
-    platform,
-    arch,
-  });
-  if (compareVersions(manifest.version, currentVersion) <= 0) {
-    return { status: "up-to-date", config, manifest };
+  return {
+    manifest: validateUpdateManifest(rawManifest, {
+      allowedHosts: config.allowedHosts,
+      platform,
+      arch,
+    }),
+    manifestUrl,
+    source: "github",
+  };
+}
+
+async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, platform, arch }) {
+  const config = normalizeUpdateConfig(rawConfig);
+  parseVersion(currentVersion);
+  if (!config.enabled) return { status: "disabled", config };
+
+  let primary = null;
+  let github = null;
+  let primaryError = null;
+  let githubError = null;
+  try {
+    primary = await fetchPrimaryManifest({ fetchImpl, config, platform, arch });
+  } catch (error) {
+    primaryError = error;
   }
-  return { status: "available", config, manifest, manifestUrl };
+  try {
+    github = await fetchGithubManifest({ fetchImpl, config, platform, arch });
+  } catch (error) {
+    githubError = error;
+  }
+
+  if (primaryError && githubError) fail("desktop_update_sources_unavailable");
+
+  const primaryAvailable = primary
+    && compareVersions(primary.manifest.version, currentVersion) > 0;
+  const githubAvailable = github
+    && compareVersions(github.manifest.version, currentVersion) > 0;
+  if (!primaryAvailable && !githubAvailable) {
+    return {
+      status: "up-to-date",
+      config,
+      manifest: primary?.manifest || github?.manifest,
+    };
+  }
+
+  let selected = primaryAvailable ? primary : github;
+  if (
+    primaryAvailable
+    && githubAvailable
+    && compareVersions(github.manifest.version, primary.manifest.version) > 0
+  ) {
+    selected = github;
+  }
+  const fallbackManifest = selected === primary
+    && githubAvailable
+    && github.manifest.version === primary.manifest.version
+    && assetsMatch(primary.manifest.asset, github.manifest.asset)
+    ? github.manifest
+    : null;
+  return {
+    status: "available",
+    config,
+    manifest: selected.manifest,
+    manifestUrl: selected.manifestUrl,
+    source: selected.source,
+    fallbackManifest,
+  };
 }
 
 async function downloadUpdateArtifact({
@@ -329,11 +424,48 @@ async function downloadUpdateArtifact({
   }
 }
 
+async function downloadUpdateArtifactWithFallback({
+  fetchImpl,
+  asset,
+  fallbackAsset = null,
+  allowedHosts,
+  destination,
+  timeoutMs = 30 * 60 * 1000,
+  source = "primary",
+  fallbackSource = "github",
+  onProgress = () => {},
+}) {
+  try {
+    const downloaded = await downloadUpdateArtifact({
+      fetchImpl,
+      asset,
+      allowedHosts,
+      destination,
+      timeoutMs,
+      onProgress,
+    });
+    return { ...downloaded, source };
+  } catch (primaryError) {
+    if (!fallbackAsset || !assetsMatch(asset, fallbackAsset)) throw primaryError;
+    const downloaded = await downloadUpdateArtifact({
+      fetchImpl,
+      asset: fallbackAsset,
+      allowedHosts,
+      destination,
+      timeoutMs,
+      onProgress,
+    });
+    return { ...downloaded, source: fallbackSource };
+  }
+}
+
 module.exports = {
   ARTIFACT_MAX_BYTES,
+  assetsMatch,
   checkForUpdate,
   compareVersions,
   downloadUpdateArtifact,
+  downloadUpdateArtifactWithFallback,
   normalizeUpdateConfig,
   platformKey,
   selectManifestUrl,
