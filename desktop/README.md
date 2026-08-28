@@ -16,7 +16,12 @@ password. After one signed Workspace is verified, the Shell submits the password
 only to that Workspace's same-origin BizHub authentication route and opens the
 authenticated application without exposing the intermediate web login page.
 After authentication, the cloud Workspace replaces the Desktop chrome and uses
-the full content area. Each returned cloud
+the full content area. On macOS the native controls are inset into the Workspace
+surface instead of reserving a separate white title bar. A narrow cloud preload
+allows the verified Workspace to read the neutral Desktop version/update state,
+request an update check, or return to the account selector; it exposes no
+filesystem, shell, credential, token, customer mapping, or business-data API.
+Each returned cloud
 Workspace is an independently signed, expiring connection envelope bound to
 `runtime_mode=cloud` and `data_authority_mode=cloud`. That Workspace Runtime owns
 authentication, permissions, UI, Owners, and formal data. A confirmed unknown
@@ -44,7 +49,7 @@ the user before preview.
 Desktop-W2 configures one customer-neutral HTTPS directory transport and one
 Ed25519 public trust root. The package still contains no customer-private
 Profile, rule, customer endpoint, account mapping, credential, production data,
-model, collector, synchronization, background service, automatic update, or
+model, collector, synchronization, background service, or
 authority switch. Customer names, account hashes, private keys, Profile IDs,
 and Workspace URLs stay on the directory deployment and arrive only inside a
 short-lived signed envelope.

@@ -87,6 +87,7 @@ const allowedAsarEntry = (value) => (
   || value === "electron"
   || [
     "electron/account-directory.cjs",
+    "electron/cloud-preload.cjs",
     "electron/cloud-login.cjs",
     "electron/connection-profile.cjs",
     "electron/credential-store.cjs",
@@ -168,6 +169,7 @@ assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present"
 
 for (const sourceName of [
   "account-directory.cjs",
+  "cloud-preload.cjs",
   "cloud-login.cjs",
   "connection-profile.cjs",
   "credential-store.cjs",

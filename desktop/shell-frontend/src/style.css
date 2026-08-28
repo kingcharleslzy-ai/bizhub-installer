@@ -28,6 +28,16 @@ button, input { font: inherit; }
   background: #17212b;
 }
 
+.shell-bar.mac {
+  padding-left: 88px;
+  -webkit-app-region: drag;
+}
+
+.shell-bar.mac button,
+.shell-bar.mac input {
+  -webkit-app-region: no-drag;
+}
+
 .identity, .connection-state { display: flex; align-items: center; }
 .identity { gap: 12px; }
 .identity strong, .identity small { display: block; }

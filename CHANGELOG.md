@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Integrate the macOS window chrome into the customer-neutral Desktop surface.
+  Cloud Workspaces receive a narrow, origin-bound preload for version, update,
+  and account-switch controls; it exposes no filesystem, credential, customer,
+  or data authority. Generic Local keeps a small safe top inset on macOS.
+  Desktop version advances to `0.1.2`; no Runtime Pack, Profile, SQLite,
+  migration, Owner, writer, directory mapping, or production service changes.
 - Add the small Desktop-U1 internal updater. The customer-neutral Shell checks
   versioned GitHub Desktop releases after startup at a bounded interval, downloads the native
   artifact in the background, enforces the declared byte count and SHA-256,
