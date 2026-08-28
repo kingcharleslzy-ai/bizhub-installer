@@ -52,6 +52,8 @@ const errorLabel = computed(() => {
     desktop_cloud_login_rate_limited: "登录尝试过多，请稍后再试。",
     desktop_cloud_login_unavailable: "云端登录暂时不可用。",
     desktop_local_instance_already_exists: "这台电脑已经有一个本地 BizHub。",
+    desktop_local_creation_cloud_account_exists: "这个账号已有企业云端工作区，不能创建同名本地账号。",
+    desktop_local_creation_account_registered: "这个账号已在企业目录登记，不能创建同名本地账号。",
     desktop_local_login_failed: "本地账号或密码不正确。",
     desktop_local_remembered_login_failed: "本地保持登录已失效，请重新输入密码。",
     desktop_saved_account_session_missing: "该账号需要重新输入密码。",
@@ -129,14 +131,6 @@ function beginLocalEntry() {
     form.password = "";
     localCreationRequested.value = false;
   } else {
-    const normalizedAccount = form.accountId.trim().toLowerCase();
-    const selectedAccount = state.value.savedAccounts.find(
-      (account) => account.accountId === normalizedAccount,
-    );
-    if (selectedAccount?.mode === "cloud") {
-      form.accountId = "";
-      form.password = "";
-    }
     companyName.value = "";
     localCreationRequested.value = true;
   }
@@ -234,7 +228,7 @@ onBeforeUnmount(() => unsubscribe());
           <div>
             <strong>创建本地 BizHub</strong>
             <p v-if="state.pendingLocalAccountId">账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区。这台电脑尚无本地实例，可以创建一个独立 Generic Local。</p>
-            <p v-else>使用上方填写的账号和密码，在这台电脑创建一个独立 Generic Local。创建前不会访问企业账号目录，也不会写入本地数据。</p>
+            <p v-else>使用上方填写的账号和密码申请创建独立 Generic Local。展开表单不会访问账号目录；确认时会先验证该账号没有企业云端身份，通过后才创建本地数据。</p>
           </div>
           <form @submit.prevent="createLocal">
             <label>本地企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>

@@ -121,10 +121,11 @@ confirmation.
 
 One installation owns at most one local company instance, one SQLite database,
 and one first administrator in v0.1. A username does not select or create a
-database. W1 allows every installation to explicitly create Generic Local even
-when an enterprise Workspace is available. Restricting Local for selected
-customers would require a future signed entitlement and cannot be inferred from
-an account string.
+database. The Local action is visible on every installation, but final creation
+requires a fresh directory response proving that exact account is `not_found`.
+An enterprise Workspace, a registered account without a Workspace, or any
+directory failure rejects creation; no customer restriction is inferred from an
+account string alone.
 
 The product does not assume a permanently fixed version. Its contract allows
 the Shell version, signed Workspace Descriptor expiry, cloud Runtime release,

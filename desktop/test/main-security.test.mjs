@@ -159,6 +159,36 @@ test("Descriptor expiry gates each cloud open without expiring the connected Ses
   assert.ok(!main.includes("desktop_connection_profile_expired"));
 });
 
+test("local bootstrap requires a fresh explicit directory not-found result", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const start = main.indexOf("async function setupLocalInstance");
+  const end = main.indexOf("async function authenticateLocal", start);
+  assert.ok(start >= 0 && end > start);
+  const setup = main.slice(start, end);
+  const resolve = setup.indexOf("await resolveAccountWorkspaces");
+  const notFound = setup.indexOf('directoryResult.status !== "not_found"');
+  const bootstrap = setup.indexOf("await bootstrapLocalInstance");
+  assert.ok(resolve >= 0 && notFound > resolve && bootstrap > notFound);
+  assert.equal((setup.match(/assertLocalInstanceAbsent\(\)/g) || []).length, 2);
+  assert.ok(setup.includes("desktop_local_creation_cloud_account_exists"));
+  assert.ok(setup.includes("desktop_local_creation_account_registered"));
+  assert.ok(!setup.includes("activeEnterpriseProfiles"));
+});
+
+test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {
+  const smoke = await readFile(path.join(ROOT, "scripts", "local-shell-smoke.mjs"), "utf8");
+  assert.match(smoke, /maxRetries: process\.platform === "win32" \? 10 : 0/);
+  assert.match(smoke, /retryDelay: 200/);
+  assert.match(smoke, /residual_runtime_processes: 0/);
+  assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
+});
+
+test("account-flow local submission does not depend on foreground animation frames", async () => {
+  const smoke = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
+  assert.ok(!smoke.includes("requestAnimationFrame"));
+  assert.match(smoke, /await new Promise\(\(resolve\) => setTimeout\(resolve, 0\)\)/);
+});
+
 function mainTrustSelection(main) {
   return main.includes("generic-runtime-trust.win32-x64.json")
     && main.includes("generic-runtime-trust.json");
