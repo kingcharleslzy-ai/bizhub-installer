@@ -28,44 +28,6 @@ if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
 }
 
-function resolveDevelopmentElectronExecutable() {
-  const installScript = require.resolve("electron/install.js");
-  const attempts = [{
-    label: "default",
-    timeout: 60_000,
-    env: process.env,
-  }];
-  if (process.platform === "win32") {
-    attempts.push({
-      label: "windows-mirror",
-      timeout: 180_000,
-      env: {
-        ...process.env,
-        ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/",
-      },
-    });
-  }
-  let lastError = null;
-  for (const attempt of attempts) {
-    try {
-      execFileSync(process.execPath, [installScript], {
-        cwd: ROOT,
-        env: attempt.env,
-        stdio: "pipe",
-        timeout: attempt.timeout,
-      });
-      return require("electron");
-    } catch (error) {
-      lastError = error;
-      process.stderr.write(`desktop_account_flow_electron_prepare_retry:${attempt.label}\n`);
-    }
-  }
-  fail(
-    "desktop_account_flow_electron_unavailable",
-    lastError instanceof Error ? lastError.message : "install_failed",
-  );
-}
-
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}:${detail}` : code);
 }
@@ -196,7 +158,7 @@ async function submitLocalCreation(cdp, accountId, password, companyName) {
     company.value = ${encodedCompany};
     company.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const submit = [...document.querySelectorAll("button")]
       .find((item) => item.textContent.trim() === "明确创建并进入");
     if (!submit || submit.disabled) return false;
@@ -257,7 +219,7 @@ async function stopDesktopProcess() {
 
 async function launchDesktopProcess() {
   debugPort = await unusedPort();
-  const executable = packagedExecutable || resolveDevelopmentElectronExecutable();
+  const executable = packagedExecutable || require("electron");
   const electronUserDataArgument = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
   const executableArguments = packagedExecutable
     ? ["--ignore-certificate-errors", electronUserDataArgument, `--remote-debugging-port=${debugPort}`]

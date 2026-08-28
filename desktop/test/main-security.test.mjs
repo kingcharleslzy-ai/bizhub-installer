@@ -183,11 +183,10 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
 });
 
-test("account-flow Electron preparation is bounded and has a Windows fallback", async () => {
+test("account-flow local submission does not depend on foreground animation frames", async () => {
   const smoke = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
-  assert.match(smoke, /label: "default",\s+timeout: 60_000/);
-  assert.match(smoke, /label: "windows-mirror",\s+timeout: 180_000/);
-  assert.match(smoke, /ELECTRON_MIRROR: "https:\/\/npmmirror\.com\/mirrors\/electron\/"/);
+  assert.ok(!smoke.includes("requestAnimationFrame"));
+  assert.match(smoke, /await new Promise\(\(resolve\) => setTimeout\(resolve, 0\)\)/);
 });
 
 function mainTrustSelection(main) {
