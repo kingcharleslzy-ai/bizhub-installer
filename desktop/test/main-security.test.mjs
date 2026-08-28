@@ -88,13 +88,19 @@ test("closing the window keeps the workspace alive in the background", async () 
   assert.ok(!main.includes('mainWindow.on("close", destroyWorkspaceView'));
 });
 
-test("connected cloud and local workspaces replace the Desktop chrome", async () => {
+test("login uses an integrated title area and connected workspaces replace the shell", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const shell = await readFile(path.join(ROOT, "shell-frontend", "src", "App.vue"), "utf8");
   assert.match(main, /workspaceState\.mode === "guest"\s+\? GUEST_BANNER_HEIGHT/);
   assert.match(main, /process\.platform === "darwin" && workspaceState\.mode === "local" \? 30 : 0/);
   assert.match(main, /if \(authenticationPending\) return;[\s\S]*workspaceView\.setVisible\(true\)/);
-  assert.ok(shell.includes('v-if="!connected" class="shell-bar"'));
+  assert.ok(shell.includes('class="window-drag-region"'));
+  assert.ok(shell.includes('class="workspace-backdrop"'));
+  assert.ok(shell.includes('class="login-panel"'));
+  assert.ok(!shell.includes('class="shell-bar"'));
+  assert.ok(!shell.includes("通用企业客户端"));
+  assert.ok(!shell.includes("123" + "crystal"));
+  assert.ok(!shell.includes("daz" + "heng"));
   assert.ok(shell.includes('v-if="guestConnected" class="guest-banner"'));
   assert.ok(shell.includes("state.platform === 'darwin'"));
   assert.ok(!shell.includes("退出并清除保持登录"));

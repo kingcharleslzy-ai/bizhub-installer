@@ -809,7 +809,7 @@ try {
       username: document.querySelector('input[autocomplete="username"]')?.value || "",
       text: document.body.innerText
     })`);
-    return value.text.includes("确认时会先验证该账号没有企业云端身份") ? value : null;
+    return value.text.includes("确认时会先验证它不属于企业云端") ? value : null;
   }, "desktop_account_flow_saved_cloud_local_setup_missing");
   if (savedCloudLocalSetup.username !== savedCloudAccountBeforeExpand) {
     fail("desktop_account_flow_saved_cloud_account_changed_on_expand");

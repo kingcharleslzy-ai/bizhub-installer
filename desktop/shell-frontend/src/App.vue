@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 const state = ref({
   appVersion: "",
@@ -29,6 +29,8 @@ const state = ref({
 const form = reactive({ accountId: "", password: "", remember: true });
 const companyName = ref("");
 const localCreationRequested = ref(false);
+const accountEntryExpanded = ref(false);
+const accountInput = ref(null);
 let unsubscribe = () => {};
 let unsubscribePreferences = () => {};
 
@@ -41,6 +43,9 @@ function applyDesktopPreferences(next) {
 
 const connected = computed(() => state.value.status === "connected");
 const guestConnected = computed(() => connected.value && state.value.mode === "guest");
+const selectedSavedAccount = computed(() => state.value.savedAccounts.find(
+  (account) => account.accountId === form.accountId,
+) || null);
 const working = computed(() => (
   state.value.status === "loading"
   || state.value.accountLookupStatus === "resolving"
@@ -109,7 +114,12 @@ const localEntryLabel = computed(() => (
 ));
 
 function syncActiveAccount() {
-  if (!form.accountId && state.value.activeAccountId) form.accountId = state.value.activeAccountId;
+  if (!form.accountId && state.value.activeAccountId) {
+    form.accountId = state.value.activeAccountId;
+    accountEntryExpanded.value = false;
+  } else if (!form.accountId && !state.value.savedAccounts.length) {
+    accountEntryExpanded.value = true;
+  }
 }
 
 async function login() {
@@ -140,7 +150,16 @@ async function exitGuestDemo() {
 async function selectSaved(account) {
   form.accountId = account.accountId;
   form.password = "";
+  accountEntryExpanded.value = false;
   if (account.canAutoLogin) state.value = await window.bizhubDesktop.resumeAccount(account.accountId);
+}
+
+async function expandAccountEntry() {
+  accountEntryExpanded.value = true;
+  localCreationRequested.value = false;
+  await nextTick();
+  accountInput.value?.focus();
+  accountInput.value?.select();
 }
 
 function beginLocalEntry() {
@@ -149,9 +168,11 @@ function beginLocalEntry() {
     form.accountId = localAccount?.accountId || state.value.localAccountId || "";
     form.password = "";
     localCreationRequested.value = false;
+    accountEntryExpanded.value = false;
   } else {
     companyName.value = "";
     localCreationRequested.value = true;
+    accountEntryExpanded.value = true;
   }
   state.value = {
     ...state.value,
@@ -174,6 +195,7 @@ async function createLocal() {
 
 function cancelLocalCreation() {
   localCreationRequested.value = false;
+  accountEntryExpanded.value = !selectedSavedAccount.value;
   state.value = { ...state.value, canCreateLocal: false, pendingLocalAccountId: "", error: "" };
 }
 
@@ -204,66 +226,92 @@ onBeforeUnmount(() => {
       <span><b>游客样板间</b> · 当前均为模拟数据，退出样板间或彻底退出应用后自动重置；关闭窗口只进入后台。</span>
       <button type="button" @click="exitGuestDemo">退出样板间</button>
     </header>
-    <header v-if="!connected" class="shell-bar" :class="{ mac: state.platform === 'darwin' }">
-      <div class="identity">
-        <span class="mark">BH</span>
-        <div><strong>BizHub Desktop</strong><small>通用企业客户端</small></div>
-      </div>
-      <div class="connection-state">
-        <span class="status-dot" :class="state.status"></span><span>{{ statusLabel }}</span>
-      </div>
-    </header>
-
     <main v-if="!connected" class="unified-start">
-      <section class="login-panel">
-        <div class="card-heading">
-          <span class="step">BIZHUB WORKSPACES</span>
-          <h1>登录 BizHub</h1>
-          <p>输入一个账号和密码。客户端会自动识别并进入企业云端或本机 Generic；密码不会保存在电脑上。</p>
-        </div>
+      <div class="window-drag-region" :class="{ mac: state.platform === 'darwin' }" aria-hidden="true"></div>
 
-        <div class="update-row" :class="{ attention: updateAttention }" role="status" aria-live="polite">
-          <span><strong v-if="updateAttention">客户端更新</strong>{{ updateLabel }}</span>
-          <button v-if="state.updateDownloaded" type="button" :disabled="updateWorking" @click="installUpdate">重启并更新</button>
-          <button v-else-if="state.updateStatus === 'available'" type="button" :disabled="updateWorking" @click="downloadUpdate">下载更新</button>
-          <button v-else type="button" :disabled="updateWorking" @click="checkUpdate">检查更新</button>
-        </div>
-
-        <div v-if="state.savedAccounts.length" class="saved-accounts">
-          <span>已保存账号</span>
-          <div>
-            <button
-              v-for="account in state.savedAccounts"
-              :key="account.accountId"
-              type="button"
-              :class="{ active: form.accountId === account.accountId }"
-              :disabled="working"
-              @click="selectSaved(account)"
-            >
-              <strong>{{ account.displayName }}</strong>
-              <small>{{ account.mode === 'cloud' ? '云端' : '本地' }} · {{ account.canAutoLogin ? '可自动登录' : '需密码' }}</small>
-            </button>
+      <div class="workspace-backdrop" aria-hidden="true">
+        <aside class="preview-sidebar">
+          <div class="preview-brand"><span>BH</span><b>BizHub</b></div>
+          <div class="preview-nav-label">业务</div>
+          <div class="preview-nav active"><i></i><span>经营概览</span></div>
+          <div class="preview-nav"><i></i><span>采购</span></div>
+          <div class="preview-nav"><i></i><span>销售</span></div>
+          <div class="preview-nav"><i></i><span>库存</span></div>
+          <div class="preview-nav"><i></i><span>主数据</span></div>
+          <div class="preview-sidebar-foot"><i></i><span>设置</span></div>
+        </aside>
+        <section class="preview-workspace">
+          <header class="preview-toolbar">
+            <div><b>经营概览</b><span>业务工作台</span></div>
+            <div class="preview-search"></div>
+          </header>
+          <div class="preview-summary">
+            <div><span>本月采购</span><b>128</b><small>待处理 8</small></div>
+            <div><span>本月销售</span><b>96</b><small>待发货 5</small></div>
+            <div><span>当前库存</span><b>1,842</b><small>库存正常</small></div>
           </div>
+          <div class="preview-content">
+            <div class="preview-section-title"><b>最近业务</b><span>查看全部</span></div>
+            <div class="preview-table-head"><span>单据</span><span>往来单位</span><span>日期</span><span>状态</span></div>
+            <div v-for="row in 6" :key="row" class="preview-table-row">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="workspace-shade" aria-hidden="true"></div>
+
+      <section class="login-panel" aria-labelledby="login-title">
+        <div class="brand-lockup">
+          <span class="mark">BH</span>
+          <strong>BizHub Desktop</strong>
+        </div>
+        <div class="card-heading">
+          <h1 id="login-title">登录 BizHub</h1>
         </div>
 
         <form class="unified-form" @submit.prevent="login">
-          <label>账号<input v-model="form.accountId" autocomplete="username" maxlength="128" required></label>
-          <label>密码<input v-model="form.password" type="password" autocomplete="current-password" maxlength="1024" required></label>
-          <label class="remember-login"><input v-model="form.remember" type="checkbox"><span>保持登录，下次自动进入（只保存可撤销令牌）</span></label>
+          <div v-if="selectedSavedAccount && !accountEntryExpanded" class="selected-account">
+            <div>
+              <strong>{{ selectedSavedAccount.displayName }}</strong>
+              <span>{{ selectedSavedAccount.mode === 'cloud' ? '企业云端' : '本机空间' }}</span>
+            </div>
+            <button type="button" :disabled="working" @click="expandAccountEntry">切换账号</button>
+          </div>
+
+          <div v-if="accountEntryExpanded && state.savedAccounts.length" class="saved-accounts">
+            <span>已保存账号</span>
+            <div>
+              <button
+                v-for="account in state.savedAccounts"
+                :key="account.accountId"
+                type="button"
+                :class="{ active: form.accountId === account.accountId }"
+                :disabled="working"
+                @click="selectSaved(account)"
+              >
+                <strong>{{ account.displayName }}</strong>
+                <small>{{ account.mode === 'cloud' ? '云端' : '本地' }}</small>
+              </button>
+            </div>
+          </div>
+
+          <label v-show="accountEntryExpanded || !selectedSavedAccount" class="form-field">账号<input ref="accountInput" v-model="form.accountId" autocomplete="username" maxlength="128" required></label>
+          <label class="form-field">密码<input v-model="form.password" type="password" autocomplete="current-password" maxlength="1024" required></label>
+          <label class="remember-login"><input v-model="form.remember" type="checkbox"><span>保持登录</span></label>
+          <p class="login-status" aria-live="polite">{{ working ? statusLabel : '' }}</p>
           <div class="login-actions">
-            <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在登录…' : '登录并进入' }}</button>
-            <button class="secondary-button" type="button" :disabled="working" @click="beginLocalEntry">{{ localEntryLabel }}</button>
+            <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在进入…' : '进入 BizHub' }}</button>
             <button class="guest-button" type="button" :disabled="working" @click="openGuestDemo">游客体验</button>
+            <button class="local-entry-button" type="button" :disabled="working" @click="beginLocalEntry">{{ localEntryLabel }}</button>
           </div>
         </form>
-
-        <p class="guest-note">无需账号和密码，进入一套可操作的 Generic 样板数据；不会连接云端，也不会写入你的本地账号。</p>
 
         <section v-if="localCreationVisible" class="local-create">
           <div>
             <strong>创建本地 BizHub</strong>
-            <p v-if="state.pendingLocalAccountId">账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区。这台电脑尚无本地实例，可以创建一个独立 Generic Local。</p>
-            <p v-else>使用上方填写的账号和密码申请创建独立 Generic Local。展开表单不会访问账号目录；确认时会先验证该账号没有企业云端身份，通过后才创建本地数据。</p>
+            <p v-if="state.pendingLocalAccountId">账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区，可以在本机创建独立空间。</p>
+            <p v-else>使用当前账号创建本机独立空间；确认时会先验证它不属于企业云端。</p>
           </div>
           <form @submit.prevent="createLocal">
             <label>本地企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>
@@ -272,7 +320,13 @@ onBeforeUnmount(() => {
         </section>
 
         <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
-        <p class="boundary-note">企业账号只连接签名云端工作区；本地账号只使用本机单一 SQLite，二者不会互相复制或同步数据。</p>
+
+        <div class="update-row" :class="{ attention: updateAttention }" role="status" aria-live="polite">
+          <span><strong v-if="updateAttention">客户端更新</strong>{{ updateLabel }}</span>
+          <button v-if="state.updateDownloaded" type="button" :disabled="updateWorking" @click="installUpdate">重启并更新</button>
+          <button v-else-if="state.updateStatus === 'available'" type="button" :disabled="updateWorking" @click="downloadUpdate">下载更新</button>
+          <button v-else type="button" :disabled="updateWorking" @click="checkUpdate">检查更新</button>
+        </div>
       </section>
     </main>
   </div>
