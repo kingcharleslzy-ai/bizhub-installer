@@ -159,8 +159,17 @@ commit and Artifact identity.
 Both native paths also exercise a synthetic previous version, create one formal
 Generic Owner record, move to the current version, read it back, reinstall the
 prior version, and read back the same data/writer identity. This proves the
-installation-level upgrade/rollback boundary; it does not implement automatic
-updates.
+installation-level upgrade/rollback boundary; R1 by itself did not implement
+automatic updates.
+
+Desktop-U1 now adds the small private-project update path on top of that proven
+boundary: the packaged Shell checks only versioned `desktop-v*` GitHub Releases,
+downloads the matching macOS arm64 or Windows x64 artifact, enforces its declared
+size and SHA-256, and offers one restart action. Generic Local creates a verified
+backup and stops its Runtime before the installer starts. The update entry is in
+the native application menu and combined login screen;
+it does not restore duplicate Desktop chrome over a connected Workspace. See
+[`desktop-u1-update-contract.md`](../docs/desktop-u1-update-contract.md).
 
 The macOS release path first verifies the fixed unsigned Runtime Pack, signs
 every Runtime Mach-O object with the same Developer ID used for the Shell,

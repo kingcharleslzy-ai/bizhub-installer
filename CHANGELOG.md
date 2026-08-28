@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add the small Desktop-U1 internal updater. The customer-neutral Shell checks
+  versioned GitHub Desktop releases after startup at a bounded interval, downloads the native
+  artifact in the background, enforces the declared byte count and SHA-256,
+  and offers one restart action from the native menu or login screen. Generic
+  Local creates a verified backup and stops its Runtime
+  before installation; cloud mode never changes customer data. macOS retains
+  the previous app bundle until the new version starts, while Windows hands off
+  to the existing Squirrel Setup. No business module, Profile, migration,
+  Owner, writer, production service, or private customer code changes.
 - Complete Desktop-L1 as one private-project product slice. One account/password
   form now routes an exact existing local account to Generic Local and every
   other account to the signed cloud directory; only a confirmed directory 404

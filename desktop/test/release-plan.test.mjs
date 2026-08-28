@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = path.join(ROOT, "scripts", "release-plan.mjs");
 const COMMIT = "a".repeat(40);
+const PACKAGE_VERSION = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8")).version;
+const RELEASE_TAG = `desktop-v${PACKAGE_VERSION}`;
 
 async function writeJson(filePath, value) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -32,7 +34,7 @@ test("release plan binds exact Actions identities, publisher readback, and inner
     await writeFile(path.join(macRoot, "desktop.zip"), "mac-zip");
     await writeFile(path.join(macRoot, "desktop.dmg"), "mac-dmg");
     await writeJson(path.join(macRoot, "desktop-r1-macos-containers.json"), {
-      signing_mode: "production", package_version: "0.1.0",
+      signing_mode: "production", package_version: PACKAGE_VERSION,
       zip: { name: "desktop.zip" }, dmg: { name: "desktop.dmg", notary_staple_readback: true },
     });
     await writeJson(path.join(macRoot, "desktop-r1-macos-release-identity.json"), {
@@ -67,7 +69,7 @@ test("release plan binds exact Actions identities, publisher readback, and inner
 
     run([
       "build", "--source-run-id", "123", "--source-run-attempt", "1", "--commit", COMMIT,
-      "--tag", "desktop-v0.1.0", "--mac-root", macRoot, "--mac-artifact-id", "456",
+      "--tag", RELEASE_TAG, "--mac-root", macRoot, "--mac-artifact-id", "456",
       "--mac-artifact-name", "mac-artifact", "--mac-artifact-digest", `sha256:${"7".repeat(64)}`,
       "--windows-root", windowsRoot, "--windows-artifact-id", "789",
       "--windows-artifact-name", "windows-artifact", "--windows-artifact-digest", `sha256:${"8".repeat(64)}`,
@@ -76,7 +78,7 @@ test("release plan binds exact Actions identities, publisher readback, and inner
     const planSha = createHash("sha256").update(await readFile(planPath)).digest("hex");
     const verifyArgs = [
       "verify", "--plan", planPath, "--plan-sha256", planSha, "--source-run-id", "123",
-      "--commit", COMMIT, "--tag", "desktop-v0.1.0", "--mac-root", macRoot,
+      "--commit", COMMIT, "--tag", RELEASE_TAG, "--mac-root", macRoot,
       "--windows-root", windowsRoot,
     ];
     run(verifyArgs);

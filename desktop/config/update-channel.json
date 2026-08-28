@@ -1,0 +1,16 @@
+{
+  "schema_version": "bizhub.desktop-update-channel.v1",
+  "enabled": true,
+  "auto_download": true,
+  "check_interval_hours": 24,
+  "include_prerelease": true,
+  "release_api_url": "https://api.github.com/repos/kingcharleslzy-ai/bizhub-installer/releases?per_page=20",
+  "tag_prefix": "desktop-v",
+  "manifest_asset_name": "desktop-update.json",
+  "allowed_hosts": [
+    "api.github.com",
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com"
+  ]
+}

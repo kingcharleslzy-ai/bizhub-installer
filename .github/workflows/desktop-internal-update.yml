@@ -1,0 +1,142 @@
+name: Desktop Internal Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: Short internal update notes
+        required: false
+        default: BizHub Desktop internal update
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-internal-update
+  cancel-in-progress: false
+
+jobs:
+  macos-arm64:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-14
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Test and build macOS arm64
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          python ../scripts/verify_checksums.py
+          npm ci
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
+          npm run package
+          version="$(node -p 'require("./package.json").version')"
+          mkdir -p out/update
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent \
+            "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" \
+            "out/update/BizHub-Desktop-macOS-arm64-${version}.zip"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-internal-update-macos-${{ github.sha }}
+          path: desktop/out/update/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-x64:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Preserve repository byte identity
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.12.10
+      - name: Test and build Windows x64
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ((node -p "process.platform") -ne "win32" -or (node -p "process.arch") -ne "x64") { throw "desktop_internal_update_target_invalid" }
+          python ../scripts/verify_checksums.py
+          npm ci
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
+          npm run make:windows
+          $version = node -p "require('./package.json').version"
+          New-Item -ItemType Directory -Force out/update | Out-Null
+          Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "out/update/BizHub-Desktop-Setup-Windows-x64-$version.exe"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: desktop-internal-update-windows-${{ github.sha }}
+          path: desktop/out/update/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: [macos-arm64, windows-x64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.22.2
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          pattern: desktop-internal-update-*-${{ github.sha }}
+          path: release-assets
+          merge-multiple: true
+      - name: Create version-bound update manifest
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        shell: bash
+        run: |
+          version="$(node -p 'require("./desktop/package.json").version')"
+          tag="desktop-v${version}-internal.${GITHUB_RUN_NUMBER}"
+          macos="$(find release-assets -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          windows="$(find release-assets -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$macos" && test -n "$windows"
+          node desktop/scripts/make-update-manifest.mjs \
+            --version "$version" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --tag "$tag" \
+            --macos "$macos" \
+            --windows "$windows" \
+            --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --notes "$RELEASE_NOTES" \
+            --output release-assets/desktop-update.json
+          echo "DESKTOP_UPDATE_TAG=$tag" >> "$GITHUB_ENV"
+      - name: Publish internal Desktop prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        shell: bash
+        run: |
+          gh release create "$DESKTOP_UPDATE_TAG" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "BizHub Desktop $(node -p 'require("./desktop/package.json").version') Internal" \
+            --notes "$RELEASE_NOTES" \
+            release-assets/*.zip release-assets/*.exe release-assets/desktop-update.json

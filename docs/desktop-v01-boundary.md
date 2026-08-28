@@ -130,10 +130,11 @@ The product does not assume a permanently fixed version. Its contract allows
 the Shell version, signed Workspace Descriptor expiry, cloud Runtime release,
 and platform-specific local Runtime Pack to carry independent identities.
 Account lookup refreshes signed Descriptors; Profile composition remains
-build-time and Runtime Pack changes remain immutable signed releases rather
-than per-module hot updates. Automatic Shell update, Runtime Pack download,
-and update channels remain future work. R1 proves only the installation-level
-vN to vN+1 to rollback data/readback boundary; it does not add an updater.
+build-time and Runtime Pack changes remain complete application releases rather
+than per-module hot updates. Desktop-U1 adds the internal update channel: one
+versioned release manifest, bounded native download, exact SHA-256, and a user-
+confirmed restart. R1 still supplies the installation-level vN to vN+1 and
+rollback data/readback proof; U1 does not introduce hot Runtime replacement.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
@@ -250,7 +251,11 @@ Each checkpoint requires separate authorization:
    before trust rebinding, and both platforms prove vN to vN+1 to rollback
    Owner readback. Immutable releases and protected `main` are hard gates. The
    mechanism is deployment configuration; it adds no business module or writer.
-8. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
+8. **Desktop-U1:** a simple internal updater checks immutable `desktop-v*`
+   releases, downloads and verifies the native package, creates a Generic Local
+   backup when present, stops the Runtime, and hands off to macOS bundle swap or
+   Windows Squirrel Setup. It changes no business or data authority.
+9. **Desktop-D4/D5:** background service or private cloud-to-local cutover only
    after a new business decision and authorization.
 
 Machine evidence must also prove that the public package contains no

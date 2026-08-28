@@ -1,13 +1,16 @@
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
+  Menu,
+  net,
   protocol,
   session,
   shell,
   WebContentsView,
 } = require("electron");
-const { readFile, stat } = require("node:fs/promises");
+const { mkdir, readFile, stat, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
 const {
@@ -50,6 +53,17 @@ const {
 } = require("./local-runtime.cjs");
 const { createLocalRuntimeLifecycle } = require("./local-lifecycle.cjs");
 const { handleSquirrelStartup } = require("./squirrel-startup.cjs");
+const {
+  finalizePendingMacUpdate,
+  launchMacUpdate,
+  launchWindowsUpdate,
+  prepareMacUpdate,
+} = require("./update-installer.cjs");
+const {
+  checkForUpdate,
+  downloadUpdateArtifact,
+  normalizeUpdateConfig,
+} = require("./update-manager.cjs");
 
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
@@ -72,11 +86,16 @@ let activeEnterpriseProfiles = new Map();
 const accountLookupGeneration = createAccountLookupGeneration();
 let shutdownInProgress = false;
 let cloudLogoutCleanupPromise = null;
+let updateCheckPromise = null;
+let updateDownloadPromise = null;
+let availableUpdate = null;
+let downloadedUpdate = null;
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
   stopRuntime: stopLocalRuntime,
 });
 let workspaceState = {
+  appVersion: app.getVersion(),
   mode: "none",
   status: "idle",
   displayName: "",
@@ -97,6 +116,13 @@ let workspaceState = {
   savedAccounts: [],
   canCreateLocal: false,
   pendingLocalAccountId: "",
+  updateStatus: "idle",
+  updateVersion: "",
+  updateProgress: 0,
+  updateError: "",
+  updateReleaseNotes: "",
+  updateDownloaded: false,
+  updateLastCheckedAt: "",
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -151,6 +177,23 @@ function accountDirectoryConfigPath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "account-directory.json")
     : path.resolve(__dirname, "..", "config", "account-directory.json");
+}
+
+function updateChannelConfigPath() {
+  if (!app.isPackaged && process.env.BIZHUB_DESKTOP_UPDATE_CHANNEL_CONFIG) {
+    return path.resolve(process.env.BIZHUB_DESKTOP_UPDATE_CHANNEL_CONFIG);
+  }
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "update-channel.json")
+    : path.resolve(__dirname, "..", "config", "update-channel.json");
+}
+
+function updateDownloadRoot() {
+  return path.join(desktopUserDataRoot(), "updates");
+}
+
+function automaticUpdateCheckPath() {
+  return path.join(updateDownloadRoot(), "automatic-check.json");
 }
 
 async function connectionValidationOptions() {
@@ -511,6 +554,285 @@ async function readJsonFile(filePath, maxBytes) {
   }
   const raw = await readFile(filePath, "utf8");
   return JSON.parse(raw);
+}
+
+function publicUpdateState() {
+  return {
+    appVersion: app.getVersion(),
+    status: workspaceState.updateStatus,
+    version: workspaceState.updateVersion,
+    progress: workspaceState.updateProgress,
+    error: workspaceState.updateError,
+    releaseNotes: workspaceState.updateReleaseNotes,
+    downloaded: workspaceState.updateDownloaded,
+    lastCheckedAt: workspaceState.updateLastCheckedAt,
+  };
+}
+
+async function automaticUpdateCheckDue(config) {
+  try {
+    const record = await readJsonFile(automaticUpdateCheckPath(), MAX_PROFILE_BYTES);
+    const checkedAt = Date.parse(record?.checked_at || "");
+    return !Number.isFinite(checkedAt)
+      || Date.now() - checkedAt >= config.checkIntervalHours * 60 * 60 * 1000;
+  } catch {
+    return true;
+  }
+}
+
+async function recordAutomaticUpdateCheck() {
+  await mkdir(updateDownloadRoot(), { recursive: true, mode: 0o700 });
+  await writeFile(automaticUpdateCheckPath(), `${JSON.stringify({
+    schema_version: "bizhub.desktop-update-check.v1",
+    checked_at: new Date().toISOString(),
+  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function publishUpdateState(next) {
+  publishState(Object.fromEntries(
+    Object.entries(next).map(([key, value]) => [`update${key[0].toUpperCase()}${key.slice(1)}`, value]),
+  ));
+}
+
+async function showDesktopMessage(options) {
+  if (mainWindow && !mainWindow.isDestroyed()) return dialog.showMessageBox(mainWindow, options);
+  return dialog.showMessageBox(options);
+}
+
+function autoUpdateSuppressed() {
+  return (
+    !app.isPackaged
+    || process.env.BIZHUB_DESKTOP_DISABLE_AUTO_UPDATE === "1"
+    || Object.keys(process.env).some((key) => key.startsWith("BIZHUB_DESKTOP_SMOKE_"))
+  );
+}
+
+async function promptToDownloadUpdate() {
+  if (!availableUpdate) return;
+  const result = await showDesktopMessage({
+    type: "info",
+    title: "BizHub Desktop 更新",
+    message: `发现新版本 ${availableUpdate.manifest.version}`,
+    detail: availableUpdate.manifest.releaseNotes || "可以在后台下载，现有云端和本地数据不会被覆盖。",
+    buttons: ["后台下载", "稍后"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (result.response === 0) await downloadDesktopUpdate({ promptAfterDownload: true });
+}
+
+async function checkDesktopUpdate({
+  interactive = false,
+  automatic = false,
+  autoDownload = true,
+} = {}) {
+  if (updateCheckPromise) return updateCheckPromise;
+  updateCheckPromise = (async () => {
+    let automaticCheckAttempted = !automatic;
+    publishUpdateState({ status: "checking", error: "", progress: 0 });
+    try {
+      const config = await readJsonFile(updateChannelConfigPath(), MAX_PROFILE_BYTES);
+      if (automatic && !await automaticUpdateCheckDue(normalizeUpdateConfig(config))) {
+        publishUpdateState({ status: "idle", error: "" });
+        return publicUpdateState();
+      }
+      automaticCheckAttempted = true;
+      const result = await checkForUpdate({
+        fetchImpl: net.fetch,
+        config,
+        currentVersion: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+      });
+      const checkedAt = new Date().toISOString();
+      if (result.status !== "available") {
+        availableUpdate = null;
+        downloadedUpdate = null;
+        publishUpdateState({
+          status: result.status,
+          version: "",
+          releaseNotes: "",
+          downloaded: false,
+          lastCheckedAt: checkedAt,
+        });
+        if (interactive) {
+          await showDesktopMessage({
+            type: "info",
+            title: "BizHub Desktop 更新",
+            message: result.status === "disabled" ? "当前更新通道未启用" : "当前已是最新版本",
+            detail: `当前版本 ${app.getVersion()}`,
+            buttons: ["好"],
+            noLink: true,
+          });
+        }
+        return publicUpdateState();
+      }
+      availableUpdate = result;
+      downloadedUpdate = null;
+      publishUpdateState({
+        status: "available",
+        version: result.manifest.version,
+        releaseNotes: result.manifest.releaseNotes,
+        downloaded: false,
+        lastCheckedAt: checkedAt,
+      });
+      if (interactive) await promptToDownloadUpdate();
+      else if (autoDownload && result.config.autoDownload) {
+        await downloadDesktopUpdate({ promptAfterDownload: true });
+      }
+      return publicUpdateState();
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "desktop_update_check_failed";
+      publishUpdateState({ status: "error", error: code, lastCheckedAt: new Date().toISOString() });
+      if (interactive) {
+        await showDesktopMessage({
+          type: "warning",
+          title: "暂时无法检查更新",
+          message: "更新服务器暂时不可用",
+          detail: "现有 BizHub 可以继续正常使用，请稍后再试。",
+          buttons: ["好"],
+          noLink: true,
+        });
+      }
+      return publicUpdateState();
+    } finally {
+      if (automatic && automaticCheckAttempted) await recordAutomaticUpdateCheck().catch(() => {});
+      updateCheckPromise = null;
+    }
+  })();
+  return updateCheckPromise;
+}
+
+async function promptToInstallUpdate() {
+  if (!downloadedUpdate) return;
+  const localDetail = workspaceState.localInitialized
+    ? "重启前会先创建并验证 Generic Local 数据备份，然后正常停止本地后端。"
+    : "客户端将退出并安装新版本，云端业务数据不会被修改。";
+  const result = await showDesktopMessage({
+    type: "info",
+    title: "更新已下载",
+    message: `BizHub Desktop ${downloadedUpdate.version} 已准备好`,
+    detail: localDetail,
+    buttons: ["重启并更新", "稍后"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (result.response === 0) await installDesktopUpdate({ confirmed: true });
+}
+
+async function downloadDesktopUpdate({ promptAfterDownload = false } = {}) {
+  if (updateDownloadPromise) return updateDownloadPromise;
+  updateDownloadPromise = (async () => {
+    if (!availableUpdate) {
+      await checkDesktopUpdate({ interactive: false, autoDownload: false });
+      if (!availableUpdate) return publicUpdateState();
+    }
+    publishUpdateState({ status: "downloading", error: "", progress: 0, downloaded: false });
+    const destination = path.join(
+      updateDownloadRoot(),
+      availableUpdate.manifest.version,
+      availableUpdate.manifest.asset.filename,
+    );
+    let lastPercent = -1;
+    try {
+      const downloaded = await downloadUpdateArtifact({
+        fetchImpl: net.fetch,
+        asset: availableUpdate.manifest.asset,
+        allowedHosts: availableUpdate.config.allowedHosts,
+        destination,
+        onProgress: ({ bytes, totalBytes }) => {
+          const percent = Math.min(100, Math.floor((bytes / totalBytes) * 100));
+          if (percent === lastPercent) return;
+          lastPercent = percent;
+          publishUpdateState({ progress: percent });
+          mainWindow?.setProgressBar?.(percent / 100);
+        },
+      });
+      mainWindow?.setProgressBar?.(-1);
+      downloadedUpdate = {
+        ...downloaded,
+        version: availableUpdate.manifest.version,
+        kind: availableUpdate.manifest.asset.kind,
+      };
+      publishUpdateState({ status: "downloaded", progress: 100, downloaded: true, error: "" });
+      if (promptAfterDownload) await promptToInstallUpdate();
+      return publicUpdateState();
+    } catch (error) {
+      mainWindow?.setProgressBar?.(-1);
+      publishUpdateState({
+        status: "error",
+        error: error instanceof Error ? error.message : "desktop_update_download_failed",
+        downloaded: false,
+      });
+      return publicUpdateState();
+    } finally {
+      updateDownloadPromise = null;
+    }
+  })();
+  return updateDownloadPromise;
+}
+
+async function prepareLocalDataForUpdate() {
+  if (workspaceState.localInitialized) {
+    await createLocalBackup();
+    if (workspaceState.localError) throw new Error(workspaceState.localError);
+  }
+  destroyWorkspaceView();
+  if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop();
+  publishState({ localStatus: "stopped" });
+}
+
+async function installDesktopUpdate({ confirmed = false } = {}) {
+  if (!confirmed) {
+    await promptToInstallUpdate();
+    return publicUpdateState();
+  }
+  if (!app.isPackaged) throw new Error("desktop_update_install_requires_packaged_app");
+  if (!downloadedUpdate) throw new Error("desktop_update_artifact_not_downloaded");
+  publishUpdateState({ status: "installing", error: "" });
+  try {
+    const stagedBundle = process.platform === "darwin"
+      ? await prepareMacUpdate({
+        artifactPath: downloadedUpdate.path,
+        version: downloadedUpdate.version,
+        updateRoot: updateDownloadRoot(),
+      })
+      : null;
+    await prepareLocalDataForUpdate();
+    shutdownInProgress = true;
+    if (process.platform === "darwin") {
+      await launchMacUpdate({
+        executablePath: app.getPath("exe"),
+        processId: process.pid,
+        stagedBundle,
+        updateRoot: updateDownloadRoot(),
+        version: downloadedUpdate.version,
+      });
+    } else if (process.platform === "win32" && downloadedUpdate.kind === "windows-squirrel-setup") {
+      launchWindowsUpdate(downloadedUpdate.path);
+    } else {
+      throw new Error("desktop_update_install_platform_invalid");
+    }
+    app.quit();
+    return publicUpdateState();
+  } catch (error) {
+    shutdownInProgress = false;
+    publishUpdateState({
+      status: "error",
+      error: error instanceof Error ? error.message : "desktop_update_install_failed",
+    });
+    await showDesktopMessage({
+      type: "error",
+      title: "更新未安装",
+      message: "BizHub Desktop 保持当前版本",
+      detail: "更新准备失败，没有修改现有客户端和本地数据。请稍后重试。",
+      buttons: ["好"],
+      noLink: true,
+    });
+    return publicUpdateState();
+  }
 }
 
 async function loadConnectionProfile(filePath) {
@@ -1263,6 +1585,22 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return workspaceState;
   });
+  ipcMain.handle("desktop:get-update-state", (event) => {
+    requireTrustedShellSender(event);
+    return publicUpdateState();
+  });
+  ipcMain.handle("desktop:check-update", async (event) => {
+    requireTrustedShellSender(event);
+    return checkDesktopUpdate({ interactive: false });
+  });
+  ipcMain.handle("desktop:download-update", async (event) => {
+    requireTrustedShellSender(event);
+    return downloadDesktopUpdate({ promptAfterDownload: false });
+  });
+  ipcMain.handle("desktop:install-update", async (event) => {
+    requireTrustedShellSender(event);
+    return installDesktopUpdate();
+  });
   ipcMain.handle("desktop:lookup-account", async (event, input) => {
     requireTrustedShellSender(event);
     return lookupAccount(input);
@@ -1373,6 +1711,42 @@ function installIpcHandlers() {
   });
 }
 
+function installApplicationMenu() {
+  const updateItem = {
+    label: "检查更新…",
+    click: () => { void checkDesktopUpdate({ interactive: true }); },
+  };
+  const template = [];
+  if (process.platform === "darwin") {
+    template.push({
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        updateItem,
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    });
+  } else {
+    template.push({ label: "文件", submenu: [{ role: "quit" }] });
+  }
+  template.push(
+    { label: "编辑", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
+    { label: "显示", submenu: [{ role: "reload" }, { role: "togglefullscreen" }] },
+    { label: "窗口", submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }] },
+  );
+  if (process.platform !== "darwin") {
+    template.push({ label: "帮助", submenu: [updateItem] });
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -1410,6 +1784,13 @@ async function createMainWindow() {
     if (localRuntimeLifecycle.state() !== "stopped") void stopLocalMode();
   });
   await mainWindow.loadURL(SHELL_URL);
+  if (process.platform === "darwin" && app.isPackaged) {
+    await finalizePendingMacUpdate({
+      executablePath: app.getPath("exe"),
+      currentVersion: app.getVersion(),
+      updateRoot: updateDownloadRoot(),
+    }).catch(() => {});
+  }
   await refreshLocalState();
   await refreshSavedAccountState();
 
@@ -1455,6 +1836,7 @@ if (squirrelStartupHandled) {
   app.whenReady().then(async () => {
     protocol.handle("bizhub-shell", serveShellAsset);
     installIpcHandlers();
+    installApplicationMenu();
     let recoveryError = null;
     try {
       await recoverInterruptedLocalSetup(desktopUserDataRoot());
@@ -1463,6 +1845,9 @@ if (squirrelStartupHandled) {
     }
     await createMainWindow();
     if (recoveryError) publishState({ localError: recoveryError });
+    if (!autoUpdateSuppressed()) {
+      setTimeout(() => { void checkDesktopUpdate({ interactive: false, automatic: true }); }, 3_000);
+    }
   });
 
   app.on("second-instance", () => {

@@ -96,6 +96,12 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   assert.match(runtimeTrust.runtime_pack_tree_digest, /^[0-9a-f]{64}$/);
   assert.ok(runtimeTrust.runtime_pack_file_count > 0);
   assert.ok(mainTrustSelection(await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8")));
+  const updateChannel = JSON.parse(
+    await readFile(path.join(ROOT, "config", "update-channel.json"), "utf8"),
+  );
+  assert.equal(updateChannel.schema_version, "bizhub.desktop-update-channel.v1");
+  assert.equal(updateChannel.release_api_url.startsWith("https://api.github.com/"), true);
+  assert.ok(!JSON.stringify(updateChannel).includes("123crystal"));
 });
 
 test("Descriptor expiry gates each cloud open without expiring the connected Session", async () => {
@@ -133,6 +139,8 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
     "recoverInterruptedLocalSetup",
     "createLocalRuntimeLifecycle",
     "handleSquirrelStartup",
+    "checkForUpdate",
+    "downloadUpdateArtifact",
   ]) {
     assert.ok(`${main}\n${localRuntime}\n${localLifecycle}`.includes(required), required);
   }
@@ -149,6 +157,9 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
     "loginLocal",
     "backupLocal",
     "stopLocal",
+    "checkUpdate",
+    "downloadUpdate",
+    "installUpdate",
   ]) {
     assert.ok(preload.includes(api), api);
   }

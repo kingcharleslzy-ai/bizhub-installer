@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
   loginLocal: (input) => ipcRenderer.invoke("desktop:login-local", input),
   backupLocal: () => ipcRenderer.invoke("desktop:backup-local"),
   stopLocal: () => ipcRenderer.invoke("desktop:stop-local"),
+  getUpdateState: () => ipcRenderer.invoke("desktop:get-update-state"),
+  checkUpdate: () => ipcRenderer.invoke("desktop:check-update"),
+  downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
+  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   getState: () => ipcRenderer.invoke("desktop:get-state"),
   onStateChange: (listener) => {
     if (typeof listener !== "function") return () => {};

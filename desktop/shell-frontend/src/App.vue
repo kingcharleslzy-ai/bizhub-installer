@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 const state = ref({
+  appVersion: "",
   mode: "none",
   status: "idle",
   displayName: "",
@@ -17,6 +18,13 @@ const state = ref({
   savedAccounts: [],
   canCreateLocal: false,
   pendingLocalAccountId: "",
+  updateStatus: "idle",
+  updateVersion: "",
+  updateProgress: 0,
+  updateError: "",
+  updateReleaseNotes: "",
+  updateDownloaded: false,
+  updateLastCheckedAt: "",
 });
 const form = reactive({ accountId: "", password: "", remember: true });
 const companyName = ref("");
@@ -65,6 +73,17 @@ const statusLabel = computed(() => {
   if (errorLabel.value) return "操作未完成";
   return "登录后自动进入云端或本地 BizHub";
 });
+const updateWorking = computed(() => ["checking", "downloading", "installing"].includes(state.value.updateStatus));
+const updateLabel = computed(() => {
+  if (state.value.updateStatus === "checking") return "正在检查更新…";
+  if (state.value.updateStatus === "downloading") return `正在下载 ${state.value.updateProgress || 0}%`;
+  if (state.value.updateStatus === "downloaded") return `新版本 ${state.value.updateVersion} 已下载`;
+  if (state.value.updateStatus === "available") return `发现新版本 ${state.value.updateVersion}`;
+  if (state.value.updateStatus === "installing") return "正在重启更新…";
+  if (state.value.updateStatus === "error") return "暂时无法检查更新";
+  if (state.value.updateStatus === "up-to-date") return "已是最新版本";
+  return state.value.appVersion ? `客户端 ${state.value.appVersion}` : "BizHub Desktop";
+});
 
 function syncActiveAccount() {
   if (!form.accountId && state.value.activeAccountId) form.accountId = state.value.activeAccountId;
@@ -73,6 +92,18 @@ function syncActiveAccount() {
 async function login() {
   state.value = await window.bizhubDesktop.loginAccount({ ...form });
   if (state.value.status === "connected") form.password = "";
+}
+
+async function checkUpdate() {
+  await window.bizhubDesktop.checkUpdate();
+}
+
+async function downloadUpdate() {
+  await window.bizhubDesktop.downloadUpdate();
+}
+
+async function installUpdate() {
+  await window.bizhubDesktop.installUpdate();
 }
 
 async function selectSaved(account) {
@@ -161,6 +192,12 @@ onBeforeUnmount(() => unsubscribe());
 
         <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
         <p class="boundary-note">企业账号只连接签名云端工作区；本地账号只使用本机单一 SQLite，二者不会互相复制或同步数据。</p>
+        <div class="update-row">
+          <span>{{ updateLabel }}</span>
+          <button v-if="state.updateDownloaded" type="button" :disabled="updateWorking" @click="installUpdate">重启并更新</button>
+          <button v-else-if="state.updateStatus === 'available'" type="button" :disabled="updateWorking" @click="downloadUpdate">下载更新</button>
+          <button v-else type="button" :disabled="updateWorking" @click="checkUpdate">检查更新</button>
+        </div>
       </section>
     </main>
   </div>
