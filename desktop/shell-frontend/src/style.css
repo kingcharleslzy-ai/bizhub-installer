@@ -28,6 +28,28 @@ button, input { font: inherit; }
   background: #17212b;
 }
 
+.guest-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 14px;
+  color: #f5ead0;
+  background: #272319;
+  font-size: 11px;
+  -webkit-app-region: drag;
+}
+.guest-banner.mac { padding-left: 86px; }
+.guest-banner button {
+  padding: 4px 9px;
+  border: 1px solid #756542;
+  border-radius: 6px;
+  color: #f5ead0;
+  background: #393121;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
 .shell-bar.mac {
   padding-left: 88px;
   -webkit-app-region: drag;
@@ -124,6 +146,17 @@ input:focus { border-color: #4f8db7; box-shadow: 0 0 0 3px rgb(79 141 183 / 14%)
 }
 .primary-button { border: 1px solid #1b5f8e; color: #fff; background: #1e6a9d; }
 .secondary-button { border: 1px solid #cbd6df; color: #3f5262; background: #fff; }
+.guest-button {
+  width: fit-content;
+  padding: 11px 18px;
+  border: 1px solid #d8c28a;
+  border-radius: 9px;
+  color: #6b5521;
+  background: #fffaf0;
+  font-weight: 650;
+  cursor: pointer;
+}
+.guest-note { margin: 10px 0 0; color: #7b8792; font-size: 11px; line-height: 1.6; }
 button:disabled { cursor: wait; opacity: .62; }
 
 .local-create {

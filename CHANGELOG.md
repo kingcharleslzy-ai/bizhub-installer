@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add a credential-free `游客体验` sample room beside the unified login form.
+  It creates a disposable Generic instance outside the formal `local-instance`,
+  seeds customer-neutral master data, procurement, sales, and inventory only
+  through the existing Owner preview/apply APIs, and removes the entire demo
+  instance on exit or application quit. It never queries the account directory,
+  saves an account, contacts a customer service, or changes Runtime Pack,
+  migration, Profile, Owner, writer, or production data. Desktop version
+  advances to `0.1.6`.
 - Gate the visible Generic Local creation form at final confirmation. Expanding
   the form remains offline and write-free, but `明确创建并进入` now performs a
   fresh account-directory lookup and permits bootstrap only after an explicit

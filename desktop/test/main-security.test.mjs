@@ -91,12 +91,11 @@ test("closing the window keeps the workspace alive in the background", async () 
 test("connected cloud and local workspaces replace the Desktop chrome", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const shell = await readFile(path.join(ROOT, "shell-frontend", "src", "App.vue"), "utf8");
-  assert.match(
-    main,
-    /workspaceState\.status === "connected"\s+\? \(process\.platform === "darwin" && workspaceState\.mode === "local" \? 30 : 0\)\s+: HEADER_HEIGHT/,
-  );
+  assert.match(main, /workspaceState\.mode === "guest"\s+\? GUEST_BANNER_HEIGHT/);
+  assert.match(main, /process\.platform === "darwin" && workspaceState\.mode === "local" \? 30 : 0/);
   assert.match(main, /if \(authenticationPending\) return;[\s\S]*workspaceView\.setVisible\(true\)/);
   assert.ok(shell.includes('v-if="!connected" class="shell-bar"'));
+  assert.ok(shell.includes('v-if="guestConnected" class="guest-banner"'));
   assert.ok(shell.includes("state.platform === 'darwin'"));
   assert.ok(!shell.includes("退出并清除保持登录"));
 });
@@ -175,6 +174,20 @@ test("local bootstrap requires a fresh explicit directory not-found result", asy
   assert.ok(!setup.includes("activeEnterpriseProfiles"));
 });
 
+test("guest demo is an isolated disposable instance and never weakens local account lookup", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const start = main.indexOf("async function openGuestDemo");
+  const end = main.indexOf("async function prepareLocalLogin", start);
+  assert.ok(start >= 0 && end > start);
+  const guest = main.slice(start, end);
+  assert.ok(guest.includes("userDataRoot: guestDemoRoot()"));
+  assert.ok(guest.includes("await seedGuestDemo(runtime, fetchRuntime)"));
+  assert.ok(guest.includes('localRuntimeKind = "guest"'));
+  assert.ok(!guest.includes("resolveAccountWorkspaces"));
+  assert.ok(!guest.includes("saveDesktopAccount"));
+  assert.match(main, /await rm\(guestDemoRoot\(\), \{ recursive: true, force: true \}\)/);
+});
+
 test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {
   const smoke = await readFile(path.join(ROOT, "scripts", "local-shell-smoke.mjs"), "utf8");
   assert.match(smoke, /maxRetries: process\.platform === "win32" \? 10 : 0/);
@@ -228,6 +241,7 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
     "forgetRememberedLogin",
     "resetAccountLookup",
     "connectEnterpriseWorkspace",
+    "openGuestDemo",
     "setupLocal",
     "loginLocal",
     "backupLocal",

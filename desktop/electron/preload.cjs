@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
     { connectionId },
   ),
   disconnectWorkspace: () => ipcRenderer.invoke("desktop:disconnect-workspace"),
+  openGuestDemo: () => ipcRenderer.invoke("desktop:open-guest-demo"),
   prepareLocal: () => ipcRenderer.invoke("desktop:prepare-local"),
   setupLocal: (input) => ipcRenderer.invoke("desktop:setup-local", input),
   loginLocal: (input) => ipcRenderer.invoke("desktop:login-local", input),

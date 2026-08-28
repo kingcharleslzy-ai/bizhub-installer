@@ -32,11 +32,13 @@ const localCreationRequested = ref(false);
 let unsubscribe = () => {};
 
 const connected = computed(() => state.value.status === "connected");
+const guestConnected = computed(() => connected.value && state.value.mode === "guest");
 const working = computed(() => (
   state.value.status === "loading"
   || state.value.accountLookupStatus === "resolving"
   || ["resolving", "authenticating"].includes(state.value.autoLoginStatus)
   || ["starting", "initializing"].includes(state.value.localStatus)
+  || state.value.guestDemoStatus === "initializing"
 ));
 const errorCode = computed(() => state.value.localError || state.value.error || "");
 const errorLabel = computed(() => {
@@ -68,6 +70,7 @@ const errorLabel = computed(() => {
   return errorCode.value ? "操作未完成，请检查账号、密码或网络后重试。" : "";
 });
 const statusLabel = computed(() => {
+  if (state.value.guestDemoStatus === "initializing") return "正在准备游客样板间";
   if (state.value.autoLoginStatus === "authenticating") return "正在自动登录";
   if (state.value.accountLookupStatus === "resolving") return "正在识别账号";
   if (state.value.localStatus === "initializing") return "正在创建本地 BizHub";
@@ -116,6 +119,14 @@ async function downloadUpdate() {
 
 async function installUpdate() {
   await window.bizhubDesktop.installUpdate();
+}
+
+async function openGuestDemo() {
+  state.value = await window.bizhubDesktop.openGuestDemo();
+}
+
+async function exitGuestDemo() {
+  state.value = await window.bizhubDesktop.switchAccount();
 }
 
 async function selectSaved(account) {
@@ -172,6 +183,10 @@ onBeforeUnmount(() => unsubscribe());
 
 <template>
   <div class="desktop-shell">
+    <header v-if="guestConnected" class="guest-banner" :class="{ mac: state.platform === 'darwin' }">
+      <span><b>游客样板间</b> · 当前均为模拟数据，退出应用后自动重置</span>
+      <button type="button" @click="exitGuestDemo">退出样板间</button>
+    </header>
     <header v-if="!connected" class="shell-bar" :class="{ mac: state.platform === 'darwin' }">
       <div class="identity">
         <span class="mark">BH</span>
@@ -221,8 +236,11 @@ onBeforeUnmount(() => unsubscribe());
           <div class="login-actions">
             <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在登录…' : '登录并进入' }}</button>
             <button class="secondary-button" type="button" :disabled="working" @click="beginLocalEntry">{{ localEntryLabel }}</button>
+            <button class="guest-button" type="button" :disabled="working" @click="openGuestDemo">游客体验</button>
           </div>
         </form>
+
+        <p class="guest-note">无需账号和密码，进入一套可操作的 Generic 样板数据；不会连接云端，也不会写入你的本地账号。</p>
 
         <section v-if="localCreationVisible" class="local-create">
           <div>
