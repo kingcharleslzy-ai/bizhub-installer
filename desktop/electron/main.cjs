@@ -599,8 +599,15 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   setWorkspaceBounds();
   await workspaceView.webContents.loadURL(`${localOrigin}/`);
   if (guest) {
+    await workspaceView.webContents.executeJavaScript(`(() => {
+      const settingsButton = [...document.querySelectorAll("nav button")]
+        .find((item) => item.textContent.trim() === "设置");
+      if (!settingsButton) return false;
+      settingsButton.dataset.page = "settings";
+      return true;
+    })()`, true);
     await workspaceView.webContents.insertCSS(
-      "nav button:last-child{display:none!important}.account small{display:none!important}",
+      "nav button[data-page=\"settings\"]{display:none!important}.account small{display:none!important}",
     );
     publishState({
       mode,
@@ -1807,13 +1814,21 @@ function installIpcHandlers() {
   if (process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1") {
     ipcMain.handle("desktop:smoke-hide-window", (event) => {
       requireTrustedShellSender(event);
-      setTimeout(() => mainWindow?.hide(), 100);
+      setTimeout(() => mainWindow?.close(), 100);
       return { status: "hiding" };
     });
     ipcMain.handle("desktop:smoke-restore-window", (event) => {
       requireTrustedShellSender(event);
       showMainWindow();
       return { status: "visible" };
+    });
+    ipcMain.handle("desktop:smoke-quit-app", (event) => {
+      requireTrustedShellSender(event);
+      setTimeout(() => {
+        quitRequested = true;
+        app.quit();
+      }, 100);
+      return { status: "quitting" };
     });
   }
   ipcMain.handle("desktop:get-update-state", (event) => {

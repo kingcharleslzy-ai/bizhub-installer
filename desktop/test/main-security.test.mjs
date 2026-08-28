@@ -186,6 +186,9 @@ test("guest demo is an isolated disposable instance and never weakens local acco
   assert.ok(!guest.includes("resolveAccountWorkspaces"));
   assert.ok(!guest.includes("saveDesktopAccount"));
   assert.match(main, /await rm\(guestDemoRoot\(\), \{ recursive: true, force: true \}\)/);
+  assert.match(main, /settingsButton\.dataset\.page = "settings"/);
+  assert.match(main, /nav button\[data-page=\\"settings\\"\]/);
+  assert.doesNotMatch(main, /nav button:last-child/);
 });
 
 test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {
@@ -194,6 +197,11 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(smoke, /retryDelay: 200/);
   assert.match(smoke, /residual_runtime_processes: 0/);
   assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
+
+  const accountFlow = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
+  assert.match(accountFlow, /maxRetries: process\.platform === "win32" \? 10 : 0/);
+  assert.match(accountFlow, /retryDelay: 200/);
+  assert.match(accountFlow, /await stopDesktopProcess\(\);[\s\S]+await rm\(temporaryRoot/);
 });
 
 test("account-flow local submission does not depend on foreground animation frames", async () => {

@@ -217,6 +217,23 @@ async function stopDesktopProcess() {
   child = null;
 }
 
+async function quitDesktopProcess() {
+  if (!child || child.exitCode !== null) return;
+  const exitingChild = child;
+  const exited = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("desktop_account_flow_quit_timeout")), 15_000);
+    exitingChild.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  await evaluate(cdp, "window.bizhubDesktop.quitAppForSmoke()");
+  cdp.close();
+  cdp = null;
+  await exited;
+  child = null;
+}
+
 async function launchDesktopProcess() {
   debugPort = await unusedPort();
   const executable = packagedExecutable || require("electron");
@@ -522,6 +539,7 @@ try {
       const value = await evaluate(guestWorkspace, `({
         text: document.body.innerText,
         title: document.querySelector("h1")?.textContent?.trim() || "",
+        settingsTagged: document.querySelectorAll('nav button[data-page="settings"]').length,
         visibleNav: [...document.querySelectorAll("nav button")]
           .filter((item) => getComputedStyle(item).display !== "none")
           .map((item) => item.textContent.trim())
@@ -534,15 +552,40 @@ try {
       || !product.visibleNav.includes("采购")
       || !product.visibleNav.includes("销售")
       || !product.visibleNav.includes("库存")
+      || product.settingsTagged !== 1
       || product.visibleNav.includes("设置")
     ) {
       fail("desktop_account_flow_guest_product_invalid");
     }
   }
   const guestChrome = await evaluate(cdp, "document.body.innerText");
-  if (!guestChrome.includes("游客样板间") || !guestChrome.includes("退出应用后自动重置")) {
+  if (
+    !guestChrome.includes("游客样板间")
+    || !guestChrome.includes("退出样板间或彻底退出应用后自动重置；关闭窗口只进入后台。")
+  ) {
     fail("desktop_account_flow_guest_banner_missing");
   }
+
+  await evaluate(cdp, "window.bizhubDesktop.hideWindowForSmoke()");
+  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "hidden",
+    "desktop_account_flow_guest_window_not_hidden_in_background");
+  const guestBackgroundState = await evaluate(cdp, "window.bizhubDesktop.getState()");
+  await stat(path.join(userDataRoot, "guest-demo", "local-instance", "instance.json"));
+  if (
+    guestBackgroundState.mode !== "guest"
+    || guestBackgroundState.status !== "connected"
+    || guestBackgroundState.guestDemoStatus !== "ready"
+  ) {
+    fail("desktop_account_flow_guest_background_session_not_retained");
+  }
+  await evaluate(cdp, "window.bizhubDesktop.restoreWindowForSmoke()");
+  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "visible",
+    "desktop_account_flow_guest_window_not_restored");
+  const guestRestoredState = await evaluate(cdp, "window.bizhubDesktop.getState()");
+  if (guestRestoredState.mode !== "guest" || guestRestoredState.status !== "connected") {
+    fail("desktop_account_flow_guest_background_restore_invalid");
+  }
+
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
     "desktop_account_flow_guest_exit_not_returned");
@@ -555,6 +598,30 @@ try {
   if (directoryRequests.length !== directoryRequestsBeforeGuest) {
     fail("desktop_account_flow_guest_contacted_directory");
   }
+
+  if (!await clickButton(cdp, "游客体验")) fail("desktop_account_flow_guest_restart_entry_not_clickable");
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "guest" && value.status === "connected" ? value : null;
+  }, "desktop_account_flow_guest_restart_not_connected", 60_000);
+  await stat(path.join(userDataRoot, "guest-demo", "local-instance", "instance.json"));
+  await quitDesktopProcess();
+  try {
+    await stat(path.join(userDataRoot, "guest-demo"));
+    fail("desktop_account_flow_guest_data_survived_quit");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await launchDesktopProcess();
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    "desktop_account_flow_guest_restart_initial_ui_missing");
+  try {
+    await stat(path.join(userDataRoot, "guest-demo"));
+    fail("desktop_account_flow_guest_data_reappeared_after_restart");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
   const directoryRequestsBeforeDirectLocal = directoryRequests.length;
   if (!await clickButton(cdp, "创建本地账号")) {
     fail("desktop_account_flow_local_create_entry_not_clickable");
@@ -998,7 +1065,9 @@ try {
     guest_demo_without_credentials: true,
     guest_demo_directory_requests: 0,
     guest_demo_owner_seed_readback: true,
+    guest_demo_close_to_background_session_retained: true,
     guest_demo_reset_after_exit: true,
+    guest_demo_reset_after_quit_restart: true,
     guest_demo_formal_local_instances_created: 0,
     cloud_password_logins: cloudLoginRequests.length,
     cloud_workspace_connected: true,
@@ -1047,5 +1116,10 @@ try {
   if (packagedAccountDirectory && originalPackagedAccountDirectory) {
     await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
   }
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await rm(temporaryRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 10 : 0,
+    retryDelay: 200,
+  });
 }

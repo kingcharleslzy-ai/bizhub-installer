@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Make the guest settings boundary independent of navigation order by tagging
+  the semantic settings button with `data-page="settings"` and hiding that
+  stable selector instead of `nav button:last-child`. Clarify that closing the
+  window only sends Desktop to the background, while leaving the sample room or
+  fully quitting resets it. Account-flow coverage now proves guest state survives
+  close-to-background, exits cleanly, and is absent after full quit and restart.
+  Desktop version advances to `0.1.7`; Runtime Pack, SQLite schema, Profile,
+  migration, Owner, writer, directory mapping, and production data remain unchanged.
 - Add a credential-free `游客体验` sample room beside the unified login form.
   It creates a disposable Generic instance outside the formal `local-instance`,
   seeds customer-neutral master data, procurement, sales, and inventory only
