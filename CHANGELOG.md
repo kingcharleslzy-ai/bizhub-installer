@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prefer immutable GitHub Release files for Desktop downloads while retaining
+  the byte-identical Qilin-hosted artifact as a validated `fallback_url`.
+  Existing clients ignore the optional field and use GitHub immediately; this
+  release retries the Aliyun mirror only after the GitHub download fails, with
+  the same filename, kind, byte count, and SHA-256 checks. Desktop version
+  advances to `0.1.10`; Runtime Pack, SQLite schema, Profile, migration, Owner,
+  writer, directory mapping, and production data remain unchanged.
 - Add one bounded Desktop preferences file and narrow preload bridge for system,
   light, or dark appearance, standard or compact density, 90/100/110% zoom,
   close-to-background or explicit quit, launch at login, and automatic client

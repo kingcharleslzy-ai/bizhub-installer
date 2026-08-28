@@ -210,6 +210,13 @@ same narrow shell/cloud/local preload boundary. Zoom and lifecycle choices are
 enforced by Electron; the existing close-to-background behavior remains the
 default, and manual update checks remain available when automatic checks are off.
 
+Desktop 0.1.10 keeps the Qilin-hosted manifest but downloads the immutable
+GitHub Release artifact first. The manifest may declare one optional
+`fallback_url` for the byte-identical Aliyun mirror; Desktop accepts it only
+after HTTPS host and filename validation, then still enforces the same declared
+byte count and SHA-256. No speed race, new permission system, or artifact trust
+source is introduced.
+
 The macOS release path first verifies the fixed unsigned Runtime Pack, signs
 every Runtime Mach-O object with the same Developer ID used for the Shell,
 rebuilds a release-specific Manifest/trust record over those signed bytes, then

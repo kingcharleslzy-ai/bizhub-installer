@@ -9,8 +9,9 @@ mapping, or cloud authentication rule.
 The packaged app checks the bounded manifest at
 `https://qilinshuzhi.com/bizhub-updates/latest.json` after startup and also
 checks the public repository's versioned `desktop-v*` GitHub Releases. The
-Qilin-hosted manifest and artifact are preferred. GitHub remains the independent
-fallback when the mirror is unavailable, invalid, or stale. Development and
+Qilin-hosted manifest is preferred, its artifact URL points to the immutable
+GitHub Release, and one byte-identical Aliyun mirror may be declared as
+`fallback_url`. Development and
 synthetic smoke processes never contact either update service. A user can also
 check from the native application menu or the combined login screen. That login
 flow owns exactly one visible client-update status area; it does not duplicate
@@ -21,7 +22,7 @@ while either a cloud or Generic workspace is open.
 Qilin-hosted latest.json + versioned GitHub Release
 -> prefer the newest valid bounded desktop-update.json
 -> platform/architecture match
--> Qilin artifact download, then identical GitHub artifact fallback
+-> GitHub artifact download, then identical Aliyun mirror fallback
 -> exact byte count + SHA-256
 -> user chooses restart
 -> Generic Local verified backup (when present)
@@ -32,10 +33,10 @@ Qilin-hosted latest.json + versioned GitHub Release
 
 The GitHub release list is limited to non-draft tags beginning with `desktop-v`.
 The mirror and GitHub manifests and downloads must use HTTPS and one of the
-public hosts in `desktop/config/update-channel.json`. A stale mirror never
-suppresses a newer GitHub version. GitHub can serve as the artifact fallback for
-a mirrored version only when both validated manifests declare the same version,
-kind, filename, byte count, and SHA-256. The release list, manifest, artifact
+public hosts in `desktop/config/update-channel.json`. A stale manifest never
+suppresses a newer GitHub version. The optional Aliyun `fallback_url` must use
+the same validated filename, kind, byte count, and SHA-256 as the GitHub file.
+The release list, manifest, artifact
 size, filename, version, bundle identity, byte count, and SHA-256 all fail
 closed.
 
@@ -66,9 +67,9 @@ and Generic Local Runtime.
 it explicitly; it runs native tests, builds macOS arm64 and Windows x64, creates
 `desktop-update.json`, and publishes one prerelease whose immutable tag begins
 with `desktop-v`. A bounded mirror step copies those already-published bytes to
-Qilin hosting, verifies the declared size and SHA-256, rewrites only the asset
-URLs, and atomically advances `latest.json`. The GitHub Release remains the
-bootstrap source for older clients and the fallback source for current clients.
+Qilin hosting, verifies the declared size and SHA-256, adds only the mirror
+`fallback_url`, and atomically advances `latest.json`. The immutable GitHub
+Release remains the primary artifact and bootstrap source.
 The advanced R1 production signing workflows remain frozen and are not called
 by U1.
 

@@ -888,6 +888,7 @@ async function downloadDesktopUpdate({ promptAfterDownload = false } = {}) {
         allowedHosts: availableUpdate.config.allowedHosts,
         destination,
         source: availableUpdate.source,
+        fallbackSource: availableUpdate.fallbackSource || "github",
         onProgress: ({ bytes, totalBytes }) => {
           const percent = Math.min(100, Math.floor((bytes / totalBytes) * 100));
           if (percent === lastPercent) return;

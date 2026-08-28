@@ -236,12 +236,22 @@ function validateUpdateManifest(value, { allowedHosts, platform, arch }) {
   if (!extensionValid || !/^[0-9A-Za-z._ -]+$/.test(filename)) {
     fail("desktop_update_artifact_filename_invalid");
   }
+  let fallbackUrl = "";
+  if (asset.fallback_url) {
+    fallbackUrl = validateHttpsUrl(
+      asset.fallback_url,
+      allowedHosts,
+      "desktop_update_artifact_fallback_url_invalid",
+    );
+    const fallbackFilename = path.basename(decodeURIComponent(new URL(fallbackUrl).pathname));
+    if (fallbackFilename !== filename) fail("desktop_update_artifact_fallback_filename_invalid");
+  }
   return {
     version,
     publishedAt,
     releaseNotes,
     platformKey: key,
-    asset: { kind: asset.kind, bytes, filename, sha256, url },
+    asset: { kind: asset.kind, bytes, filename, sha256, url, fallbackUrl },
   };
 }
 
@@ -338,12 +348,31 @@ async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, pl
   ) {
     selected = github;
   }
-  const fallbackManifest = selected === primary
+  let fallbackManifest = null;
+  let fallbackSource = "";
+  if (
+    selected.manifest.asset.fallbackUrl
+    && selected.manifest.asset.fallbackUrl !== selected.manifest.asset.url
+  ) {
+    fallbackManifest = {
+      ...selected.manifest,
+      asset: {
+        ...selected.manifest.asset,
+        url: selected.manifest.asset.fallbackUrl,
+        fallbackUrl: "",
+      },
+    };
+    fallbackSource = "aliyun";
+  } else if (
+    selected === primary
     && githubAvailable
     && github.manifest.version === primary.manifest.version
     && assetsMatch(primary.manifest.asset, github.manifest.asset)
-    ? github.manifest
-    : null;
+    && github.manifest.asset.url !== primary.manifest.asset.url
+  ) {
+    fallbackManifest = github.manifest;
+    fallbackSource = "github";
+  }
   return {
     status: "available",
     config,
@@ -351,6 +380,7 @@ async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, pl
     manifestUrl: selected.manifestUrl,
     source: selected.source,
     fallbackManifest,
+    fallbackSource,
   };
 }
 

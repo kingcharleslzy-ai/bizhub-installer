@@ -62,6 +62,20 @@ function primaryManifest(overrides = {}) {
       key,
       {
         ...asset,
+        fallback_url: `https://qilinshuzhi.com/bizhub-updates/releases/desktop-v${value.version}/${path.basename(new URL(asset.url).pathname)}`,
+      },
+    ])),
+  };
+}
+
+function legacyPrimaryManifest(overrides = {}) {
+  const value = manifest(overrides);
+  return {
+    ...value,
+    platforms: Object.fromEntries(Object.entries(value.platforms).map(([key, asset]) => [
+      key,
+      {
+        ...asset,
         url: `https://qilinshuzhi.com/bizhub-updates/releases/desktop-v${value.version}/${path.basename(new URL(asset.url).pathname)}`,
       },
     ])),
@@ -107,6 +121,13 @@ test("validates platform-specific artifact identity and host", () => {
   });
   assert.equal(validated.version, "0.1.1");
   assert.equal(validated.asset.kind, "macos-zip");
+  assert.equal(validated.asset.fallbackUrl, "");
+  const withFallback = validateUpdateManifest(primaryManifest(), {
+    allowedHosts: config.allowedHosts,
+    platform: "darwin",
+    arch: "arm64",
+  });
+  assert.equal(withFallback.asset.fallbackUrl.startsWith("https://qilinshuzhi.com/"), true);
   assert.throws(
     () => validateUpdateManifest(manifest({ platforms: { "darwin-arm64": { ...manifest().platforms["darwin-arm64"], url: "https://evil.example/update.zip" } } }), {
       allowedHosts: config.allowedHosts,
@@ -115,9 +136,31 @@ test("validates platform-specific artifact identity and host", () => {
     }),
     /desktop_update_host_rejected/,
   );
+  const mismatchedFallback = primaryManifest();
+  mismatchedFallback.platforms["darwin-arm64"].fallback_url =
+    "https://qilinshuzhi.com/bizhub-updates/wrong-name.zip";
+  assert.throws(
+    () => validateUpdateManifest(mismatchedFallback, {
+      allowedHosts: config.allowedHosts,
+      platform: "darwin",
+      arch: "arm64",
+    }),
+    /desktop_update_artifact_fallback_filename_invalid/,
+  );
+  const untrustedFallback = primaryManifest();
+  untrustedFallback.platforms["darwin-arm64"].fallback_url =
+    "https://evil.example/BizHub-Desktop-macOS-arm64-0.1.1.zip";
+  assert.throws(
+    () => validateUpdateManifest(untrustedFallback, {
+      allowedHosts: config.allowedHosts,
+      platform: "darwin",
+      arch: "arm64",
+    }),
+    /desktop_update_host_rejected/,
+  );
 });
 
-test("prefers the Aliyun manifest and keeps an identical GitHub artifact fallback", async () => {
+test("uses the GitHub artifact declared by Aliyun metadata and keeps its mirror fallback", async () => {
   const requests = [];
   const fetchImpl = async (url) => {
     requests.push(url);
@@ -141,8 +184,9 @@ test("prefers the Aliyun manifest and keeps an identical GitHub artifact fallbac
   assert.equal(result.status, "available");
   assert.equal(result.source, "primary");
   assert.equal(result.manifest.version, "0.1.1");
-  assert.equal(result.manifest.asset.url.startsWith("https://qilinshuzhi.com/"), true);
-  assert.equal(result.fallbackManifest.asset.url.startsWith("https://github.com/"), true);
+  assert.equal(result.manifest.asset.url.startsWith("https://github.com/"), true);
+  assert.equal(result.fallbackManifest.asset.url.startsWith("https://qilinshuzhi.com/"), true);
+  assert.equal(result.fallbackSource, "aliyun");
   assert.equal(requests.length, 3);
 });
 
@@ -202,7 +246,7 @@ test("fails only when both update metadata sources are unavailable", async () =>
 test("does not attach a mismatched GitHub artifact as download fallback", async () => {
   const fetchImpl = async (url) => {
     let payload;
-    if (url === CONFIG.primary_manifest_url) payload = primaryManifest();
+    if (url === CONFIG.primary_manifest_url) payload = legacyPrimaryManifest();
     else if (url === CONFIG.release_api_url) payload = githubReleases();
     else {
       const value = manifest();
@@ -259,7 +303,7 @@ test("downloads atomically and rejects a tampered artifact", async () => {
   }
 });
 
-test("retries an identical artifact from GitHub when the Aliyun download fails", async () => {
+test("retries the identical Aliyun mirror when the GitHub download fails", async () => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-update-fallback-test-"));
   try {
     const payload = Buffer.from("synthetic-bizhub-update-fallback");
@@ -272,11 +316,11 @@ test("retries an identical artifact from GitHub when the Aliyun download fails",
     };
     const primaryAsset = {
       ...common,
-      url: "https://qilinshuzhi.com/bizhub-updates/releases/desktop-v0.1.8/BizHub-Desktop-macOS-arm64-0.1.8.zip",
+      url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.8/BizHub-Desktop-macOS-arm64-0.1.8.zip",
     };
     const fallbackAsset = {
       ...common,
-      url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.8/BizHub-Desktop-macOS-arm64-0.1.8.zip",
+      url: "https://qilinshuzhi.com/bizhub-updates/releases/desktop-v0.1.8/BizHub-Desktop-macOS-arm64-0.1.8.zip",
     };
     const requested = [];
     const downloaded = await downloadUpdateArtifactWithFallback({
@@ -290,8 +334,9 @@ test("retries an identical artifact from GitHub when the Aliyun download fails",
       fallbackAsset,
       allowedHosts: CONFIG.allowed_hosts,
       destination: path.join(temporaryRoot, common.filename),
+      fallbackSource: "aliyun",
     });
-    assert.equal(downloaded.source, "github");
+    assert.equal(downloaded.source, "aliyun");
     assert.deepEqual(await readFile(downloaded.path), payload);
     assert.deepEqual(requested, [primaryAsset.url, fallbackAsset.url]);
   } finally {

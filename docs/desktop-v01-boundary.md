@@ -140,6 +140,9 @@ Desktop 0.1.9 adds only a bounded per-device preference schema for appearance,
 density, zoom, close behavior, launch at login, and automatic update checks.
 These choices cannot contain credentials or business facts and cannot change
 Runtime Pack, Profile, migration, Owner, writer, or cloud/local data authority.
+Desktop 0.1.10 changes only artifact routing: GitHub is attempted first and one
+byte-identical Aliyun `fallback_url` may be retried after a failed download.
+Both paths remain bound to the same filename, size, and SHA-256.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
