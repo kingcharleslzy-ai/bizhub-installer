@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep the combined account/password login screen while adding one always-visible
+  `创建本地账号` action. It opens the existing explicit Generic Local setup
+  inline without querying the enterprise directory or creating data before
+  confirmation. Desktop version advances to `0.1.4`; Runtime Pack, SQLite,
+  Profile, migration, Owner, writer, account mapping, and production data remain
+  unchanged.
 - Make the combined login surface the single visible client-update status area.
   Available, downloading, downloaded, and installing states receive one compact
   non-blocking emphasis near the account form; cloud/PWA hot refresh remains a

@@ -28,6 +28,7 @@ const state = ref({
 });
 const form = reactive({ accountId: "", password: "", remember: true });
 const companyName = ref("");
+const localCreationRequested = ref(false);
 let unsubscribe = () => {};
 
 const connected = computed(() => state.value.status === "connected");
@@ -87,6 +88,12 @@ const updateLabel = computed(() => {
 const updateAttention = computed(() => (
   ["available", "downloading", "downloaded", "installing"].includes(state.value.updateStatus)
 ));
+const localCreationVisible = computed(() => (
+  localCreationRequested.value || state.value.canCreateLocal
+));
+const localEntryLabel = computed(() => (
+  state.value.localInitialized ? "使用本地账号" : "创建本地账号"
+));
 
 function syncActiveAccount() {
   if (!form.accountId && state.value.activeAccountId) form.accountId = state.value.activeAccountId;
@@ -115,6 +122,33 @@ async function selectSaved(account) {
   if (account.canAutoLogin) state.value = await window.bizhubDesktop.resumeAccount(account.accountId);
 }
 
+function beginLocalEntry() {
+  if (state.value.localInitialized) {
+    const localAccount = state.value.savedAccounts.find((account) => account.mode === "local");
+    form.accountId = localAccount?.accountId || state.value.localAccountId || "";
+    form.password = "";
+    localCreationRequested.value = false;
+  } else {
+    const normalizedAccount = form.accountId.trim().toLowerCase();
+    const selectedAccount = state.value.savedAccounts.find(
+      (account) => account.accountId === normalizedAccount,
+    );
+    if (selectedAccount?.mode === "cloud") {
+      form.accountId = "";
+      form.password = "";
+    }
+    companyName.value = "";
+    localCreationRequested.value = true;
+  }
+  state.value = {
+    ...state.value,
+    canCreateLocal: false,
+    pendingLocalAccountId: "",
+    error: "",
+    localError: "",
+  };
+}
+
 async function createLocal() {
   state.value = await window.bizhubDesktop.setupLocal({
     accountId: state.value.pendingLocalAccountId || form.accountId,
@@ -126,6 +160,7 @@ async function createLocal() {
 }
 
 function cancelLocalCreation() {
+  localCreationRequested.value = false;
   state.value = { ...state.value, canCreateLocal: false, pendingLocalAccountId: "", error: "" };
 }
 
@@ -189,14 +224,21 @@ onBeforeUnmount(() => unsubscribe());
           <label>账号<input v-model="form.accountId" autocomplete="username" maxlength="128" required></label>
           <label>密码<input v-model="form.password" type="password" autocomplete="current-password" maxlength="1024" required></label>
           <label class="remember-login"><input v-model="form.remember" type="checkbox"><span>保持登录，下次自动进入（只保存可撤销令牌）</span></label>
-          <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在登录…' : '登录并进入' }}</button>
+          <div class="login-actions">
+            <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在登录…' : '登录并进入' }}</button>
+            <button class="secondary-button" type="button" :disabled="working" @click="beginLocalEntry">{{ localEntryLabel }}</button>
+          </div>
         </form>
 
-        <section v-if="state.canCreateLocal" class="local-create">
-          <div><strong>创建本地 BizHub</strong><p>账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区。这台电脑尚无本地实例，可以创建一个独立 Generic Local。</p></div>
+        <section v-if="localCreationVisible" class="local-create">
+          <div>
+            <strong>创建本地 BizHub</strong>
+            <p v-if="state.pendingLocalAccountId">账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区。这台电脑尚无本地实例，可以创建一个独立 Generic Local。</p>
+            <p v-else>使用上方填写的账号和密码，在这台电脑创建一个独立 Generic Local。创建前不会访问企业账号目录，也不会写入本地数据。</p>
+          </div>
           <form @submit.prevent="createLocal">
             <label>本地企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>
-            <div class="form-actions"><button class="secondary-button" type="button" @click="cancelLocalCreation">取消</button><button class="primary-button" type="submit" :disabled="working">明确创建并进入</button></div>
+            <div class="form-actions"><button class="secondary-button" type="button" @click="cancelLocalCreation">取消</button><button class="primary-button" type="submit" :disabled="working || !form.accountId.trim() || !form.password">明确创建并进入</button></div>
           </form>
         </section>
 

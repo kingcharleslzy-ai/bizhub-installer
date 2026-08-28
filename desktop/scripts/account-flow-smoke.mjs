@@ -440,6 +440,33 @@ try {
     fail("desktop_account_flow_initial_boundary_invalid");
   }
   if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
+  if (!initial.text.includes("创建本地账号")) fail("desktop_account_flow_local_create_entry_missing");
+  const directoryRequestsBeforeDirectLocal = directoryRequests.length;
+  if (!await clickButton(cdp, "创建本地账号")) {
+    fail("desktop_account_flow_local_create_entry_not_clickable");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, `({
+      text: document.body.innerText,
+      companyFields: [...document.querySelectorAll("input")]
+        .filter((item) => item.placeholder.includes("绿光")).length
+    })`);
+    return value.text.includes("创建本地 BizHub") && value.companyFields === 1 ? value : null;
+  }, "desktop_account_flow_direct_local_setup_missing");
+  if (directoryRequests.length !== directoryRequestsBeforeDirectLocal) {
+    fail("desktop_account_flow_direct_local_setup_contacted_directory");
+  }
+  try {
+    await stat(path.join(userDataRoot, "local-instance"));
+    fail("desktop_account_flow_direct_local_setup_created_instance_early");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_direct_local_cancel_missing");
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "document.body.innerText");
+    return !value.includes("使用上方填写的账号和密码") ? value : null;
+  }, "desktop_account_flow_direct_local_cancel_failed");
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_credentials_input_missing");
   }
@@ -562,6 +589,25 @@ try {
   }
   await evaluate(cdp, "window.bizhubDesktop.disconnectWorkspace()");
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+
+  const directoryRequestsBeforeSavedCloudLocal = directoryRequests.length;
+  if (!await clickButton(cdp, "创建本地账号")) {
+    fail("desktop_account_flow_saved_cloud_local_create_entry_missing");
+  }
+  const savedCloudLocalSetup = await waitFor(async () => {
+    const value = await evaluate(cdp, `({
+      username: document.querySelector('input[autocomplete="username"]')?.value || "",
+      text: document.body.innerText
+    })`);
+    return value.text.includes("使用上方填写的账号和密码") ? value : null;
+  }, "desktop_account_flow_saved_cloud_local_setup_missing");
+  if (savedCloudLocalSetup.username) {
+    fail("desktop_account_flow_saved_cloud_account_not_cleared");
+  }
+  if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal) {
+    fail("desktop_account_flow_saved_cloud_local_setup_contacted_directory");
+  }
+  if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_saved_cloud_local_cancel_missing");
 
   const cloudLoginsBeforeNoWorkspace = cloudLoginRequests.length;
   if (!await enterCredentials(cdp, "known.empty", "not-sent", false)) {

@@ -15,10 +15,12 @@ The Shell accepts exactly `accountId`, `password`, and `remember`.
    is never included in that request.
 3. A signed cloud Workspace receives the password only through its same-origin
    BizHub login API after Descriptor verification.
-4. Only a confirmed directory `not_found`, with no existing local instance, may
-   reveal the inline Generic Local creation form. Network, configuration,
-   signature, timeout, and registered-without-Workspace results cannot create a
-   database.
+4. When no local instance exists, the same login surface always exposes an
+   explicit `创建本地账号` action. It reveals the inline Generic Local form
+   without querying the enterprise directory and creates nothing until the user
+   submits the confirmation. A confirmed directory `not_found` may reveal that
+   same form after a failed cloud lookup. Network, configuration, signature,
+   timeout, and registered-without-Workspace results never create a database.
 
 An installation owns at most one local instance. Local and cloud data never
 synchronize, copy, or share a writer.
