@@ -97,6 +97,8 @@ const allowedAsarEntry = (value) => (
     "electron/network-policy.cjs",
     "electron/preload.cjs",
     "electron/squirrel-startup.cjs",
+    "electron/update-installer.cjs",
+    "electron/update-manager.cjs",
     "package.json",
   ].includes(value)
 );
@@ -153,6 +155,14 @@ const expectedAccountDirectory = JSON.parse(
   await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"),
 );
 assert.deepEqual(accountDirectory, expectedAccountDirectory, "packaged_account_directory_mismatch");
+const updateChannels = files.filter((value) => path.basename(value) === "update-channel.json");
+assert.equal(updateChannels.length, 1, "update_channel_count_invalid");
+const updateChannel = JSON.parse(await readFile(updateChannels[0], "utf8"));
+const expectedUpdateChannel = JSON.parse(
+  await readFile(path.join(ROOT, "config", "update-channel.json"), "utf8"),
+);
+assert.deepEqual(updateChannel, expectedUpdateChannel, "packaged_update_channel_mismatch");
+assert.equal(updateChannel.schema_version, "bizhub.desktop-update-channel.v1");
 const packageJson = JSON.parse(asar.extractFile(asarFiles[0], "package.json").toString("utf8"));
 assert.equal(packageJson.dependencies, undefined, "runtime_dependencies_present");
 
@@ -168,6 +178,8 @@ for (const sourceName of [
   "network-policy.cjs",
   "preload.cjs",
   "squirrel-startup.cjs",
+  "update-installer.cjs",
+  "update-manager.cjs",
 ]) {
   const source = await readFile(path.resolve("electron", sourceName));
   const packaged = asar.extractFile(asarFiles[0], `electron/${sourceName}`);

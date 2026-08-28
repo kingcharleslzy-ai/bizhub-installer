@@ -9,6 +9,7 @@ on:
       - codex/desktop-w2-account-directory-20260826
       - codex/desktop-w2-descriptor-ttl-20260826
       - codex/desktop-l1-unified-local-20260827
+      - codex/desktop-u1-updater-20260828
 
 permissions:
   contents: read
