@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -465,16 +466,20 @@ try {
   }
   {
     const workspaceCdp = await workspaceCdpClient();
-    const state = await evaluate(workspaceCdp, `({
+    const state = await evaluate(workspaceCdp, `(async () => ({
       text: document.body.innerText,
       token: localStorage.getItem("token"),
-      profile: localStorage.getItem("bizhub_access_profile")
-    })`);
+      profile: localStorage.getItem("bizhub_access_profile"),
+      desktopInfo: await window.bizhubDesktop?.getInfo()
+    }))()`);
     workspaceCdp.close();
     if (
       !state.text.includes("Workspace Ready")
       || state.token !== syntheticSessionToken
       || !state.profile?.includes("dashboard.read")
+      || state.desktopInfo?.schemaVersion !== "bizhub.desktop-cloud-info.v1"
+      || state.desktopInfo?.mode !== "cloud"
+      || state.desktopInfo?.appVersion !== packageJson.version
     ) {
       fail("desktop_account_flow_direct_login_not_ready");
     }
@@ -699,6 +704,7 @@ try {
     signed_cloud_workspaces: 1,
     cloud_password_logins: cloudLoginRequests.length,
     cloud_workspace_connected: true,
+    cloud_settings_bridge_connected: true,
     descriptor_ttl_ms: descriptorTtlMs,
     connected_workspace_survived_descriptor_expiry: true,
     expired_descriptor_reconnect_rejected: true,

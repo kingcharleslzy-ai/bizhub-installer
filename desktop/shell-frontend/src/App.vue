@@ -140,7 +140,7 @@ onBeforeUnmount(() => unsubscribe());
 
 <template>
   <div class="desktop-shell">
-    <header v-if="!connected" class="shell-bar">
+    <header v-if="!connected" class="shell-bar" :class="{ mac: state.platform === 'darwin' }">
       <div class="identity">
         <span class="mark">BH</span>
         <div><strong>BizHub Desktop</strong><small>通用企业客户端</small></div>

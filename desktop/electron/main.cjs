@@ -96,6 +96,7 @@ const localRuntimeLifecycle = createLocalRuntimeLifecycle({
 });
 let workspaceState = {
   appVersion: app.getVersion(),
+  platform: process.platform,
   mode: "none",
   status: "idle",
   displayName: "",
@@ -298,6 +299,25 @@ function requireTrustedShellSender(event) {
   if (!trustedShellSender(event)) throw new Error("desktop_ipc_sender_rejected");
 }
 
+function trustedCloudSender(event) {
+  try {
+    const senderUrl = new URL(event.senderFrame.url);
+    return (
+      workspaceState.mode === "cloud"
+      && workspaceState.status === "connected"
+      && event.sender === workspaceView?.webContents
+      && event.senderFrame === event.sender.mainFrame
+      && senderUrl.origin === workspaceState.applicationOrigin
+    );
+  } catch {
+    return false;
+  }
+}
+
+function requireTrustedCloudSender(event) {
+  if (!trustedCloudSender(event)) throw new Error("desktop_cloud_ipc_sender_rejected");
+}
+
 function trustedLocalSender(event) {
   try {
     const runtime = localRuntimeLifecycle.current();
@@ -320,7 +340,7 @@ function setWorkspaceBounds() {
   if (!mainWindow || !workspaceView) return;
   const [width, height] = mainWindow.getContentSize();
   const topInset = workspaceState.status === "connected"
-    ? 0
+    ? (process.platform === "darwin" && workspaceState.mode === "local" ? 30 : 0)
     : HEADER_HEIGHT;
   workspaceView.setBounds({
     x: 0,
@@ -566,6 +586,28 @@ function publicUpdateState() {
     releaseNotes: workspaceState.updateReleaseNotes,
     downloaded: workspaceState.updateDownloaded,
     lastCheckedAt: workspaceState.updateLastCheckedAt,
+  };
+}
+
+async function cloudDesktopInfo() {
+  let updateConfig = { enabled: false, checkIntervalHours: 24 };
+  try {
+    updateConfig = normalizeUpdateConfig(
+      await readJsonFile(updateChannelConfigPath(), MAX_PROFILE_BYTES),
+    );
+  } catch {
+    // The current workspace remains usable when the optional update channel is unavailable.
+  }
+  return {
+    schemaVersion: "bizhub.desktop-cloud-info.v1",
+    appVersion: app.getVersion(),
+    mode: "cloud",
+    rememberedLogin: workspaceState.savedAccounts.some((account) => (
+      account.accountId === workspaceState.activeAccountId && account.canAutoLogin
+    )),
+    automaticUpdates: updateConfig.enabled === true,
+    checkIntervalHours: updateConfig.checkIntervalHours,
+    update: publicUpdateState(),
   };
 }
 
@@ -864,6 +906,7 @@ async function openWorkspace(
       devTools: !app.isPackaged,
       experimentalFeatures: false,
       nodeIntegration: false,
+      preload: path.join(__dirname, "cloud-preload.cjs"),
       sandbox: true,
       session: remoteSession,
       webSecurity: true,
@@ -1642,6 +1685,26 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return disconnectWorkspace();
   });
+  ipcMain.handle("desktop:cloud-get-info", async (event) => {
+    requireTrustedCloudSender(event);
+    return cloudDesktopInfo();
+  });
+  ipcMain.handle("desktop:cloud-check-update", async (event) => {
+    requireTrustedCloudSender(event);
+    return checkDesktopUpdate({ interactive: false });
+  });
+  ipcMain.handle("desktop:cloud-switch-account", async (event) => {
+    requireTrustedCloudSender(event);
+    setTimeout(() => {
+      void switchAccount().catch((error) => {
+        publishState({
+          status: "error",
+          error: error instanceof Error ? error.message : "desktop_switch_account_failed",
+        });
+      });
+    }, 0);
+    return { status: "switching" };
+  });
   ipcMain.handle("desktop:prepare-local", async (event) => {
     requireTrustedShellSender(event);
     return prepareLocalLogin();
@@ -1755,6 +1818,10 @@ async function createMainWindow() {
     minHeight: 640,
     backgroundColor: "#f4f6f8",
     title: "BizHub Desktop",
+    ...(process.platform === "darwin" ? {
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: { x: 12, y: 13 },
+    } : {}),
     webPreferences: {
       allowRunningInsecureContent: false,
       contextIsolation: true,

@@ -45,6 +45,12 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "workspaceView.setVisible(true)",
     "isCloudLogoutRequest",
     "finalizeCloudLogout",
+    "trustedCloudSender",
+    "event.senderFrame === event.sender.mainFrame",
+    "senderUrl.origin === workspaceState.applicationOrigin",
+    "cloud-preload.cjs",
+    'titleBarStyle: "hiddenInset"',
+    "trafficLightPosition",
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
@@ -69,11 +75,31 @@ test("connected cloud and local workspaces replace the Desktop chrome", async ()
   const shell = await readFile(path.join(ROOT, "shell-frontend", "src", "App.vue"), "utf8");
   assert.match(
     main,
-    /workspaceState\.status === "connected"\s+\? 0\s+: HEADER_HEIGHT/,
+    /workspaceState\.status === "connected"\s+\? \(process\.platform === "darwin" && workspaceState\.mode === "local" \? 30 : 0\)\s+: HEADER_HEIGHT/,
   );
   assert.match(main, /if \(authenticationPending\) return;[\s\S]*workspaceView\.setVisible\(true\)/);
   assert.ok(shell.includes('v-if="!connected" class="shell-bar"'));
+  assert.ok(shell.includes("state.platform === 'darwin'"));
   assert.ok(!shell.includes("退出并清除保持登录"));
+});
+
+test("cloud workspace bridge is narrow, origin-bound, and customer-neutral", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const cloudPreload = await readFile(path.join(ROOT, "electron", "cloud-preload.cjs"), "utf8");
+  for (const api of ["getInfo", "checkUpdate", "switchAccount"]) {
+    assert.ok(cloudPreload.includes(api), api);
+  }
+  for (const prohibited of ["node:fs", "node:child_process", "shell", "password", "token"]) {
+    assert.ok(!cloudPreload.includes(prohibited), prohibited);
+  }
+  assert.match(main, /workspaceState\.mode === "cloud"/);
+  assert.match(main, /event\.sender === workspaceView\?\.webContents/);
+  assert.match(main, /event\.senderFrame === event\.sender\.mainFrame/);
+  assert.match(main, /senderUrl\.origin === workspaceState\.applicationOrigin/);
+  assert.match(main, /preload: path\.join\(__dirname, "cloud-preload\.cjs"\)/);
+  assert.match(main, /schemaVersion: "bizhub\.desktop-cloud-info\.v1"/);
+  assert.ok(!cloudPreload.includes("daz" + "heng"));
+  assert.ok(!cloudPreload.includes("123" + "crystal"));
 });
 
 test("desktop package keeps Node runtime empty and cloud trust public-only", async () => {
@@ -101,7 +127,7 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   );
   assert.equal(updateChannel.schema_version, "bizhub.desktop-update-channel.v1");
   assert.equal(updateChannel.release_api_url.startsWith("https://api.github.com/"), true);
-  assert.ok(!JSON.stringify(updateChannel).includes("123crystal"));
+  assert.ok(!JSON.stringify(updateChannel).includes("123" + "crystal"));
 });
 
 test("Descriptor expiry gates each cloud open without expiring the connected Session", async () => {
@@ -123,6 +149,7 @@ function mainTrustSelection(main) {
 test("local Runtime lifecycle is isolated behind bounded main-process IPC", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const preload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
+  const cloudPreload = await readFile(path.join(ROOT, "electron", "cloud-preload.cjs"), "utf8");
   const localPreload = await readFile(path.join(ROOT, "electron", "local-preload.cjs"), "utf8");
   const localRuntime = await readFile(path.join(ROOT, "electron", "local-runtime.cjs"), "utf8");
   const localLifecycle = await readFile(path.join(ROOT, "electron", "local-lifecycle.cjs"), "utf8");
@@ -165,6 +192,11 @@ test("local Runtime lifecycle is isolated behind bounded main-process IPC", asyn
   }
   assert.ok(!preload.includes("node:child_process"));
   assert.ok(!preload.includes("node:fs"));
+  for (const api of ["getInfo", "checkUpdate", "switchAccount"]) {
+    assert.ok(cloudPreload.includes(api), api);
+  }
+  assert.ok(!cloudPreload.includes("node:child_process"));
+  assert.ok(!cloudPreload.includes("node:fs"));
   for (const api of ["getSettings", "createBackup", "openBackupFolder", "changePassword", "switchAccount", "forgetAccount"]) {
     assert.ok(localPreload.includes(api), api);
   }
