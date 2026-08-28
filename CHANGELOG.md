@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Gate the visible Generic Local creation form at final confirmation. Expanding
+  the form remains offline and write-free, but `明确创建并进入` now performs a
+  fresh account-directory lookup and permits bootstrap only after an explicit
+  `not_found` with no existing local instance. Cloud, registered-without-
+  Workspace, network, timeout, response, and signature outcomes fail closed
+  without changing a saved cloud account. Desktop version advances to `0.1.5`;
+  Runtime Pack, SQLite schema, Profile, migration, Owner, writer, directory
+  mapping, and production data remain unchanged.
 - Keep the combined account/password login screen while adding one always-visible
   `创建本地账号` action. It opens the existing explicit Generic Local setup
   inline without querying the enterprise directory or creating data before

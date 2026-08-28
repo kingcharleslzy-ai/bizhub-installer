@@ -1041,6 +1041,16 @@ async function prepareLocalLogin() {
   return workspaceState;
 }
 
+async function assertLocalInstanceAbsent() {
+  try {
+    await stat(localInstanceRoot());
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error("desktop_local_instance_already_exists");
+}
+
 async function setupLocalInstance(input) {
   if (
     !input
@@ -1055,12 +1065,42 @@ async function setupLocalInstance(input) {
     throw new Error("desktop_local_runtime_already_started");
   }
   publishState({
-    mode: "local",
+    mode: "none",
     status: "loading",
-    localStatus: "initializing",
+    accountLookupStatus: "resolving",
+    accountNotFound: false,
+    localStatus: "stopped",
     localError: "",
   });
   try {
+    await assertLocalInstanceAbsent();
+    const [config, validationOptions] = await Promise.all([
+      readJsonFile(accountDirectoryConfigPath(), MAX_PROFILE_BYTES),
+      connectionValidationOptions(),
+    ]);
+    const directoryResult = await resolveAccountWorkspaces(accountId, {
+      config,
+      ...validationOptions,
+    });
+    if (directoryResult.status !== "not_found") {
+      throw new Error(
+        directoryResult.workspaces.length > 0
+          ? "desktop_local_creation_cloud_account_exists"
+          : "desktop_local_creation_account_registered",
+      );
+    }
+    await assertLocalInstanceAbsent();
+    if (localRuntimeLifecycle.state() !== "stopped") {
+      throw new Error("desktop_local_runtime_already_started");
+    }
+    publishState({
+      mode: "local",
+      status: "loading",
+      accountLookupStatus: "not_found",
+      accountNotFound: true,
+      localStatus: "initializing",
+      localError: "",
+    });
     const created = await bootstrapLocalInstance({
       userDataRoot: desktopUserDataRoot(),
       runtimePack: localRuntimePackPath(),
@@ -1092,6 +1132,8 @@ async function setupLocalInstance(input) {
     publishState({
       mode: "local",
       status: "error",
+      accountLookupStatus: "error",
+      accountNotFound: false,
       localStatus: "error",
       localError: error instanceof Error ? error.message : "desktop_local_setup_failed",
     });

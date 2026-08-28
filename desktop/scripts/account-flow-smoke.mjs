@@ -141,6 +141,32 @@ async function enterCredentials(cdp, accountId, password, remember = false) {
   })()`);
 }
 
+async function submitLocalCreation(cdp, accountId, password, companyName) {
+  const encodedAccount = JSON.stringify(accountId);
+  const encodedPassword = JSON.stringify(password);
+  const encodedCompany = JSON.stringify(companyName);
+  return evaluate(cdp, `(async () => {
+    const account = document.querySelector('input[autocomplete="username"]');
+    const password = document.querySelector('input[autocomplete="current-password"]');
+    const company = [...document.querySelectorAll("input")]
+      .find((item) => item.placeholder.includes("绿光"));
+    if (!account || !password || !company) return false;
+    account.value = ${encodedAccount};
+    account.dispatchEvent(new Event("input", { bubbles: true }));
+    password.value = ${encodedPassword};
+    password.dispatchEvent(new Event("input", { bubbles: true }));
+    company.value = ${encodedCompany};
+    company.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const submit = [...document.querySelectorAll("button")]
+      .find((item) => item.textContent.trim() === "明确创建并进入");
+    if (!submit || submit.disabled) return false;
+    submit.click();
+    return true;
+  })()`);
+}
+
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-account-flow-"));
 const trustStorePath = path.join(temporaryRoot, "trust.json");
 const directoryConfigPath = path.join(temporaryRoot, "account-directory.json");
@@ -160,6 +186,15 @@ const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
+
+async function assertLocalInstanceMissing(code) {
+  try {
+    await stat(path.join(userDataRoot, "local-instance"));
+    fail(code);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
 
 async function stopDesktopProcess() {
   if (cdp) {
@@ -413,6 +448,10 @@ try {
         response.end("{}\n");
         return;
       }
+      if (parsed.account_id === "network.error") {
+        request.socket.destroy();
+        return;
+      }
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(`${JSON.stringify({
         schema_version: "bizhub.desktop-workspace-directory-response.v1",
@@ -456,16 +495,14 @@ try {
   if (directoryRequests.length !== directoryRequestsBeforeDirectLocal) {
     fail("desktop_account_flow_direct_local_setup_contacted_directory");
   }
-  try {
-    await stat(path.join(userDataRoot, "local-instance"));
-    fail("desktop_account_flow_direct_local_setup_created_instance_early");
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
+  await assertLocalInstanceMissing("desktop_account_flow_direct_local_setup_created_instance_early");
   if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_direct_local_cancel_missing");
   await waitFor(async () => {
-    const value = await evaluate(cdp, "document.body.innerText");
-    return !value.includes("使用上方填写的账号和密码") ? value : null;
+    const value = await evaluate(cdp, `({
+      companyFields: [...document.querySelectorAll("input")]
+        .filter((item) => item.placeholder.includes("绿光")).length
+    })`);
+    return value.companyFields === 0 ? value : null;
   }, "desktop_account_flow_direct_local_cancel_failed");
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_credentials_input_missing");
@@ -591,6 +628,10 @@ try {
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
 
   const directoryRequestsBeforeSavedCloudLocal = directoryRequests.length;
+  const savedCloudAccountBeforeExpand = await evaluate(
+    cdp,
+    'document.querySelector(\'input[autocomplete="username"]\')?.value || ""',
+  );
   if (!await clickButton(cdp, "创建本地账号")) {
     fail("desktop_account_flow_saved_cloud_local_create_entry_missing");
   }
@@ -599,15 +640,81 @@ try {
       username: document.querySelector('input[autocomplete="username"]')?.value || "",
       text: document.body.innerText
     })`);
-    return value.text.includes("使用上方填写的账号和密码") ? value : null;
+    return value.text.includes("确认时会先验证该账号没有企业云端身份") ? value : null;
   }, "desktop_account_flow_saved_cloud_local_setup_missing");
-  if (savedCloudLocalSetup.username) {
-    fail("desktop_account_flow_saved_cloud_account_not_cleared");
+  if (savedCloudLocalSetup.username !== savedCloudAccountBeforeExpand) {
+    fail("desktop_account_flow_saved_cloud_account_changed_on_expand");
   }
   if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal) {
     fail("desktop_account_flow_saved_cloud_local_setup_contacted_directory");
   }
+  const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v2.json");
+  const savedCloudBytesBeforeRejectedCreate = await readFile(savedAccountsPath, "utf8");
+  if (!await submitLocalCreation(
+    cdp,
+    "charles.example",
+    "synthetic local password",
+    "Cloud Name Collision",
+  )) {
+    fail("desktop_account_flow_cloud_account_local_submit_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.localError === "desktop_local_creation_cloud_account_exists" ? value : null;
+  }, "desktop_account_flow_cloud_account_local_create_not_rejected");
+  if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal + 1) {
+    fail("desktop_account_flow_cloud_account_local_create_lookup_missing");
+  }
+  const savedCloudBytesAfterRejectedCreate = await readFile(savedAccountsPath, "utf8");
+  if (savedCloudBytesAfterRejectedCreate !== savedCloudBytesBeforeRejectedCreate) {
+    fail("desktop_account_flow_rejected_local_create_changed_saved_cloud_account");
+  }
+  await assertLocalInstanceMissing("desktop_account_flow_cloud_account_created_local_instance");
   if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_saved_cloud_local_cancel_missing");
+
+  if (!await clickButton(cdp, "创建本地账号")) {
+    fail("desktop_account_flow_registered_local_create_entry_missing");
+  }
+  const directoryRequestsBeforeRegisteredCreate = directoryRequests.length;
+  if (!await submitLocalCreation(
+    cdp,
+    "known.empty",
+    "synthetic local password",
+    "Registered Without Workspace",
+  )) {
+    fail("desktop_account_flow_registered_local_submit_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.localError === "desktop_local_creation_account_registered" ? value : null;
+  }, "desktop_account_flow_registered_local_create_not_rejected");
+  if (directoryRequests.length !== directoryRequestsBeforeRegisteredCreate + 1) {
+    fail("desktop_account_flow_registered_local_create_lookup_missing");
+  }
+  await assertLocalInstanceMissing("desktop_account_flow_registered_account_created_local_instance");
+  if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_registered_local_cancel_missing");
+
+  if (!await clickButton(cdp, "创建本地账号")) {
+    fail("desktop_account_flow_network_error_local_create_entry_missing");
+  }
+  const directoryRequestsBeforeNetworkErrorCreate = directoryRequests.length;
+  if (!await submitLocalCreation(
+    cdp,
+    "network.error",
+    "synthetic local password",
+    "Network Failure",
+  )) {
+    fail("desktop_account_flow_network_error_local_submit_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.localError === "desktop_account_directory_unreachable" ? value : null;
+  }, "desktop_account_flow_network_error_local_create_not_rejected");
+  if (directoryRequests.length !== directoryRequestsBeforeNetworkErrorCreate + 1) {
+    fail("desktop_account_flow_network_error_local_create_lookup_missing");
+  }
+  await assertLocalInstanceMissing("desktop_account_flow_network_error_created_local_instance");
+  if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_network_error_local_cancel_missing");
 
   const cloudLoginsBeforeNoWorkspace = cloudLoginRequests.length;
   if (!await enterCredentials(cdp, "known.empty", "not-sent", false)) {
@@ -643,12 +750,7 @@ try {
   ) {
     fail("desktop_account_flow_unknown_fallback_invalid");
   }
-  try {
-    await stat(path.join(userDataRoot, "local-instance"));
-    fail("desktop_account_flow_unknown_created_local_instance");
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
+  await assertLocalInstanceMissing("desktop_account_flow_unknown_created_local_instance");
   const setup = await waitFor(async () => {
     const value = await evaluate(cdp, `({
       text: document.body.innerText,
@@ -764,6 +866,41 @@ try {
     }
   }
 
+  const directoryRequestsBeforeConfirmedLocal = directoryRequests.length;
+  if (!await clickButton(cdp, "创建本地账号")) {
+    fail("desktop_account_flow_confirmed_local_create_entry_missing");
+  }
+  if (!await submitLocalCreation(
+    cdp,
+    "unknown.account",
+    "synthetic local password",
+    "Confirmed Local Company",
+  )) {
+    fail("desktop_account_flow_confirmed_local_submit_missing");
+  }
+  await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    return value.mode === "local" && value.status === "connected" ? value : null;
+  }, "desktop_account_flow_confirmed_not_found_local_not_created", 45_000);
+  if (directoryRequests.length !== directoryRequestsBeforeConfirmedLocal + 1) {
+    fail("desktop_account_flow_confirmed_local_create_lookup_missing");
+  }
+  await stat(path.join(userDataRoot, "local-instance", "instance.json"));
+  const savedAfterLocalCreate = JSON.parse(await readFile(savedAccountsPath, "utf8"));
+  const preservedCloudAccount = savedAfterLocalCreate.accounts.find(
+    (account) => account.accountId === "charles.example",
+  );
+  const createdLocalAccount = savedAfterLocalCreate.accounts.find(
+    (account) => account.accountId === "unknown.account",
+  );
+  if (
+    preservedCloudAccount?.mode !== "cloud"
+    || preservedCloudAccount.session !== null
+    || createdLocalAccount?.mode !== "local"
+  ) {
+    fail("desktop_account_flow_confirmed_local_saved_account_boundary_invalid");
+  }
+
   process.stdout.write(`${JSON.stringify({
     status: "passed",
     shell_route: "bizhub-shell://app/",
@@ -779,8 +916,13 @@ try {
     connected_workspace_survived_descriptor_expiry: true,
     expired_descriptor_reconnect_rejected: true,
     fresh_descriptor_requery_reconnected: true,
+    cloud_account_local_instances_created: 0,
     known_account_without_workspace_local_instances_created: 0,
-    unknown_account_local_instances_created: 0,
+    network_error_local_instances_created: 0,
+    unconfirmed_unknown_account_local_instances_created: 0,
+    confirmed_not_found_local_instances_created: 1,
+    final_local_create_directory_lookup: true,
+    saved_cloud_account_preserved: true,
     local_setup_form_reached: true,
     remembered_password_fields: 0,
     remembered_session_token_saved: true,

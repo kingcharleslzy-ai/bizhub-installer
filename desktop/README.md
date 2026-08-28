@@ -28,8 +28,11 @@ authentication, permissions, UI, Owners, and formal data. A confirmed unknown
 account may create the machine's one Generic local instance inline. The combined
 login surface also exposes one explicit `创建本地账号` action whenever no local
 instance exists; opening it does not query the directory or create data before
-confirmation. A registered account with no Workspace, directory timeout, error,
-or missing configuration never creates local data implicitly.
+confirmation. Confirmation performs a fresh directory lookup and calls bootstrap
+only after an explicit `not_found`. An existing cloud Workspace, a registered
+account with no Workspace, directory timeout/error, invalid signature/response,
+or missing configuration never creates local data or changes a saved cloud
+account.
 
 “保持登录” is enabled by default for the private-project experience. Cloud and
 local passwords are used once and discarded. Desktop keeps up to eight account

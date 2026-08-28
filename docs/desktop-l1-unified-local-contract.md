@@ -18,9 +18,13 @@ The Shell accepts exactly `accountId`, `password`, and `remember`.
 4. When no local instance exists, the same login surface always exposes an
    explicit `创建本地账号` action. It reveals the inline Generic Local form
    without querying the enterprise directory and creates nothing until the user
-   submits the confirmation. A confirmed directory `not_found` may reveal that
-   same form after a failed cloud lookup. Network, configuration, signature,
-   timeout, and registered-without-Workspace results never create a database.
+   submits the confirmation. Final confirmation always performs a fresh lookup
+   and may call the existing bootstrap only when that lookup explicitly returns
+   `not_found` and the machine still has no local instance. A confirmed directory
+   `not_found` may also reveal the same form after a failed cloud login. Cloud,
+   registered-without-Workspace, network, configuration, signature, timeout,
+   and malformed-response results never create a database or replace a saved
+   cloud account.
 
 An installation owns at most one local instance. Local and cloud data never
 synchronize, copy, or share a writer.
