@@ -96,6 +96,7 @@ for (const api of [
   "resetAccountLookup",
   "connectEnterpriseWorkspace",
   "disconnectWorkspace",
+  "openGuestDemo",
   "prepareLocal",
   "setupLocal",
   "loginLocal",

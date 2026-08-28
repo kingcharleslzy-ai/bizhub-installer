@@ -8,6 +8,7 @@ Electron shell exposes one login form:
 account + password -> exact existing local account -> fixed Generic Runtime -> local SQLite
                    -> otherwise account-only HTTPS directory -> signed cloud Workspace -> direct cloud login
                    -> confirmed unknown + no local instance -> explicit first-time local creation
+guest button       -> disposable Generic sample room -> synthetic Owner-backed data -> reset on exit
 ```
 
 The Shell presents account and password in one form, but the account-directory
@@ -33,6 +34,16 @@ only after an explicit `not_found`. An existing cloud Workspace, a registered
 account with no Workspace, directory timeout/error, invalid signature/response,
 or missing configuration never creates local data or changes a saved cloud
 account.
+
+The same login surface has one `游客体验` button. It needs no account or
+password and never calls the account directory. Desktop creates the sample room
+under a separate `guest-demo` root, uses the fixed Generic Runtime, and loads
+only customer-neutral synthetic master data, procurement, sales, and inventory
+through the existing Owner preview/apply endpoints. The formal `local-instance`
+path and saved account list remain untouched. Closing the window keeps the
+current sample room while Desktop stays in the background; leaving the sample
+room or quitting Desktop removes it, and the next visit starts clean. External
+connectors and the settings surface are unavailable in guest mode.
 
 “保持登录” is enabled by default for the private-project experience. Cloud and
 local passwords are used once and discarded. Desktop keeps up to eight account

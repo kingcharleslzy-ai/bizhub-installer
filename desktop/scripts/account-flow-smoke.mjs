@@ -265,6 +265,17 @@ async function workspaceCdpClient() {
   return client;
 }
 
+async function localWorkspaceCdpClient() {
+  const target = await waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+    const targets = await response.json();
+    return targets.find((item) => /^http:\/\/127\.0\.0\.1:\d+\/$/.test(item.url)) || null;
+  }, "desktop_account_flow_local_workspace_debug_target_missing");
+  const client = createCdpClient(target.webSocketDebuggerUrl);
+  await client.send("Runtime.enable");
+  return client;
+}
+
 async function workspaceTargetPresent() {
   const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
   const targets = await response.json();
@@ -480,6 +491,70 @@ try {
   }
   if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
   if (!initial.text.includes("创建本地账号")) fail("desktop_account_flow_local_create_entry_missing");
+  if (!initial.text.includes("游客体验")) fail("desktop_account_flow_guest_entry_missing");
+  const directoryRequestsBeforeGuest = directoryRequests.length;
+  if (!await clickButton(cdp, "游客体验")) fail("desktop_account_flow_guest_entry_not_clickable");
+  const guestState = await waitFor(async () => {
+    const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
+    if (value.guestDemoStatus === "error" || value.status === "error") {
+      throw new Error(value.error || value.localError || "desktop_guest_demo_unknown_error");
+    }
+    return value.mode === "guest" && value.status === "connected" ? value : null;
+  }, "desktop_account_flow_guest_not_connected", 60_000).catch(async (error) => {
+    const current = await evaluate(cdp, "window.bizhubDesktop.getState()").catch(() => null);
+    throw new Error(`${error.message}:${JSON.stringify(current)}`);
+  });
+  if (
+    directoryRequests.length !== directoryRequestsBeforeGuest
+    || guestState.guestDemoStatus !== "ready"
+    || guestState.guestDemoReadback?.overview?.parties !== 4
+    || guestState.guestDemoReadback?.overview?.procurement_orders !== 2
+    || guestState.guestDemoReadback?.overview?.sales_orders !== 2
+    || guestState.guestDemoReadback?.overview?.inventory_movements !== 3
+  ) {
+    fail("desktop_account_flow_guest_boundary_invalid");
+  }
+  await assertLocalInstanceMissing("desktop_account_flow_guest_created_formal_local_instance");
+  await stat(path.join(userDataRoot, "guest-demo", "local-instance", "instance.json"));
+  {
+    const guestWorkspace = await localWorkspaceCdpClient();
+    const product = await waitFor(async () => {
+      const value = await evaluate(guestWorkspace, `({
+        text: document.body.innerText,
+        title: document.querySelector("h1")?.textContent?.trim() || "",
+        visibleNav: [...document.querySelectorAll("nav button")]
+          .filter((item) => getComputedStyle(item).display !== "none")
+          .map((item) => item.textContent.trim())
+      })`);
+      return value.title === "经营概览" && value.text.includes("星河新材料样板间") ? value : null;
+    }, "desktop_account_flow_guest_product_missing");
+    guestWorkspace.close();
+    if (
+      !product.visibleNav.includes("主数据")
+      || !product.visibleNav.includes("采购")
+      || !product.visibleNav.includes("销售")
+      || !product.visibleNav.includes("库存")
+      || product.visibleNav.includes("设置")
+    ) {
+      fail("desktop_account_flow_guest_product_invalid");
+    }
+  }
+  const guestChrome = await evaluate(cdp, "document.body.innerText");
+  if (!guestChrome.includes("游客样板间") || !guestChrome.includes("退出应用后自动重置")) {
+    fail("desktop_account_flow_guest_banner_missing");
+  }
+  await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    "desktop_account_flow_guest_exit_not_returned");
+  try {
+    await stat(path.join(userDataRoot, "guest-demo"));
+    fail("desktop_account_flow_guest_data_not_reset");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (directoryRequests.length !== directoryRequestsBeforeGuest) {
+    fail("desktop_account_flow_guest_contacted_directory");
+  }
   const directoryRequestsBeforeDirectLocal = directoryRequests.length;
   if (!await clickButton(cdp, "创建本地账号")) {
     fail("desktop_account_flow_local_create_entry_not_clickable");
@@ -920,6 +995,11 @@ try {
     account_directory_requests: directoryRequests.length,
     account_directory_passwords: 0,
     signed_cloud_workspaces: 1,
+    guest_demo_without_credentials: true,
+    guest_demo_directory_requests: 0,
+    guest_demo_owner_seed_readback: true,
+    guest_demo_reset_after_exit: true,
+    guest_demo_formal_local_instances_created: 0,
     cloud_password_logins: cloudLoginRequests.length,
     cloud_workspace_connected: true,
     cloud_settings_bridge_connected: true,

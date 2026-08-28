@@ -12,7 +12,8 @@ const {
   Tray,
   WebContentsView,
 } = require("electron");
-const { mkdir, readFile, stat, writeFile } = require("node:fs/promises");
+const { randomBytes } = require("node:crypto");
+const { mkdir, readFile, rm, stat, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { validateConnectionEnvelope } = require("./connection-profile.cjs");
 const {
@@ -45,6 +46,7 @@ const {
   backupLocalInstance,
   bootstrapLocalInstance,
   changeLocalPasswordRuntime,
+  fetchRuntime,
   loadLocalAdminIdentity,
   loadLocalInstance,
   loginLocalRuntime,
@@ -54,6 +56,11 @@ const {
   stopLocalRuntime,
 } = require("./local-runtime.cjs");
 const { createLocalRuntimeLifecycle } = require("./local-lifecycle.cjs");
+const {
+  DEMO_COMPANY_NAME,
+  DEMO_USERNAME,
+  seedGuestDemo,
+} = require("./guest-demo.cjs");
 const { handleSquirrelStartup } = require("./squirrel-startup.cjs");
 const {
   finalizePendingMacUpdate,
@@ -70,6 +77,7 @@ const {
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
 const HEADER_HEIGHT = 72;
+const GUEST_BANNER_HEIGHT = 36;
 const MAX_PROFILE_BYTES = 64 * 1024;
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -94,6 +102,7 @@ let updateCheckPromise = null;
 let updateDownloadPromise = null;
 let availableUpdate = null;
 let downloadedUpdate = null;
+let localRuntimeKind = "local";
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
   stopRuntime: stopLocalRuntime,
@@ -128,6 +137,8 @@ let workspaceState = {
   updateReleaseNotes: "",
   updateDownloaded: false,
   updateLastCheckedAt: "",
+  guestDemoStatus: "idle",
+  guestDemoReadback: null,
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -173,6 +184,18 @@ function desktopUserDataRoot() {
 
 function localInstanceRoot() {
   return path.join(desktopUserDataRoot(), "local-instance");
+}
+
+function guestDemoRoot() {
+  return path.join(desktopUserDataRoot(), "guest-demo");
+}
+
+function guestInstanceRoot() {
+  return path.join(guestDemoRoot(), "local-instance");
+}
+
+function activeLocalInstanceRoot() {
+  return localRuntimeKind === "guest" ? guestInstanceRoot() : localInstanceRoot();
 }
 
 function accountDirectoryConfigPath() {
@@ -326,7 +349,7 @@ function trustedLocalSender(event) {
   try {
     const runtime = localRuntimeLifecycle.current();
     return (
-      workspaceState.mode === "local"
+      ["local", "guest"].includes(workspaceState.mode)
       && workspaceState.status === "connected"
       && event.sender === workspaceView?.webContents
       && normalizeLocalOrigin(event.senderFrame.url) === normalizeLocalOrigin(runtime?.origin || "")
@@ -344,7 +367,11 @@ function setWorkspaceBounds() {
   if (!mainWindow || !workspaceView) return;
   const [width, height] = mainWindow.getContentSize();
   const topInset = workspaceState.status === "connected"
-    ? (process.platform === "darwin" && workspaceState.mode === "local" ? 30 : 0)
+    ? (
+      workspaceState.mode === "guest"
+        ? GUEST_BANNER_HEIGHT
+        : (process.platform === "darwin" && workspaceState.mode === "local" ? 30 : 0)
+    )
     : HEADER_HEIGHT;
   workspaceView.setBounds({
     x: 0,
@@ -482,13 +509,14 @@ async function setLocalSessionCookies(runtimeSession, runtime) {
   }
 }
 
-async function openLocalWorkspaceView() {
+async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   const runtime = localRuntimeLifecycle.current();
   if (!runtime) throw new Error("desktop_local_runtime_not_started");
+  const guest = mode === "guest";
   destroyWorkspaceView();
   const localOrigin = normalizeLocalOrigin(runtime.origin);
   if (!localOrigin) throw new Error("desktop_local_runtime_origin_invalid");
-  const runtimeSession = session.fromPartition("persist:local-generic");
+  const runtimeSession = session.fromPartition(guest ? "guest-demo" : "persist:local-generic");
   configureLocalSession(runtimeSession, localOrigin);
   await setLocalSessionCookies(runtimeSession, runtime);
   workspaceView = new WebContentsView({
@@ -517,7 +545,7 @@ async function openLocalWorkspaceView() {
       if (!isMainFrame || errorCode === -3) return;
       destroyWorkspaceView();
       publishState({
-        mode: "local",
+        mode,
         status: "error",
         localStatus: "error",
         localError: `local_workspace_load_failed:${errorCode}:${errorDescription}:${validatedUrl}`,
@@ -525,14 +553,15 @@ async function openLocalWorkspaceView() {
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    if (guest) return;
     publishState({
-      mode: "local",
+      mode,
       status: "connected",
       localStatus: "connected",
       error: "",
       localError: "",
     });
-    if (process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
+    if (!guest && process.env.BIZHUB_DESKTOP_SMOKE_LOCAL === "1") {
       const origin = runtime.origin;
       void (async () => {
         const deadline = Date.now() + 10_000;
@@ -569,6 +598,18 @@ async function openLocalWorkspaceView() {
   mainWindow.contentView.addChildView(workspaceView);
   setWorkspaceBounds();
   await workspaceView.webContents.loadURL(`${localOrigin}/`);
+  if (guest) {
+    await workspaceView.webContents.insertCSS(
+      "nav button:last-child{display:none!important}.account small{display:none!important}",
+    );
+    publishState({
+      mode,
+      status: "connected",
+      localStatus: "connected",
+      error: "",
+      localError: "",
+    });
+  }
 }
 
 async function readJsonFile(filePath, maxBytes) {
@@ -826,7 +867,9 @@ async function prepareLocalDataForUpdate() {
     if (workspaceState.localError) throw new Error(workspaceState.localError);
   }
   destroyWorkspaceView();
-  if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop();
+  if (localRuntimeLifecycle.state() !== "stopped" || localRuntimeKind === "guest") {
+    await stopLocalMode();
+  }
   publishState({ localStatus: "stopped" });
 }
 
@@ -983,10 +1026,13 @@ async function openWorkspace(
 }
 
 async function launchLocalRuntime() {
-  const instance = await refreshLocalState();
+  const runtimeKind = localRuntimeKind;
+  const instance = runtimeKind === "guest"
+    ? await loadLocalInstance(guestInstanceRoot())
+    : await refreshLocalState();
   if (!instance) throw new Error("desktop_local_instance_not_initialized");
   publishState({
-    mode: "local",
+    mode: runtimeKind,
     status: "loading",
     displayName: instance.payload.display_name,
     profileId: "generic-kernel-smoke",
@@ -996,7 +1042,7 @@ async function launchLocalRuntime() {
     localError: "",
   });
   const started = await startLocalRuntime({
-    instanceRoot: localInstanceRoot(),
+    instanceRoot: activeLocalInstanceRoot(),
     runtimePack: localRuntimePackPath(),
     trustPath: localRuntimeTrustPath(),
   });
@@ -1006,7 +1052,7 @@ async function launchLocalRuntime() {
     destroyWorkspaceView();
     if (!expectedExit) {
       publishState({
-        mode: "local",
+        mode: runtimeKind,
         status: "error",
         localStatus: "error",
         localError: `desktop_local_runtime_exited:${code ?? signalName ?? "unknown"}`,
@@ -1017,6 +1063,10 @@ async function launchLocalRuntime() {
 }
 
 async function startLocalMode() {
+  if (localRuntimeLifecycle.state() !== "stopped" && localRuntimeKind !== "local") {
+    throw new Error("desktop_guest_demo_runtime_active");
+  }
+  if (localRuntimeLifecycle.state() === "stopped") localRuntimeKind = "local";
   const runtime = await localRuntimeLifecycle.start();
   publishState({
     mode: "local",
@@ -1025,6 +1075,79 @@ async function startLocalMode() {
     applicationOrigin: runtime.origin,
   });
   return runtime;
+}
+
+async function resetGuestDemoData() {
+  await rm(guestDemoRoot(), { recursive: true, force: true });
+  if (app.isReady()) {
+    const demoSession = session.fromPartition("guest-demo");
+    await demoSession.clearStorageData();
+    await demoSession.clearCache();
+  }
+}
+
+async function openGuestDemo() {
+  publishState({
+    mode: "guest",
+    status: "loading",
+    displayName: DEMO_COMPANY_NAME,
+    profileId: "generic-kernel-smoke",
+    applicationOrigin: "127.0.0.1",
+    error: "",
+    localError: "",
+    localStatus: "initializing",
+    guestDemoStatus: "initializing",
+    guestDemoReadback: null,
+  });
+  try {
+    destroyWorkspaceView();
+    if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop();
+    await resetGuestDemoData();
+    localRuntimeKind = "guest";
+    const password = `guest-${randomBytes(32).toString("base64url")}`;
+    await bootstrapLocalInstance({
+      userDataRoot: guestDemoRoot(),
+      runtimePack: localRuntimePackPath(),
+      trustPath: localRuntimeTrustPath(),
+      input: {
+        companyName: DEMO_COMPANY_NAME,
+        username: DEMO_USERNAME,
+        password,
+      },
+    });
+    const runtime = await localRuntimeLifecycle.start();
+    await loginLocalRuntime(runtime, DEMO_USERNAME, password, { remember: false });
+    const readback = await seedGuestDemo(runtime, fetchRuntime);
+    publishState({
+      mode: "guest",
+      status: "loading",
+      displayName: DEMO_COMPANY_NAME,
+      profileId: "generic-kernel-smoke",
+      applicationOrigin: runtime.origin,
+      localStatus: "connected",
+      guestDemoStatus: "ready",
+      guestDemoReadback: readback,
+    });
+    await openLocalWorkspaceView({ mode: "guest" });
+  } catch (error) {
+    if (localRuntimeLifecycle.state() !== "stopped") {
+      await localRuntimeLifecycle.stop().catch(() => {});
+    }
+    await resetGuestDemoData().catch(() => {});
+    localRuntimeKind = "local";
+    publishState({
+      mode: "none",
+      status: "error",
+      displayName: "",
+      profileId: "",
+      applicationOrigin: "",
+      localStatus: "stopped",
+      guestDemoStatus: "error",
+      guestDemoReadback: null,
+      error: error instanceof Error ? error.message : "desktop_guest_demo_failed",
+    });
+  }
+  return workspaceState;
 }
 
 async function prepareLocalLogin() {
@@ -1194,8 +1317,11 @@ async function createLocalBackup() {
 }
 
 async function stopLocalMode() {
+  const wasGuest = localRuntimeKind === "guest";
   destroyWorkspaceView();
   await localRuntimeLifecycle.stop();
+  if (wasGuest) await resetGuestDemoData();
+  localRuntimeKind = "local";
   publishState({
     mode: "none",
     status: "idle",
@@ -1204,6 +1330,8 @@ async function stopLocalMode() {
     error: "",
     localStatus: "stopped",
     localError: "",
+    guestDemoStatus: "idle",
+    guestDemoReadback: null,
   });
   await refreshLocalState();
   return workspaceState;
@@ -1495,7 +1623,9 @@ async function switchAccount(input = {}) {
     ? normalizeAccountId(input.accountId)
     : "";
   destroyWorkspaceView();
-  if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop();
+  if (localRuntimeLifecycle.state() !== "stopped" || localRuntimeKind === "guest") {
+    await stopLocalMode();
+  }
   accountLookupGeneration.invalidate();
   activeEnterpriseProfiles = new Map();
   publishState({
@@ -1763,6 +1893,10 @@ function installIpcHandlers() {
     }, 0);
     return { status: "switching" };
   });
+  ipcMain.handle("desktop:open-guest-demo", async (event) => {
+    requireTrustedShellSender(event);
+    return openGuestDemo();
+  });
   ipcMain.handle("desktop:prepare-local", async (event) => {
     requireTrustedShellSender(event);
     return prepareLocalLogin();
@@ -1786,6 +1920,17 @@ function installIpcHandlers() {
   ipcMain.handle("desktop:local-settings", async (event) => {
     requireTrustedLocalSender(event);
     const runtime = localRuntimeLifecycle.current();
+    if (workspaceState.mode === "guest") {
+      return {
+        appVersion: app.getVersion(),
+        accountId: "游客",
+        displayName: DEMO_COMPANY_NAME,
+        runtimeVersion: runtime?.release?.runtime_version || "",
+        lastBackup: "",
+        remembered: false,
+        guestMode: true,
+      };
+    }
     return {
       appVersion: app.getVersion(),
       accountId: workspaceState.activeAccountId,
@@ -1795,16 +1940,19 @@ function installIpcHandlers() {
       remembered: workspaceState.savedAccounts.some((account) => (
         account.accountId === workspaceState.activeAccountId && account.canAutoLogin
       )),
+      guestMode: false,
     };
   });
   ipcMain.handle("desktop:local-backup", async (event) => {
     requireTrustedLocalSender(event);
+    if (workspaceState.mode === "guest") throw new Error("desktop_guest_demo_backup_not_available");
     await createLocalBackup();
     if (workspaceState.localError) throw new Error(workspaceState.localError);
     return { status: "created", path: workspaceState.localLastBackup };
   });
   ipcMain.handle("desktop:local-open-backups", async (event) => {
     requireTrustedLocalSender(event);
+    if (workspaceState.mode === "guest") throw new Error("desktop_guest_demo_backup_not_available");
     const instance = await loadLocalInstance(localInstanceRoot());
     const error = await shell.openPath(instance.paths.backups);
     if (error) throw new Error("desktop_local_backup_folder_open_failed");
@@ -1812,6 +1960,7 @@ function installIpcHandlers() {
   });
   ipcMain.handle("desktop:local-change-password", async (event, input) => {
     requireTrustedLocalSender(event);
+    if (workspaceState.mode === "guest") throw new Error("desktop_guest_demo_password_not_available");
     return changeLocalPassword(input);
   });
   ipcMain.handle("desktop:local-switch-account", async (event) => {
@@ -1820,6 +1969,7 @@ function installIpcHandlers() {
   });
   ipcMain.handle("desktop:local-forget-account", async (event) => {
     requireTrustedLocalSender(event);
+    if (workspaceState.mode === "guest") return switchAccount();
     const accountId = workspaceState.activeAccountId;
     if (accountId) {
       await clearAccountSession({
@@ -1952,7 +2102,9 @@ async function createMainWindow() {
   mainWindow.on("closed", () => {
     destroyWorkspaceView();
     mainWindow = null;
-    if (localRuntimeLifecycle.state() !== "stopped") void stopLocalMode();
+    if (localRuntimeLifecycle.state() !== "stopped" || localRuntimeKind === "guest") {
+      void stopLocalMode();
+    }
   });
   await mainWindow.loadURL(SHELL_URL);
   if (process.platform === "darwin" && app.isPackaged) {
@@ -2012,6 +2164,7 @@ if (squirrelStartupHandled) {
     let recoveryError = null;
     try {
       await recoverInterruptedLocalSetup(desktopUserDataRoot());
+      await resetGuestDemoData();
     } catch (error) {
       recoveryError = error instanceof Error ? error.message : "desktop_local_setup_recovery_failed";
     }
@@ -2037,10 +2190,13 @@ if (squirrelStartupHandled) {
   app.on("before-quit", (event) => {
     quitRequested = true;
     destroyWorkspaceView();
-    if (localRuntimeLifecycle.state() === "stopped" || shutdownInProgress) return;
+    if (
+      (localRuntimeLifecycle.state() === "stopped" && localRuntimeKind !== "guest")
+      || shutdownInProgress
+    ) return;
     event.preventDefault();
     shutdownInProgress = true;
-    void localRuntimeLifecycle.stop().finally(() => {
+    void stopLocalMode().finally(() => {
       app.quit();
     });
   });
