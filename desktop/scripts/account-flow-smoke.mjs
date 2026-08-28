@@ -509,6 +509,26 @@ try {
   if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
   if (!initial.text.includes("创建本地账号")) fail("desktop_account_flow_local_create_entry_missing");
   if (!initial.text.includes("游客体验")) fail("desktop_account_flow_guest_entry_missing");
+  const defaultPreferences = await evaluate(cdp, "window.bizhubDesktop.getPreferences()");
+  if (
+    defaultPreferences.theme !== "system"
+    || defaultPreferences.density !== "standard"
+    || defaultPreferences.zoomPercent !== 100
+    || defaultPreferences.closeBehavior !== "background"
+    || defaultPreferences.launchAtLogin !== false
+    || defaultPreferences.automaticUpdates !== true
+  ) fail("desktop_account_flow_default_preferences_invalid");
+  await evaluate(cdp, "window.bizhubDesktop.updatePreferences({ theme: 'light' })");
+  await waitFor(async () => (await evaluate(cdp, "document.documentElement.dataset.theme")) === "light",
+    "desktop_account_flow_light_theme_not_applied");
+  await evaluate(cdp, "window.bizhubDesktop.updatePreferences({ theme: 'dark', density: 'compact' })");
+  await waitFor(async () => {
+    const value = await evaluate(cdp, `({
+      theme: document.documentElement.dataset.theme,
+      density: document.documentElement.dataset.density
+    })`);
+    return value.theme === "dark" && value.density === "compact";
+  }, "desktop_account_flow_preferences_not_applied");
   const directoryRequestsBeforeGuest = directoryRequests.length;
   if (!await clickButton(cdp, "游客体验")) fail("desktop_account_flow_guest_entry_not_clickable");
   const guestState = await waitFor(async () => {
@@ -615,6 +635,13 @@ try {
   await launchDesktopProcess();
   await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
     "desktop_account_flow_guest_restart_initial_ui_missing");
+  const restartedPreferences = await evaluate(cdp, "window.bizhubDesktop.getPreferences()");
+  if (
+    restartedPreferences.theme !== "dark"
+    || restartedPreferences.effectiveTheme !== "dark"
+    || restartedPreferences.density !== "compact"
+    || await evaluate(cdp, "document.documentElement.dataset.theme") !== "dark"
+  ) fail("desktop_account_flow_preferences_not_persisted");
   try {
     await stat(path.join(userDataRoot, "guest-demo"));
     fail("desktop_account_flow_guest_data_reappeared_after_restart");
@@ -1062,6 +1089,8 @@ try {
     account_directory_requests: directoryRequests.length,
     account_directory_passwords: 0,
     signed_cloud_workspaces: 1,
+    desktop_preferences_persisted: true,
+    desktop_light_dark_theme_applied: true,
     guest_demo_without_credentials: true,
     guest_demo_directory_requests: 0,
     guest_demo_owner_seed_readback: true,

@@ -30,6 +30,14 @@ const form = reactive({ accountId: "", password: "", remember: true });
 const companyName = ref("");
 const localCreationRequested = ref(false);
 let unsubscribe = () => {};
+let unsubscribePreferences = () => {};
+
+function applyDesktopPreferences(next) {
+  if (!next) return;
+  document.documentElement.dataset.theme = next.effectiveTheme || "light";
+  document.documentElement.dataset.density = next.density || "standard";
+  document.documentElement.style.colorScheme = next.effectiveTheme || "light";
+}
 
 const connected = computed(() => state.value.status === "connected");
 const guestConnected = computed(() => connected.value && state.value.mode === "guest");
@@ -170,15 +178,24 @@ function cancelLocalCreation() {
 }
 
 onMounted(async () => {
-  state.value = await window.bizhubDesktop.getState();
+  const [nextState, preferences] = await Promise.all([
+    window.bizhubDesktop.getState(),
+    window.bizhubDesktop.getPreferences(),
+  ]);
+  state.value = nextState;
+  applyDesktopPreferences(preferences || nextState.preferences);
   syncActiveAccount();
   unsubscribe = window.bizhubDesktop.onStateChange((next) => {
     state.value = next;
     syncActiveAccount();
   });
+  unsubscribePreferences = window.bizhubDesktop.onPreferencesChange(applyDesktopPreferences);
 });
 
-onBeforeUnmount(() => unsubscribe());
+onBeforeUnmount(() => {
+  unsubscribe();
+  unsubscribePreferences();
+});
 </script>
 
 <template>

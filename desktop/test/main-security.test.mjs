@@ -80,7 +80,7 @@ test("closing the window keeps the workspace alive in the background", async () 
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   assert.match(
     main,
-    /mainWindow\.on\("close", \(event\) => \{\s+if \(quitRequested \|\| shutdownInProgress\) return;\s+event\.preventDefault\(\);\s+mainWindow\.hide\(\);/,
+    /mainWindow\.on\("close", \(event\) => \{[\s\S]+resolveWindowCloseAction\(desktopPreferences[\s\S]+event\.preventDefault\(\);\s+mainWindow\.hide\(\);/,
   );
   assert.match(main, /app\.on\("second-instance", \(\) => \{\s+showMainWindow\(\);/);
   assert.match(main, /app\.on\("activate", \(\) => \{[\s\S]*showMainWindow\(\);/);
@@ -103,7 +103,14 @@ test("connected cloud and local workspaces replace the Desktop chrome", async ()
 test("cloud workspace bridge is narrow, origin-bound, and customer-neutral", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   const cloudPreload = await readFile(path.join(ROOT, "electron", "cloud-preload.cjs"), "utf8");
-  for (const api of ["getInfo", "checkUpdate", "switchAccount"]) {
+  for (const api of [
+    "getInfo",
+    "getPreferences",
+    "updatePreferences",
+    "onPreferencesChange",
+    "checkUpdate",
+    "switchAccount",
+  ]) {
     assert.ok(cloudPreload.includes(api), api);
   }
   for (const prohibited of ["node:fs", "node:child_process", "shell", "password", "token"]) {
@@ -117,6 +124,33 @@ test("cloud workspace bridge is narrow, origin-bound, and customer-neutral", asy
   assert.match(main, /schemaVersion: "bizhub\.desktop-cloud-info\.v1"/);
   assert.ok(!cloudPreload.includes("daz" + "heng"));
   assert.ok(!cloudPreload.includes("123" + "crystal"));
+});
+
+test("desktop preferences remain bounded and gate only shell lifecycle behavior", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const preferences = await readFile(path.join(ROOT, "electron", "preferences.cjs"), "utf8");
+  const localPreload = await readFile(path.join(ROOT, "electron", "local-preload.cjs"), "utf8");
+  const shellPreload = await readFile(path.join(ROOT, "electron", "preload.cjs"), "utf8");
+  for (const value of [
+    'theme: "system"',
+    'density: "standard"',
+    "zoomPercent: 100",
+    'closeBehavior: "background"',
+    "launchAtLogin: false",
+    "automaticUpdates: true",
+  ]) assert.ok(preferences.includes(value), value);
+  assert.match(main, /desktopPreferences\.zoomPercent \/ 100/);
+  assert.match(main, /app\.setLoginItemSettings\(\{ openAtLogin: desktopPreferences\.launchAtLogin \}\)/);
+  assert.match(main, /!autoUpdateSuppressed\(\) && desktopPreferences\.automaticUpdates/);
+  for (const preload of [localPreload, shellPreload]) {
+    assert.ok(preload.includes("getPreferences"));
+    assert.ok(preload.includes("updatePreferences"));
+    assert.ok(preload.includes("onPreferencesChange"));
+    assert.ok(!preload.includes("node:fs"));
+  }
+  for (const prohibited of ["Owner", "migration", "sqlite", "password", "token"]) {
+    assert.ok(!preferences.toLocaleLowerCase().includes(prohibited.toLocaleLowerCase()), prohibited);
+  }
 });
 
 test("desktop package keeps Node runtime empty and cloud trust public-only", async () => {

@@ -136,6 +136,10 @@ than per-module hot updates. Desktop-U1 adds the internal update channel: one
 versioned release manifest, bounded native download, exact SHA-256, and a user-
 confirmed restart. R1 still supplies the installation-level vN to vN+1 and
 rollback data/readback proof; U1 does not introduce hot Runtime replacement.
+Desktop 0.1.9 adds only a bounded per-device preference schema for appearance,
+density, zoom, close behavior, launch at login, and automatic update checks.
+These choices cannot contain credentials or business facts and cannot change
+Runtime Pack, Profile, migration, Owner, writer, or cloud/local data authority.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
