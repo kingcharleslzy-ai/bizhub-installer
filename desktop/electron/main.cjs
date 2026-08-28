@@ -6,6 +6,7 @@ const {
   Menu,
   net,
   nativeImage,
+  nativeTheme,
   protocol,
   session,
   shell,
@@ -73,6 +74,13 @@ const {
   downloadUpdateArtifactWithFallback,
   normalizeUpdateConfig,
 } = require("./update-manager.cjs");
+const {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+  mergePreferences,
+  resolveWindowCloseAction,
+  savePreferences,
+} = require("./preferences.cjs");
 
 const SHELL_ORIGIN = "bizhub-shell://app";
 const SHELL_URL = `${SHELL_ORIGIN}/`;
@@ -103,6 +111,7 @@ let updateDownloadPromise = null;
 let availableUpdate = null;
 let downloadedUpdate = null;
 let localRuntimeKind = "local";
+let desktopPreferences = { ...DEFAULT_PREFERENCES };
 const localRuntimeLifecycle = createLocalRuntimeLifecycle({
   startRuntime: launchLocalRuntime,
   stopRuntime: stopLocalRuntime,
@@ -139,6 +148,7 @@ let workspaceState = {
   updateLastCheckedAt: "",
   guestDemoStatus: "idle",
   guestDemoReadback: null,
+  preferences: null,
 };
 
 protocol.registerSchemesAsPrivileged([
@@ -180,6 +190,44 @@ function trustStorePath() {
 function desktopUserDataRoot() {
   const override = process.env.BIZHUB_DESKTOP_USER_DATA_ROOT;
   return override ? path.resolve(override) : app.getPath("userData");
+}
+
+function publicDesktopPreferences() {
+  return {
+    ...desktopPreferences,
+    effectiveTheme: desktopPreferences.theme === "system"
+      ? (nativeTheme.shouldUseDarkColors ? "dark" : "light")
+      : desktopPreferences.theme,
+  };
+}
+
+function sendDesktopPreferences(webContents) {
+  if (!webContents || webContents.isDestroyed()) return;
+  webContents.setZoomFactor(desktopPreferences.zoomPercent / 100);
+  webContents.send("desktop:preferences", publicDesktopPreferences());
+}
+
+function applyDesktopPreferences() {
+  const preferences = publicDesktopPreferences();
+  workspaceState = { ...workspaceState, preferences };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(preferences.effectiveTheme === "dark" ? "#15191d" : "#f4f6f8");
+    sendDesktopPreferences(mainWindow.webContents);
+    mainWindow.webContents.send("desktop:state", workspaceState);
+  }
+  sendDesktopPreferences(workspaceView?.webContents);
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: desktopPreferences.launchAtLogin });
+  }
+  return preferences;
+}
+
+async function updateDesktopPreferences(patch) {
+  desktopPreferences = await savePreferences(
+    desktopUserDataRoot(),
+    mergePreferences(desktopPreferences, patch),
+  );
+  return applyDesktopPreferences();
 }
 
 function localInstanceRoot() {
@@ -553,6 +601,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    sendDesktopPreferences(workspaceView?.webContents);
     if (guest) return;
     publishState({
       mode,
@@ -657,9 +706,10 @@ async function cloudDesktopInfo() {
     rememberedLogin: workspaceState.savedAccounts.some((account) => (
       account.accountId === workspaceState.activeAccountId && account.canAutoLogin
     )),
-    automaticUpdates: updateConfig.enabled === true,
+    automaticUpdates: updateConfig.enabled === true && desktopPreferences.automaticUpdates,
     checkIntervalHours: updateConfig.checkIntervalHours,
     update: publicUpdateState(),
+    preferences: publicDesktopPreferences(),
   };
 }
 
@@ -993,6 +1043,7 @@ async function openWorkspace(
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    sendDesktopPreferences(workspaceView?.webContents);
     if (authenticationPending) return;
     publishState({ status: "connected", error: "" });
     setWorkspaceBounds();
@@ -1813,6 +1864,14 @@ function installIpcHandlers() {
     requireTrustedShellSender(event);
     return workspaceState;
   });
+  ipcMain.handle("desktop:get-preferences", (event) => {
+    requireTrustedShellSender(event);
+    return publicDesktopPreferences();
+  });
+  ipcMain.handle("desktop:update-preferences", async (event, patch) => {
+    requireTrustedShellSender(event);
+    return updateDesktopPreferences(patch);
+  });
   if (process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1") {
     ipcMain.handle("desktop:smoke-hide-window", (event) => {
       requireTrustedShellSender(event);
@@ -1894,6 +1953,14 @@ function installIpcHandlers() {
     requireTrustedCloudSender(event);
     return cloudDesktopInfo();
   });
+  ipcMain.handle("desktop:cloud-get-preferences", (event) => {
+    requireTrustedCloudSender(event);
+    return publicDesktopPreferences();
+  });
+  ipcMain.handle("desktop:cloud-update-preferences", async (event, patch) => {
+    requireTrustedCloudSender(event);
+    return updateDesktopPreferences(patch);
+  });
   ipcMain.handle("desktop:cloud-check-update", async (event) => {
     requireTrustedCloudSender(event);
     return checkDesktopUpdate({ interactive: false });
@@ -1946,6 +2013,7 @@ function installIpcHandlers() {
         lastBackup: "",
         remembered: false,
         guestMode: true,
+        preferences: publicDesktopPreferences(),
       };
     }
     return {
@@ -1958,7 +2026,16 @@ function installIpcHandlers() {
         account.accountId === workspaceState.activeAccountId && account.canAutoLogin
       )),
       guestMode: false,
+      preferences: publicDesktopPreferences(),
     };
+  });
+  ipcMain.handle("desktop:local-get-preferences", (event) => {
+    requireTrustedLocalSender(event);
+    return publicDesktopPreferences();
+  });
+  ipcMain.handle("desktop:local-update-preferences", async (event, patch) => {
+    requireTrustedLocalSender(event);
+    return updateDesktopPreferences(patch);
   });
   ipcMain.handle("desktop:local-backup", async (event) => {
     requireTrustedLocalSender(event);
@@ -2082,7 +2159,7 @@ async function createMainWindow() {
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: "#f4f6f8",
+    backgroundColor: publicDesktopPreferences().effectiveTheme === "dark" ? "#15191d" : "#f4f6f8",
     title: "BizHub Desktop",
     ...(process.platform === "darwin" ? {
       titleBarStyle: "hiddenInset",
@@ -2112,7 +2189,16 @@ async function createMainWindow() {
   });
   mainWindow.on("resize", setWorkspaceBounds);
   mainWindow.on("close", (event) => {
-    if (quitRequested || shutdownInProgress) return;
+    const closeAction = resolveWindowCloseAction(desktopPreferences, {
+      quitRequested,
+      shutdownInProgress,
+    });
+    if (closeAction === "allow") return;
+    if (closeAction === "quit") {
+      quitRequested = true;
+      app.quit();
+      return;
+    }
     event.preventDefault();
     mainWindow.hide();
   });
@@ -2124,6 +2210,7 @@ async function createMainWindow() {
     }
   });
   await mainWindow.loadURL(SHELL_URL);
+  applyDesktopPreferences();
   if (process.platform === "darwin" && app.isPackaged) {
     await finalizePendingMacUpdate({
       executablePath: app.getPath("exe"),
@@ -2175,9 +2262,14 @@ if (squirrelStartupHandled) {
 } else {
   app.whenReady().then(async () => {
     protocol.handle("bizhub-shell", serveShellAsset);
+    desktopPreferences = await loadPreferences(desktopUserDataRoot())
+      .catch(() => ({ ...DEFAULT_PREFERENCES }));
     installIpcHandlers();
     installApplicationMenu();
     installBackgroundTray();
+    nativeTheme.on("updated", () => {
+      if (desktopPreferences.theme === "system") applyDesktopPreferences();
+    });
     let recoveryError = null;
     try {
       await recoverInterruptedLocalSetup(desktopUserDataRoot());
@@ -2187,7 +2279,7 @@ if (squirrelStartupHandled) {
     }
     await createMainWindow();
     if (recoveryError) publishState({ localError: recoveryError });
-    if (!autoUpdateSuppressed()) {
+    if (!autoUpdateSuppressed() && desktopPreferences.automaticUpdates) {
       setTimeout(() => { void checkDesktopUpdate({ interactive: false, automatic: true }); }, 3_000);
     }
   });

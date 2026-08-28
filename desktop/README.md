@@ -201,6 +201,15 @@ their shared web lifecycle without adding a second Desktop update prompt;
 it does not restore duplicate Desktop chrome over a connected Workspace. See
 [`desktop-u1-update-contract.md`](../docs/desktop-u1-update-contract.md).
 
+Desktop 0.1.9 adds one customer-neutral preferences file under the application
+user-data directory. The bounded schema stores only appearance, density, zoom,
+window-close behavior, launch-at-login, and automatic-update-check choices; it
+contains no account, credential, Workspace mapping, or business data. System,
+light, and dark appearance plus standard/compact density are exposed through the
+same narrow shell/cloud/local preload boundary. Zoom and lifecycle choices are
+enforced by Electron; the existing close-to-background behavior remains the
+default, and manual update checks remain available when automatic checks are off.
+
 The macOS release path first verifies the fixed unsigned Runtime Pack, signs
 every Runtime Mach-O object with the same Developer ID used for the Shell,
 rebuilds a release-specific Manifest/trust record over those signed bytes, then

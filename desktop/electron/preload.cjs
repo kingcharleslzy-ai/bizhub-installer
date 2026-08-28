@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   getState: () => ipcRenderer.invoke("desktop:get-state"),
+  getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
+  updatePreferences: (patch) => ipcRenderer.invoke("desktop:update-preferences", patch),
   ...(process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1" ? {
     hideWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-hide-window"),
     restoreWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-restore-window"),
@@ -34,5 +36,11 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on("desktop:state", handler);
     return () => ipcRenderer.removeListener("desktop:state", handler);
+  },
+  onPreferencesChange: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    const handler = (_event, preferences) => listener(preferences);
+    ipcRenderer.on("desktop:preferences", handler);
+    return () => ipcRenderer.removeListener("desktop:preferences", handler);
   },
 });

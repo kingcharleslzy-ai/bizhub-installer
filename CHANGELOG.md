@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add one bounded Desktop preferences file and narrow preload bridge for system,
+  light, or dark appearance, standard or compact density, 90/100/110% zoom,
+  close-to-background or explicit quit, launch at login, and automatic client
+  update checks. Defaults preserve the existing behavior, preferences persist
+  across restarts, and the real Electron account-flow smoke covers theme apply,
+  restart persistence, close-to-background, guest cleanup, and account/session
+  boundaries. Desktop version advances to `0.1.9`; Runtime Pack, SQLite schema,
+  Profile, migration, Owner, writer, directory mapping, and production data
+  remain unchanged.
 - Prefer the versioned BizHub Desktop manifest and artifact mirror at
   `qilinshuzhi.com`, while retaining the immutable GitHub Release as a full
   metadata and download fallback. A stale mirror cannot hide a newer GitHub
