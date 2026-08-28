@@ -113,6 +113,8 @@ input:focus { border-color: #4f8db7; box-shadow: 0 0 0 3px rgb(79 141 183 / 14%)
 .remember-login { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; font-weight: 500; }
 .remember-login input { width: 16px; height: 16px; margin: 0; accent-color: #1e6a9d; }
 
+.login-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; }
+
 .primary-button, .secondary-button {
   width: fit-content;
   padding: 11px 18px;
@@ -120,7 +122,7 @@ input:focus { border-color: #4f8db7; box-shadow: 0 0 0 3px rgb(79 141 183 / 14%)
   font-weight: 650;
   cursor: pointer;
 }
-.primary-button { grid-column: 1 / -1; border: 1px solid #1b5f8e; color: #fff; background: #1e6a9d; }
+.primary-button { border: 1px solid #1b5f8e; color: #fff; background: #1e6a9d; }
 .secondary-button { border: 1px solid #cbd6df; color: #3f5262; background: #fff; }
 button:disabled { cursor: wait; opacity: .62; }
 

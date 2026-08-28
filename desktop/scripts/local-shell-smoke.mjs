@@ -280,8 +280,18 @@ try {
   })}\n`);
 } finally {
   await stopDesktop();
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await rm(temporaryRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 10 : 0,
+    retryDelay: 200,
+  });
   if (explicitUserDataRoot && !keepUserData) {
-    await rm(explicitUserDataRoot, { recursive: true, force: true });
+    await rm(explicitUserDataRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === "win32" ? 10 : 0,
+      retryDelay: 200,
+    });
   }
 }
