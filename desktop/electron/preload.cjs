@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
   ...(process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1" ? {
     hideWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-hide-window"),
     restoreWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-restore-window"),
+    quitAppForSmoke: () => ipcRenderer.invoke("desktop:smoke-quit-app"),
   } : {}),
   onStateChange: (listener) => {
     if (typeof listener !== "function") return () => {};

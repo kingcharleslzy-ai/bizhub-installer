@@ -186,6 +186,9 @@ test("guest demo is an isolated disposable instance and never weakens local acco
   assert.ok(!guest.includes("resolveAccountWorkspaces"));
   assert.ok(!guest.includes("saveDesktopAccount"));
   assert.match(main, /await rm\(guestDemoRoot\(\), \{ recursive: true, force: true \}\)/);
+  assert.match(main, /settingsButton\.dataset\.page = "settings"/);
+  assert.match(main, /nav button\[data-page=\\"settings\\"\]/);
+  assert.doesNotMatch(main, /nav button:last-child/);
 });
 
 test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {

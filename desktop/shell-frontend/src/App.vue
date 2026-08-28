@@ -184,7 +184,7 @@ onBeforeUnmount(() => unsubscribe());
 <template>
   <div class="desktop-shell">
     <header v-if="guestConnected" class="guest-banner" :class="{ mac: state.platform === 'darwin' }">
-      <span><b>游客样板间</b> · 当前均为模拟数据，退出应用后自动重置</span>
+      <span><b>游客样板间</b> · 当前均为模拟数据，退出样板间或彻底退出应用后自动重置；关闭窗口只进入后台。</span>
       <button type="button" @click="exitGuestDemo">退出样板间</button>
     </header>
     <header v-if="!connected" class="shell-bar" :class="{ mac: state.platform === 'darwin' }">
