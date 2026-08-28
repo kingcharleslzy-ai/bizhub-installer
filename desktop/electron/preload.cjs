@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   getState: () => ipcRenderer.invoke("desktop:get-state"),
+  ...(process.env.BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE === "1" ? {
+    hideWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-hide-window"),
+    restoreWindowForSmoke: () => ipcRenderer.invoke("desktop:smoke-restore-window"),
+  } : {}),
   onStateChange: (listener) => {
     if (typeof listener !== "function") return () => {};
     const handler = (_event, state) => listener(state);

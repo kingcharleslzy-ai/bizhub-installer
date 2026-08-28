@@ -198,6 +198,7 @@ async function launchDesktopProcess() {
     cwd: ROOT,
     env: {
       ...process.env,
+      BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE: "1",
       BIZHUB_DESKTOP_USER_DATA_ROOT: userDataRoot,
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
       ...(packagedExecutable ? {} : {
@@ -430,11 +431,12 @@ try {
       text: document.body.innerText,
       passwords: document.querySelectorAll('input[type="password"]').length,
       remember: document.querySelectorAll('input[type="checkbox"]').length,
+      updateRows: document.querySelectorAll('.update-row[role="status"]').length,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
     })`);
     return value.text.includes("登录 BizHub") ? value : null;
   }, "desktop_account_flow_initial_ui_missing");
-  if (initial.passwords !== 1 || initial.remember !== 1 || initial.overflow > 2) {
+  if (initial.passwords !== 1 || initial.remember !== 1 || initial.updateRows !== 1 || initial.overflow > 2) {
     fail("desktop_account_flow_initial_boundary_invalid");
   }
   if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
@@ -483,6 +485,28 @@ try {
     ) {
       fail("desktop_account_flow_direct_login_not_ready");
     }
+  }
+
+  const directoryRequestsBeforeBackgroundRestore = directoryRequests.length;
+  const cloudLoginRequestsBeforeBackgroundRestore = cloudLoginRequests.length;
+  await evaluate(cdp, "window.bizhubDesktop.hideWindowForSmoke()");
+  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "hidden",
+    "desktop_account_flow_window_not_hidden_in_background");
+  if (!await workspaceTargetPresent()) {
+    fail("desktop_account_flow_workspace_destroyed_in_background");
+  }
+  await evaluate(cdp, "window.bizhubDesktop.restoreWindowForSmoke()");
+  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "visible",
+    "desktop_account_flow_background_window_not_restored");
+  const backgroundRestoredState = await evaluate(cdp, "window.bizhubDesktop.getState()");
+  if (
+    backgroundRestoredState.mode !== "cloud"
+    || backgroundRestoredState.status !== "connected"
+    || directoryRequests.length !== directoryRequestsBeforeBackgroundRestore
+    || cloudLoginRequests.length !== cloudLoginRequestsBeforeBackgroundRestore
+    || !await workspaceTargetPresent()
+  ) {
+    fail("desktop_account_flow_background_session_not_retained");
   }
 
   await cdp.send("Emulation.setDeviceMetricsOverride", {
@@ -720,6 +744,9 @@ try {
     forget_revokes_cloud_session: true,
     cloud_workspace_hides_desktop_chrome: true,
     workspace_logout_clears_desktop_session: true,
+    close_to_background_session_retained: true,
+    same_process_restores_background_window: true,
+    windows_tray_background_supported: true,
     cross_restart_cookie_storage_cache_cleared: true,
     remembered_login_test_skipped: false,
     cloud_session_persistent: false,

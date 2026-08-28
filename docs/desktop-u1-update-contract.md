@@ -9,8 +9,10 @@ mapping, or cloud authentication rule.
 The packaged app checks the public repository's versioned `desktop-v*` GitHub
 Releases after startup. Development and synthetic smoke processes never contact
 the update service. A user can also check from the native application menu or
-the combined login screen. The native menu remains available while either a
-cloud or Generic workspace is open.
+the combined login screen. That login flow owns exactly one visible client-update
+status area; it does not duplicate the compatible frontend hot-refresh state.
+The native menu remains available while either a cloud or Generic workspace is
+open.
 
 ```text
 versioned GitHub Release
@@ -39,6 +41,17 @@ existing Squirrel Setup after the local Runtime has stopped.
 The currently installed `0.1.0` app predates this updater, so moving to `0.1.1`
 requires one final external installation. Every later package built with this
 contract can update from inside BizHub Desktop.
+
+Compatible frontend resources use the shared web lifecycle and may activate and
+refresh silently without a Desktop binary update. This does not authorize hot
+replacement of Electron, the Generic Local Python Runtime, Profile, migration,
+Owner, writer, or local data; those remain versioned Desktop or server releases.
+
+Closing the Desktop window is not logout or process exit. On macOS and Windows
+it hides the existing window while retaining the connected cloud or Generic
+Local Workspace. Dock activation, the Windows tray, or another launch request
+restores that same Session. Only an explicit application quit stops the process
+and Generic Local Runtime.
 
 ## Internal release
 

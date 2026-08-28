@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Make the combined login surface the single visible client-update status area.
+  Available, downloading, downloaded, and installing states receive one compact
+  non-blocking emphasis near the account form; cloud/PWA hot refresh remains a
+  separate shared frontend mechanism and never creates a second Desktop prompt.
+  Desktop version advances to `0.1.3`; Runtime Pack, SQLite, Profile, migration,
+  Owner, writer, directory mapping, and production data remain unchanged.
+- Keep cloud and Generic Local Sessions alive when the main window is closed on
+  macOS or Windows. Closing now hides the window; Dock activation, the Windows
+  tray, or launching BizHub Desktop again restores the current Workspace.
+  Explicit quit remains the only path that stops the process and local Runtime.
 - Integrate the macOS window chrome into the customer-neutral Desktop surface.
   Cloud Workspaces receive a narrow, origin-bound preload for version, update,
   and account-switch controls; it exposes no filesystem, credential, customer,

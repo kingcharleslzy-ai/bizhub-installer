@@ -84,6 +84,9 @@ const updateLabel = computed(() => {
   if (state.value.updateStatus === "up-to-date") return "已是最新版本";
   return state.value.appVersion ? `客户端 ${state.value.appVersion}` : "BizHub Desktop";
 });
+const updateAttention = computed(() => (
+  ["available", "downloading", "downloaded", "installing"].includes(state.value.updateStatus)
+));
 
 function syncActiveAccount() {
   if (!form.accountId && state.value.activeAccountId) form.accountId = state.value.activeAccountId;
@@ -158,6 +161,13 @@ onBeforeUnmount(() => unsubscribe());
           <p>输入一个账号和密码。客户端会自动识别并进入企业云端或本机 Generic；密码不会保存在电脑上。</p>
         </div>
 
+        <div class="update-row" :class="{ attention: updateAttention }" role="status" aria-live="polite">
+          <span><strong v-if="updateAttention">客户端更新</strong>{{ updateLabel }}</span>
+          <button v-if="state.updateDownloaded" type="button" :disabled="updateWorking" @click="installUpdate">重启并更新</button>
+          <button v-else-if="state.updateStatus === 'available'" type="button" :disabled="updateWorking" @click="downloadUpdate">下载更新</button>
+          <button v-else type="button" :disabled="updateWorking" @click="checkUpdate">检查更新</button>
+        </div>
+
         <div v-if="state.savedAccounts.length" class="saved-accounts">
           <span>已保存账号</span>
           <div>
@@ -192,12 +202,6 @@ onBeforeUnmount(() => unsubscribe());
 
         <p v-if="errorLabel" class="error-message" role="alert">{{ errorLabel }}</p>
         <p class="boundary-note">企业账号只连接签名云端工作区；本地账号只使用本机单一 SQLite，二者不会互相复制或同步数据。</p>
-        <div class="update-row">
-          <span>{{ updateLabel }}</span>
-          <button v-if="state.updateDownloaded" type="button" :disabled="updateWorking" @click="installUpdate">重启并更新</button>
-          <button v-else-if="state.updateStatus === 'available'" type="button" :disabled="updateWorking" @click="downloadUpdate">下载更新</button>
-          <button v-else type="button" :disabled="updateWorking" @click="checkUpdate">检查更新</button>
-        </div>
       </section>
     </main>
   </div>
