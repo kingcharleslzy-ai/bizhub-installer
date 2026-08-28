@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prefer the versioned BizHub Desktop manifest and artifact mirror at
+  `qilinshuzhi.com`, while retaining the immutable GitHub Release as a full
+  metadata and download fallback. A stale mirror cannot hide a newer GitHub
+  release, and an artifact fallback is accepted only when filename, kind, byte
+  count, and SHA-256 exactly match. Desktop version advances to `0.1.8`; Runtime
+  Pack, SQLite schema, Profile, migration, Owner, writer, directory mapping, and
+  production data remain unchanged.
 - Make the guest settings boundary independent of navigation order by tagging
   the semantic settings button with `data-page="settings"` and hiding that
   stable selector instead of `nav button:last-child`. Clarify that closing the

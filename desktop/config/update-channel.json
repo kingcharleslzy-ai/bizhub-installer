@@ -4,10 +4,12 @@
   "auto_download": true,
   "check_interval_hours": 24,
   "include_prerelease": true,
+  "primary_manifest_url": "https://qilinshuzhi.com/bizhub-updates/latest.json",
   "release_api_url": "https://api.github.com/repos/kingcharleslzy-ai/bizhub-installer/releases?per_page=20",
   "tag_prefix": "desktop-v",
   "manifest_asset_name": "desktop-update.json",
   "allowed_hosts": [
+    "qilinshuzhi.com",
     "api.github.com",
     "github.com",
     "objects.githubusercontent.com",
