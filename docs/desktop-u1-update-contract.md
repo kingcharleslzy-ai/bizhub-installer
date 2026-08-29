@@ -22,7 +22,8 @@ while either a cloud or Generic workspace is open.
 versioned GitHub Release + attached desktop-update.json
 -> validate the sole bounded manifest
 -> platform/architecture match
--> GitHub artifact download, then identical Aliyun mirror fallback
+-> GitHub artifact download; after a failure or 30 seconds without progress,
+   retry the identical Aliyun mirror
 -> exact byte count + SHA-256
 -> user chooses restart
 -> Generic Local verified backup (when present)
@@ -37,7 +38,9 @@ hosts in `desktop/config/update-channel.json`. Qilin metadata cannot select or
 override a version. The derived Aliyun fallback reuses the GitHub Manifest's
 validated filename, kind, byte count, and SHA-256. The release list, manifest, artifact
 size, filename, version, bundle identity, byte count, and SHA-256 all fail
-closed.
+closed. Each source retains the 30-minute total download limit; a separate
+30-second no-progress timer covers connection stalls and trickling transfers
+without changing artifact identity or trust.
 
 macOS expands the verified ZIP into private application data, verifies
 `com.bizhub.desktop` and the expected bundle version, then atomically keeps the

@@ -159,6 +159,10 @@ fallback, encrypts cloud and local remembered sessions with Electron
 `safeStorage` plus atomic file replacement, and rejects guest writes to device
 preferences. It changes no Runtime Pack, SQLite schema, migration, Profile,
 Owner, writer, directory mapping, private rule, or formal business data.
+Desktop 0.1.14 keeps that trust model and adds only a 30-second no-progress
+download cutoff before retrying the identical Qilin artifact. GitHub remains the
+first source and the sole Manifest authority; both files still require the exact
+Manifest filename, size, and SHA-256.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag

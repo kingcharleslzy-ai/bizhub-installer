@@ -275,3 +275,51 @@ test("retries the identical Aliyun mirror when the GitHub download fails", async
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
+
+test("falls back to the identical Aliyun mirror when the GitHub download stalls", async () => {
+  const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-update-stall-test-"));
+  try {
+    const payload = Buffer.from("synthetic-bizhub-update-after-stall");
+    const sha256 = createHash("sha256").update(payload).digest("hex");
+    const common = {
+      kind: "macos-zip",
+      bytes: payload.length,
+      filename: "BizHub-Desktop-macOS-arm64-0.1.14.zip",
+      sha256,
+    };
+    const primaryAsset = {
+      ...common,
+      url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.14/BizHub-Desktop-macOS-arm64-0.1.14.zip",
+    };
+    const fallbackAsset = {
+      ...common,
+      url: "https://qilinshuzhi.com/bizhub-updates/releases/desktop-v0.1.14/BizHub-Desktop-macOS-arm64-0.1.14.zip",
+    };
+    const requested = [];
+    const downloaded = await downloadUpdateArtifactWithFallback({
+      fetchImpl: async (url, options) => {
+        requested.push(url);
+        if (url !== primaryAsset.url) return new Response(payload, { status: 200 });
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+      },
+      asset: primaryAsset,
+      fallbackAsset,
+      allowedHosts: CONFIG.allowed_hosts,
+      destination: path.join(temporaryRoot, common.filename),
+      timeoutMs: 1_000,
+      stallTimeoutMs: 20,
+      fallbackSource: "aliyun",
+    });
+    assert.equal(downloaded.source, "aliyun");
+    assert.deepEqual(await readFile(downloaded.path), payload);
+    assert.deepEqual(requested, [primaryAsset.url, fallbackAsset.url]);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
