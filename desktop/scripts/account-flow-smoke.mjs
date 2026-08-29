@@ -181,6 +181,7 @@ const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-account-flow-"))
 const trustStorePath = path.join(temporaryRoot, "trust.json");
 const directoryConfigPath = path.join(temporaryRoot, "account-directory.json");
 const userDataRoot = path.join(temporaryRoot, "user-data");
+const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v3.json");
 const certificatePath = path.join(temporaryRoot, "certificate.pem");
 const certificateKeyPath = path.join(temporaryRoot, "certificate-key.pem");
 let directoryServer = null;
@@ -805,6 +806,11 @@ try {
     fail("desktop_account_flow_expired_descriptor_reopened_workspace");
   }
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+  const savedCloudBeforeFreshLogin = JSON.parse(await readFile(savedAccountsPath, "utf8"))
+    .accounts.find((account) => account.accountId === "charles.example");
+  if (!savedCloudBeforeFreshLogin) {
+    fail("desktop_account_flow_saved_cloud_account_missing_before_fresh_login");
+  }
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_fresh_descriptor_input_missing");
   }
@@ -812,6 +818,11 @@ try {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     return value.mode === "cloud" && value.status === "connected" ? value : null;
   }, "desktop_account_flow_fresh_descriptor_not_connected", 45_000);
+  await waitFor(async () => {
+    const saved = JSON.parse(await readFile(savedAccountsPath, "utf8"));
+    const account = saved.accounts.find((item) => item.accountId === "charles.example");
+    return account && account.savedAt !== savedCloudBeforeFreshLogin.savedAt ? account : null;
+  }, "desktop_account_flow_fresh_login_account_not_persisted");
   if (
     issuedWorkspaceExpiries.length < 2
     || issuedWorkspaceExpiries[1] <= firstDescriptorExpiresAt
@@ -842,7 +853,6 @@ try {
   if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal) {
     fail("desktop_account_flow_saved_cloud_local_setup_contacted_directory");
   }
-  const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v3.json");
   const savedCloudBytesBeforeRejectedCreate = await readFile(savedAccountsPath, "utf8");
   if (!await submitLocalCreation(
     cdp,

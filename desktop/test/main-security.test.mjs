@@ -271,6 +271,7 @@ test("account-flow local submission does not depend on foreground animation fram
   const smoke = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
   assert.ok(!smoke.includes("requestAnimationFrame"));
   assert.match(smoke, /await new Promise\(\(resolve\) => setTimeout\(resolve, 0\)\)/);
+  assert.match(smoke, /desktop_account_flow_fresh_login_account_not_persisted/);
 });
 
 function mainTrustSelection(main) {
