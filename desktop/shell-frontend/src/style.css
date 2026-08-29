@@ -1,22 +1,25 @@
 :root {
-  --shell-bg: #e9eef2;
+  --shell-bg: #ececeb;
   --shell-panel: #ffffff;
   --shell-panel-solid: #ffffff;
-  --shell-panel-soft: #f5f7f8;
-  --shell-panel-blue: #eff6f8;
-  --shell-text: #17201d;
-  --shell-muted: #68736f;
-  --shell-weak: #8a9490;
-  --shell-line: #d9dfdc;
-  --shell-line-soft: #e7ebe9;
-  --shell-accent: #17695f;
-  --shell-accent-hover: #11574f;
-  --shell-accent-soft: #e9f4f1;
-  --shell-shade: rgb(236 240 239 / 58%);
-  --preview-sidebar: #17211e;
-  --preview-sidebar-text: #d5ded9;
-  --preview-surface: #f7f9f8;
-  --preview-panel: #ffffff;
+  --shell-panel-soft: #f5f4f1;
+  --shell-panel-blue: #f3f1eb;
+  --shell-text: #211f1b;
+  --shell-muted: #6d685f;
+  --shell-weak: #918b80;
+  --shell-line: #ddd9d0;
+  --shell-line-soft: #ebe8e1;
+  --shell-accent: #756747;
+  --shell-accent-hover: #3d372b;
+  --shell-accent-soft: #f1eee6;
+  --shell-action: #26221c;
+  --shell-action-hover: #15130f;
+  --shell-action-text: #ffffff;
+  --shell-shade: rgb(239 240 238 / 60%);
+  --preview-sidebar: #18150f;
+  --preview-sidebar-text: #d8d1c2;
+  --preview-surface: #f4f3ef;
+  --preview-panel: #fbfbf9;
   color: var(--shell-text);
   background: var(--shell-bg);
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -25,24 +28,27 @@
 }
 
 :root[data-theme="dark"] {
-  --shell-bg: #0f1412;
-  --shell-panel: #1a211f;
-  --shell-panel-solid: #1a211f;
-  --shell-panel-soft: #202825;
-  --shell-panel-blue: #1b2c29;
-  --shell-text: #eff4f1;
-  --shell-muted: #b3bdb8;
-  --shell-weak: #87938d;
-  --shell-line: #35403b;
-  --shell-line-soft: #2c3531;
-  --shell-accent: #3d9a8c;
-  --shell-accent-hover: #4ba99a;
-  --shell-accent-soft: #1c3631;
-  --shell-shade: rgb(8 13 12 / 57%);
-  --preview-sidebar: #0d1210;
-  --preview-sidebar-text: #b9c4be;
-  --preview-surface: #171d1b;
-  --preview-panel: #202724;
+  --shell-bg: #11100d;
+  --shell-panel: #1e1c18;
+  --shell-panel-solid: #1e1c18;
+  --shell-panel-soft: #26231e;
+  --shell-panel-blue: #25221c;
+  --shell-text: #f2efe8;
+  --shell-muted: #bdb6aa;
+  --shell-weak: #8f887d;
+  --shell-line: #403b33;
+  --shell-line-soft: #312e28;
+  --shell-accent: #c1ad78;
+  --shell-accent-hover: #e0d1a5;
+  --shell-accent-soft: #302b22;
+  --shell-action: #e7e0d1;
+  --shell-action-hover: #f4efe5;
+  --shell-action-text: #1c1914;
+  --shell-shade: rgb(10 9 7 / 58%);
+  --preview-sidebar: #0e0d0b;
+  --preview-sidebar-text: #c7c0b3;
+  --preview-surface: #181612;
+  --preview-panel: #211f1a;
 }
 
 * { box-sizing: border-box; }
@@ -107,7 +113,7 @@ button { -webkit-app-region: no-drag; }
   grid-template-columns: 216px minmax(0, 1fr);
   color: var(--shell-text);
   background: var(--preview-surface);
-  filter: blur(5px) saturate(.72);
+  filter: blur(5px) saturate(.58);
   pointer-events: none;
   transform: scale(1.018);
   transform-origin: center;
@@ -137,10 +143,10 @@ button { -webkit-app-region: no-drag; }
   place-items: center;
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 8px;
-  background: #25443c;
+  background: #3a3221;
   font-size: 11px;
 }
-.preview-nav-label { margin: 0 12px 12px; color: #7f8d86; font-size: 10px; letter-spacing: .12em; }
+.preview-nav-label { margin: 0 12px 12px; color: #8f8268; font-size: 10px; letter-spacing: .12em; }
 .preview-nav, .preview-sidebar-foot {
   display: flex;
   align-items: center;
@@ -151,7 +157,7 @@ button { -webkit-app-region: no-drag; }
   border-radius: 8px;
   font-size: 13px;
 }
-.preview-nav.active { color: #fff; background: #26342f; }
+.preview-nav.active { color: #fff; background: #2b271e; }
 .preview-nav i, .preview-sidebar-foot i {
   width: 14px;
   height: 14px;
@@ -181,34 +187,20 @@ button { -webkit-app-region: no-drag; }
 .preview-table-row span:nth-child(1) { width: 65%; }
 .preview-table-row span:nth-child(2) { width: 88%; }
 .preview-table-row span:nth-child(3) { width: 72%; }
-.preview-table-row span:nth-child(4) { width: 55%; background: #9fc5b9; }
+.preview-table-row span:nth-child(4) { width: 55%; background: #c7b276; }
 
 .login-panel {
   z-index: 1;
   width: min(440px, calc(100vw - 64px));
   padding: 28px 32px 18px;
   border: 1px solid var(--shell-line);
-  border-radius: 16px;
+  border-radius: 13px;
   background: var(--shell-panel);
-  box-shadow: 0 24px 70px rgb(12 24 20 / 22%);
+  box-shadow: 0 20px 54px rgb(24 22 18 / 20%);
   animation: login-enter 320ms cubic-bezier(.2, .75, .25, 1) both;
 }
 
-.brand-lockup { display: flex; align-items: center; gap: 10px; }
-.brand-lockup strong { font-size: 13px; letter-spacing: -.01em; }
-.mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--shell-accent) 34%, var(--shell-line));
-  border-radius: 8px;
-  color: var(--shell-accent);
-  background: var(--shell-accent-soft);
-  font-size: 10px;
-  font-weight: 800;
-}
-.card-heading h1 { margin: 24px 0 22px; font-size: 27px; line-height: 1.15; letter-spacing: -.035em; }
+.card-heading h1 { margin: 0 0 22px; font-size: 27px; line-height: 1.15; letter-spacing: -.035em; }
 
 .unified-form { display: grid; gap: 14px; }
 .form-field, .local-create label { display: grid; gap: 7px; color: var(--shell-muted); font-size: 12px; font-weight: 650; }
@@ -224,7 +216,7 @@ input {
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 input:hover { border-color: color-mix(in srgb, var(--shell-line) 55%, var(--shell-text)); }
-input:focus { border-color: var(--shell-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-accent) 16%, transparent); }
+input:focus { border-color: var(--shell-accent-hover); box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-accent) 18%, transparent); }
 
 .selected-account {
   display: flex;
@@ -269,7 +261,7 @@ input:focus { border-color: var(--shell-accent); box-shadow: 0 0 0 3px color-mix
 .saved-accounts small { color: var(--shell-weak); font-size: 9px; }
 
 .remember-login { display: flex; align-items: center; gap: 9px; color: var(--shell-muted); font-size: 11px; font-weight: 500; }
-.remember-login input { width: 15px; height: 15px; margin: 0; accent-color: var(--shell-accent); }
+.remember-login input { width: 15px; height: 15px; margin: 0; accent-color: var(--shell-action); }
 .login-status { margin: -4px 0 0; color: var(--shell-muted); font-size: 11px; }
 .login-status:empty { display: none; }
 
@@ -279,17 +271,17 @@ input:focus { border-color: var(--shell-accent); box-shadow: 0 0 0 3px color-mix
   border-radius: 9px;
   font-weight: 650;
   cursor: pointer;
-  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
 }
-.primary-button { border: 1px solid var(--shell-accent-hover); color: #fff; background: var(--shell-accent); }
-.primary-button:hover:not(:disabled) { background: var(--shell-accent-hover); transform: translateY(-1px); }
+.primary-button { border: 1px solid var(--shell-action); color: var(--shell-action-text); background: var(--shell-action); }
+.primary-button:hover:not(:disabled) { border-color: var(--shell-action-hover); background: var(--shell-action-hover); }
 .secondary-button { padding: 0 16px; border: 1px solid var(--shell-line); color: var(--shell-muted); background: var(--shell-panel); }
 .guest-button { border: 1px solid var(--shell-line); color: var(--shell-text); background: var(--shell-panel); }
-.guest-button:hover:not(:disabled) { border-color: var(--shell-accent); background: var(--shell-accent-soft); transform: translateY(-1px); }
+.guest-button:hover:not(:disabled) { border-color: var(--shell-accent); background: var(--shell-accent-soft); }
 .local-entry-button { justify-self: center; min-height: 28px; margin-top: -1px; color: var(--shell-muted); }
 .local-entry-button:hover:not(:disabled), .selected-account button:hover:not(:disabled), .update-row button:hover:not(:disabled) { color: var(--shell-accent-hover); }
 button:disabled { cursor: wait; opacity: .58; }
-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--shell-accent) 26%, transparent); outline-offset: 2px; }
+button:focus-visible { outline: 3px solid color-mix(in srgb, var(--shell-accent) 30%, transparent); outline-offset: 2px; }
 
 .local-create {
   margin-top: 16px;

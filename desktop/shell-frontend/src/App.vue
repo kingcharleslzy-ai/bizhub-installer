@@ -262,10 +262,6 @@ onBeforeUnmount(() => {
       <div class="workspace-shade" aria-hidden="true"></div>
 
       <section class="login-panel" aria-labelledby="login-title">
-        <div class="brand-lockup">
-          <span class="mark">BH</span>
-          <strong>BizHub Desktop</strong>
-        </div>
         <div class="card-heading">
           <h1 id="login-title">登录 BizHub</h1>
         </div>
