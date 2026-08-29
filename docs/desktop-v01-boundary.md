@@ -143,6 +143,12 @@ Runtime Pack, Profile, migration, Owner, writer, or cloud/local data authority.
 Desktop 0.1.10 changes only artifact routing: GitHub is attempted first and one
 byte-identical Aliyun `fallback_url` may be retried after a failed download.
 Both paths remain bound to the same filename, size, and SHA-256.
+Desktop 0.1.11 removes the unauthenticated Shell's wide custom header and uses
+an integrated native title area over a bundled, customer-neutral blurred
+workbench preview. The preview performs no remote load and contains no customer
+or formal business data. A selected saved account collapses the account field
+until the user chooses `切换账号`; login, password routing, automatic-login,
+guest, Generic Local, update, Runtime, and formal-data boundaries are unchanged.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
