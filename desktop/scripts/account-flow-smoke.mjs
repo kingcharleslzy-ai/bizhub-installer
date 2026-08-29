@@ -106,7 +106,14 @@ async function evaluate(cdp, expression) {
     awaitPromise: true,
     returnByValue: true,
   });
-  if (result.exceptionDetails) fail("desktop_account_flow_evaluation_failed");
+  if (result.exceptionDetails) {
+    fail(
+      "desktop_account_flow_evaluation_failed",
+      result.exceptionDetails.exception?.description
+        || result.exceptionDetails.text
+        || "runtime_exception",
+    );
+  }
   return result.result.value;
 }
 
@@ -566,7 +573,6 @@ try {
       })`);
       return value.title === "经营概览" && value.text.includes("星河新材料样板间") ? value : null;
     }, "desktop_account_flow_guest_product_missing");
-    guestWorkspace.close();
     if (
       !product.visibleNav.includes("主数据")
       || !product.visibleNav.includes("采购")
@@ -576,6 +582,22 @@ try {
       || product.visibleNav.includes("设置")
     ) {
       fail("desktop_account_flow_guest_product_invalid");
+    }
+    const guestPreferenceWrite = await evaluate(guestWorkspace, `window.bizhubLocalDesktop
+      .updatePreferences({ theme: "light" })
+      .then(() => ({ accepted: true, error: "" }))
+      .catch((error) => ({ accepted: false, error: String(error?.message || error) }))`);
+    const guestPreferences = await evaluate(
+      guestWorkspace,
+      "window.bizhubLocalDesktop.getPreferences()",
+    );
+    guestWorkspace.close();
+    if (
+      guestPreferenceWrite.accepted
+      || !guestPreferenceWrite.error.includes("desktop_guest_demo_preferences_not_available")
+      || guestPreferences.theme !== "dark"
+    ) {
+      fail("desktop_account_flow_guest_preferences_write_not_rejected");
     }
   }
   const guestChrome = await evaluate(cdp, "document.body.innerText");
@@ -817,7 +839,7 @@ try {
   if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal) {
     fail("desktop_account_flow_saved_cloud_local_setup_contacted_directory");
   }
-  const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v2.json");
+  const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v3.json");
   const savedCloudBytesBeforeRejectedCreate = await readFile(savedAccountsPath, "utf8");
   if (!await submitLocalCreation(
     cdp,
@@ -944,11 +966,12 @@ try {
         ? value
         : null;
     }, "desktop_account_flow_remembered_login_not_connected", 45_000);
-    const rememberedSessionPath = path.join(userDataRoot, "saved-accounts.v2.json");
+    const rememberedSessionPath = path.join(userDataRoot, "saved-accounts.v3.json");
     const rememberedSessionBytes = await readFile(rememberedSessionPath, "utf8");
     if (
       !rememberedSessionBytes.includes("charles.example")
-      || !rememberedSessionBytes.includes(syntheticSessionToken)
+      || rememberedSessionBytes.includes(syntheticSessionToken)
+      || !rememberedSessionBytes.includes("bizhub.desktop-encrypted-session.v1")
       || rememberedSessionBytes.includes("correct-cloud-password")
     ) {
       fail("desktop_account_flow_remembered_session_invalid");
@@ -1094,6 +1117,7 @@ try {
     guest_demo_without_credentials: true,
     guest_demo_directory_requests: 0,
     guest_demo_owner_seed_readback: true,
+    guest_device_preferences_write_rejected: true,
     guest_demo_close_to_background_session_retained: true,
     guest_demo_reset_after_exit: true,
     guest_demo_reset_after_quit_restart: true,
@@ -1116,6 +1140,7 @@ try {
     local_setup_form_reached: true,
     remembered_password_fields: 0,
     remembered_session_token_saved: true,
+    remembered_session_ciphertext_saved: true,
     remembered_session_auto_connected: true,
     auto_login_reused_token_without_password: true,
     forget_clears_session_token: true,

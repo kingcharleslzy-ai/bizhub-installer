@@ -153,6 +153,12 @@ Desktop 0.1.12 removes the decorative login-card brand lockup and aligns the
 logged-out palette with the formal workspace's neutral surfaces, charcoal
 actions, and restrained warm accent. It changes no login behavior, account
 directory, guest flow, Generic Local lifecycle, Runtime, or data authority.
+The next bounded Desktop repair makes the GitHub Release Manifest the sole
+update metadata authority while keeping Qilin only as an identical-file
+fallback, encrypts cloud and local remembered sessions with Electron
+`safeStorage` plus atomic file replacement, and rejects guest writes to device
+preferences. It changes no Runtime Pack, SQLite schema, migration, Profile,
+Owner, writer, directory mapping, private rule, or formal business data.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag

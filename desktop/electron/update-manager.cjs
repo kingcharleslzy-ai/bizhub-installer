@@ -97,13 +97,29 @@ function normalizeUpdateConfig(value) {
     allowedHosts,
     "desktop_update_release_api_url_invalid",
   );
-  const primaryManifestUrl = value.primary_manifest_url
+  const artifactFallbackBaseUrl = value.artifact_fallback_base_url
     ? validateHttpsUrl(
-      value.primary_manifest_url,
+      value.artifact_fallback_base_url,
       allowedHosts,
-      "desktop_update_primary_manifest_url_invalid",
+      "desktop_update_artifact_fallback_base_url_invalid",
     )
     : "";
+  if (artifactFallbackBaseUrl) {
+    const parsedFallbackBase = new URL(artifactFallbackBaseUrl);
+    if (parsedFallbackBase.search || parsedFallbackBase.hash) {
+      fail("desktop_update_artifact_fallback_base_url_invalid");
+    }
+  }
+  const fallbackHost = artifactFallbackBaseUrl
+    ? new URL(artifactFallbackBaseUrl).hostname.toLowerCase()
+    : "";
+  const metadataAllowedHosts = allowedHosts.filter((host) => host !== fallbackHost);
+  if (
+    metadataAllowedHosts.length === 0
+    || !metadataAllowedHosts.includes(new URL(releaseApiUrl).hostname.toLowerCase())
+  ) {
+    fail("desktop_update_metadata_hosts_invalid");
+  }
   const tagPrefix = String(value.tag_prefix || "");
   const manifestAssetName = String(value.manifest_asset_name || "");
   if (!/^desktop-v[0-9A-Za-z._-]*$/.test(tagPrefix)) fail("desktop_update_tag_prefix_invalid");
@@ -116,7 +132,8 @@ function normalizeUpdateConfig(value) {
     allowedHosts,
     checkIntervalHours: intervalHours,
     includePrerelease: value.include_prerelease === true,
-    primaryManifestUrl,
+    artifactFallbackBaseUrl,
+    metadataAllowedHosts,
     releaseApiUrl,
     tagPrefix,
     manifestAssetName,
@@ -187,7 +204,7 @@ async function fetchBoundedJson({ fetchImpl, url, allowedHosts, maximumBytes, ti
   }
 }
 
-function selectManifestUrl(releases, config) {
+function selectManifestRelease(releases, config) {
   if (!Array.isArray(releases)) fail("desktop_update_release_list_invalid");
   for (const release of releases.slice(0, 50)) {
     if (!release || typeof release !== "object" || release.draft === true) continue;
@@ -197,9 +214,18 @@ function selectManifestUrl(releases, config) {
       ? release.assets.find((candidate) => candidate?.name === config.manifestAssetName)
       : null;
     if (!asset) continue;
-    return validateHttpsUrl(asset.browser_download_url, config.allowedHosts);
+    const tagName = String(release.tag_name);
+    const tagVersionMatch = /^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(
+      tagName.slice(config.tagPrefix.length),
+    );
+    if (!tagVersionMatch) continue;
+    return {
+      manifestUrl: validateHttpsUrl(asset.browser_download_url, config.metadataAllowedHosts),
+      tagName,
+      tagVersion: tagVersionMatch[1],
+    };
   }
-  return "";
+  return null;
 }
 
 function validateUpdateManifest(value, { allowedHosts, platform, arch }) {
@@ -236,73 +262,70 @@ function validateUpdateManifest(value, { allowedHosts, platform, arch }) {
   if (!extensionValid || !/^[0-9A-Za-z._ -]+$/.test(filename)) {
     fail("desktop_update_artifact_filename_invalid");
   }
-  let fallbackUrl = "";
-  if (asset.fallback_url) {
-    fallbackUrl = validateHttpsUrl(
-      asset.fallback_url,
-      allowedHosts,
-      "desktop_update_artifact_fallback_url_invalid",
-    );
-    const fallbackFilename = path.basename(decodeURIComponent(new URL(fallbackUrl).pathname));
-    if (fallbackFilename !== filename) fail("desktop_update_artifact_fallback_filename_invalid");
-  }
   return {
     version,
     publishedAt,
     releaseNotes,
     platformKey: key,
-    asset: { kind: asset.kind, bytes, filename, sha256, url, fallbackUrl },
+    asset: { kind: asset.kind, bytes, filename, sha256, url },
   };
 }
 
-async function fetchPrimaryManifest({ fetchImpl, config, platform, arch }) {
-  if (!config.primaryManifestUrl) return null;
-  const rawManifest = await fetchBoundedJson({
-    fetchImpl,
-    url: config.primaryManifestUrl,
-    allowedHosts: config.allowedHosts,
-    maximumBytes: MANIFEST_MAX_BYTES,
-    timeoutMs: 10_000,
-    sizeError: "desktop_update_manifest_size_invalid",
-  });
-  return {
-    manifest: validateUpdateManifest(rawManifest, {
-      allowedHosts: config.allowedHosts,
-      platform,
-      arch,
-    }),
-    manifestUrl: config.primaryManifestUrl,
-    source: "primary",
-  };
+function assertGithubReleaseAssetUrl(assetUrl, tagName) {
+  const parsed = new URL(assetUrl);
+  const expectedSegment = `/releases/download/${encodeURIComponent(tagName)}/`;
+  if (parsed.hostname.toLowerCase() !== "github.com" || !parsed.pathname.includes(expectedSegment)) {
+    fail("desktop_update_github_artifact_url_invalid");
+  }
 }
 
 async function fetchGithubManifest({ fetchImpl, config, platform, arch }) {
   const releases = await fetchBoundedJson({
     fetchImpl,
     url: config.releaseApiUrl,
-    allowedHosts: config.allowedHosts,
+    allowedHosts: config.metadataAllowedHosts,
     maximumBytes: RELEASE_LIST_MAX_BYTES,
     timeoutMs: 10_000,
     sizeError: "desktop_update_release_list_size_invalid",
   });
-  const manifestUrl = selectManifestUrl(releases, config);
-  if (!manifestUrl) return null;
+  const selectedRelease = selectManifestRelease(releases, config);
+  if (!selectedRelease) return null;
   const rawManifest = await fetchBoundedJson({
     fetchImpl,
-    url: manifestUrl,
-    allowedHosts: config.allowedHosts,
+    url: selectedRelease.manifestUrl,
+    allowedHosts: config.metadataAllowedHosts,
     maximumBytes: MANIFEST_MAX_BYTES,
     timeoutMs: 10_000,
     sizeError: "desktop_update_manifest_size_invalid",
   });
+  const manifest = validateUpdateManifest(rawManifest, {
+    allowedHosts: config.allowedHosts,
+    platform,
+    arch,
+  });
+  if (manifest.version !== selectedRelease.tagVersion) {
+    fail("desktop_update_release_manifest_version_mismatch");
+  }
+  assertGithubReleaseAssetUrl(manifest.asset.url, selectedRelease.tagName);
+  return { manifest, ...selectedRelease, source: "github" };
+}
+
+function fallbackAssetForRelease({ config, release, asset }) {
+  if (!config.artifactFallbackBaseUrl) return null;
+  const baseUrl = config.artifactFallbackBaseUrl.endsWith("/")
+    ? config.artifactFallbackBaseUrl
+    : `${config.artifactFallbackBaseUrl}/`;
+  const url = new URL(
+    `${encodeURIComponent(release.tagName)}/${encodeURIComponent(asset.filename)}`,
+    baseUrl,
+  ).toString();
   return {
-    manifest: validateUpdateManifest(rawManifest, {
-      allowedHosts: config.allowedHosts,
-      platform,
-      arch,
-    }),
-    manifestUrl,
-    source: "github",
+    ...asset,
+    url: validateHttpsUrl(
+      url,
+      config.allowedHosts,
+      "desktop_update_artifact_fallback_url_invalid",
+    ),
   };
 }
 
@@ -311,76 +334,29 @@ async function checkForUpdate({ fetchImpl, config: rawConfig, currentVersion, pl
   parseVersion(currentVersion);
   if (!config.enabled) return { status: "disabled", config };
 
-  let primary = null;
-  let github = null;
-  let primaryError = null;
-  let githubError = null;
-  try {
-    primary = await fetchPrimaryManifest({ fetchImpl, config, platform, arch });
-  } catch (error) {
-    primaryError = error;
-  }
-  try {
-    github = await fetchGithubManifest({ fetchImpl, config, platform, arch });
-  } catch (error) {
-    githubError = error;
-  }
-
-  if (primaryError && githubError) fail("desktop_update_sources_unavailable");
-
-  const primaryAvailable = primary
-    && compareVersions(primary.manifest.version, currentVersion) > 0;
-  const githubAvailable = github
-    && compareVersions(github.manifest.version, currentVersion) > 0;
-  if (!primaryAvailable && !githubAvailable) {
+  const github = await fetchGithubManifest({ fetchImpl, config, platform, arch });
+  if (!github || compareVersions(github.manifest.version, currentVersion) <= 0) {
     return {
       status: "up-to-date",
       config,
-      manifest: primary?.manifest || github?.manifest,
+      manifest: github?.manifest,
     };
   }
-
-  let selected = primaryAvailable ? primary : github;
-  if (
-    primaryAvailable
-    && githubAvailable
-    && compareVersions(github.manifest.version, primary.manifest.version) > 0
-  ) {
-    selected = github;
-  }
-  let fallbackManifest = null;
-  let fallbackSource = "";
-  if (
-    selected.manifest.asset.fallbackUrl
-    && selected.manifest.asset.fallbackUrl !== selected.manifest.asset.url
-  ) {
-    fallbackManifest = {
-      ...selected.manifest,
-      asset: {
-        ...selected.manifest.asset,
-        url: selected.manifest.asset.fallbackUrl,
-        fallbackUrl: "",
-      },
-    };
-    fallbackSource = "aliyun";
-  } else if (
-    selected === primary
-    && githubAvailable
-    && github.manifest.version === primary.manifest.version
-    && assetsMatch(primary.manifest.asset, github.manifest.asset)
-    && github.manifest.asset.url !== primary.manifest.asset.url
-  ) {
-    fallbackManifest = github.manifest;
-    fallbackSource = "github";
-  }
+  const fallbackAsset = fallbackAssetForRelease({
+    config,
+    release: github,
+    asset: github.manifest.asset,
+  });
   return {
     status: "available",
     config,
-    manifest: selected.manifest,
-    manifestUrl: selected.manifestUrl,
-    source: selected.source,
-    fallbackManifest,
-    fallbackSource,
+    manifest: github.manifest,
+    manifestUrl: github.manifestUrl,
+    source: "github",
+    fallbackManifest: fallbackAsset
+      ? { ...github.manifest, asset: fallbackAsset }
+      : null,
+    fallbackSource: fallbackAsset ? "aliyun" : "",
   };
 }
 
@@ -498,6 +474,6 @@ module.exports = {
   downloadUpdateArtifactWithFallback,
   normalizeUpdateConfig,
   platformKey,
-  selectManifestUrl,
+  selectManifestRelease,
   validateUpdateManifest,
 };

@@ -241,9 +241,13 @@ try {
       "desktop_local_settings_missing");
     workspace.close();
   }
-  const savedPath = path.join(userDataRoot, "saved-accounts.v2.json");
+  const savedPath = path.join(userDataRoot, "saved-accounts.v3.json");
   const savedBytes = await readFile(savedPath, "utf8");
-  if (!savedBytes.includes(username) || savedBytes.includes(password)) {
+  if (
+    !savedBytes.includes(username)
+    || !savedBytes.includes("bizhub.desktop-encrypted-session.v1")
+    || savedBytes.includes(password)
+  ) {
     throw new Error("desktop_local_remembered_account_invalid");
   }
   await stopDesktop();
@@ -271,6 +275,7 @@ try {
     unified_local_login: true,
     local_directory_requests: 0,
     local_remembered_token_saved: true,
+    local_remembered_session_ciphertext_saved: true,
     local_remembered_auto_login: true,
     generic_workspace_ready: resumedTitle === "经营概览",
     settings_ready: true,

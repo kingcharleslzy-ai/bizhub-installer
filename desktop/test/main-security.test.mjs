@@ -40,6 +40,7 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "cloudLoginScript",
     "sessionStorageScript",
     "saveDesktopAccount",
+    "safeStorage",
     "clearAccountSession",
     "workspaceView.setVisible(false)",
     "workspaceView.setVisible(true)",
@@ -70,7 +71,6 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "sql.js",
     "0.0.0.0",
     "persist:workspace-",
-    "safeStorage",
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }
@@ -191,9 +191,10 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   );
   assert.equal(updateChannel.schema_version, "bizhub.desktop-update-channel.v1");
   assert.equal(
-    updateChannel.primary_manifest_url,
-    "https://qilinshuzhi.com/bizhub-updates/latest.json",
+    updateChannel.artifact_fallback_base_url,
+    "https://qilinshuzhi.com/bizhub-updates/releases/",
   );
+  assert.equal("primary_manifest_url" in updateChannel, false);
   assert.equal(updateChannel.release_api_url.startsWith("https://api.github.com/"), true);
   assert.ok(!JSON.stringify(updateChannel).includes("123" + "crystal"));
 });
@@ -240,6 +241,14 @@ test("guest demo is an isolated disposable instance and never weakens local acco
   assert.match(main, /settingsButton\.dataset\.page = "settings"/);
   assert.match(main, /nav button\[data-page=\\"settings\\"\]/);
   assert.doesNotMatch(main, /nav button:last-child/);
+});
+
+test("guest local bridge cannot change device preferences", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  assert.match(
+    main,
+    /ipcMain\.handle\("desktop:local-update-preferences"[\s\S]+workspaceState\.mode === "guest"[\s\S]+desktop_guest_demo_preferences_not_available[\s\S]+updateDesktopPreferences\(patch\)/,
+  );
 });
 
 test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {
