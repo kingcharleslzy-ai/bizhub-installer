@@ -8,7 +8,7 @@
   `saved-accounts.v2.json` once, replace the account file atomically, and reject
   guest writes to device preferences. Runtime Pack, SQLite schema, migration,
   Profile, Owner, writer, directory mapping, private business rules, and formal
-  data remain unchanged.
+  data remain unchanged. Desktop version advances to `0.1.13`.
 - Simplify the logged-out card further by removing its decorative `BH` /
   `BizHub Desktop` lockup and replacing the previous green emphasis with the
   warm charcoal, neutral surface, and restrained brass accents used by the
