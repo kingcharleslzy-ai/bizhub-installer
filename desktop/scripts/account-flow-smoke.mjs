@@ -27,6 +27,9 @@ const packagedOptions = [packagedExecutable, packagedTrustStore, packagedAccount
 if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
 }
+const rememberedSessionSmokeSupported = !(
+  packagedExecutable && process.platform === "darwin"
+);
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}:${detail}` : code);
@@ -106,7 +109,14 @@ async function evaluate(cdp, expression) {
     awaitPromise: true,
     returnByValue: true,
   });
-  if (result.exceptionDetails) fail("desktop_account_flow_evaluation_failed");
+  if (result.exceptionDetails) {
+    fail(
+      "desktop_account_flow_evaluation_failed",
+      result.exceptionDetails.exception?.description
+        || result.exceptionDetails.text
+        || "runtime_exception",
+    );
+  }
   return result.result.value;
 }
 
@@ -171,6 +181,7 @@ const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-account-flow-"))
 const trustStorePath = path.join(temporaryRoot, "trust.json");
 const directoryConfigPath = path.join(temporaryRoot, "account-directory.json");
 const userDataRoot = path.join(temporaryRoot, "user-data");
+const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v3.json");
 const certificatePath = path.join(temporaryRoot, "certificate.pem");
 const certificateKeyPath = path.join(temporaryRoot, "certificate-key.pem");
 let directoryServer = null;
@@ -566,7 +577,6 @@ try {
       })`);
       return value.title === "经营概览" && value.text.includes("星河新材料样板间") ? value : null;
     }, "desktop_account_flow_guest_product_missing");
-    guestWorkspace.close();
     if (
       !product.visibleNav.includes("主数据")
       || !product.visibleNav.includes("采购")
@@ -576,6 +586,22 @@ try {
       || product.visibleNav.includes("设置")
     ) {
       fail("desktop_account_flow_guest_product_invalid");
+    }
+    const guestPreferenceWrite = await evaluate(guestWorkspace, `window.bizhubLocalDesktop
+      .updatePreferences({ theme: "light" })
+      .then(() => ({ accepted: true, error: "" }))
+      .catch((error) => ({ accepted: false, error: String(error?.message || error) }))`);
+    const guestPreferences = await evaluate(
+      guestWorkspace,
+      "window.bizhubLocalDesktop.getPreferences()",
+    );
+    guestWorkspace.close();
+    if (
+      guestPreferenceWrite.accepted
+      || !guestPreferenceWrite.error.includes("desktop_guest_demo_preferences_not_available")
+      || guestPreferences.theme !== "dark"
+    ) {
+      fail("desktop_account_flow_guest_preferences_write_not_rejected");
     }
   }
   const guestChrome = await evaluate(cdp, "document.body.innerText");
@@ -780,6 +806,11 @@ try {
     fail("desktop_account_flow_expired_descriptor_reopened_workspace");
   }
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+  const savedCloudBeforeFreshLogin = JSON.parse(await readFile(savedAccountsPath, "utf8"))
+    .accounts.find((account) => account.accountId === "charles.example");
+  if (!savedCloudBeforeFreshLogin) {
+    fail("desktop_account_flow_saved_cloud_account_missing_before_fresh_login");
+  }
   if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", false)) {
     fail("desktop_account_flow_fresh_descriptor_input_missing");
   }
@@ -787,6 +818,11 @@ try {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     return value.mode === "cloud" && value.status === "connected" ? value : null;
   }, "desktop_account_flow_fresh_descriptor_not_connected", 45_000);
+  await waitFor(async () => {
+    const saved = JSON.parse(await readFile(savedAccountsPath, "utf8"));
+    const account = saved.accounts.find((item) => item.accountId === "charles.example");
+    return account && account.savedAt !== savedCloudBeforeFreshLogin.savedAt ? account : null;
+  }, "desktop_account_flow_fresh_login_account_not_persisted");
   if (
     issuedWorkspaceExpiries.length < 2
     || issuedWorkspaceExpiries[1] <= firstDescriptorExpiresAt
@@ -817,7 +853,6 @@ try {
   if (directoryRequests.length !== directoryRequestsBeforeSavedCloudLocal) {
     fail("desktop_account_flow_saved_cloud_local_setup_contacted_directory");
   }
-  const savedAccountsPath = path.join(userDataRoot, "saved-accounts.v2.json");
   const savedCloudBytesBeforeRejectedCreate = await readFile(savedAccountsPath, "utf8");
   if (!await submitLocalCreation(
     cdp,
@@ -930,7 +965,7 @@ try {
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
-  {
+  if (rememberedSessionSmokeSupported) {
     await stopDesktopProcess();
     await launchDesktopProcess();
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
@@ -944,11 +979,12 @@ try {
         ? value
         : null;
     }, "desktop_account_flow_remembered_login_not_connected", 45_000);
-    const rememberedSessionPath = path.join(userDataRoot, "saved-accounts.v2.json");
+    const rememberedSessionPath = path.join(userDataRoot, "saved-accounts.v3.json");
     const rememberedSessionBytes = await readFile(rememberedSessionPath, "utf8");
     if (
       !rememberedSessionBytes.includes("charles.example")
-      || !rememberedSessionBytes.includes(syntheticSessionToken)
+      || rememberedSessionBytes.includes(syntheticSessionToken)
+      || !rememberedSessionBytes.includes("bizhub.desktop-encrypted-session.v1")
       || rememberedSessionBytes.includes("correct-cloud-password")
     ) {
       fail("desktop_account_flow_remembered_session_invalid");
@@ -1033,6 +1069,10 @@ try {
     ) {
       fail("desktop_account_flow_cloud_logout_missing");
     }
+  } else {
+    await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+      "desktop_account_flow_packaged_macos_login_reset_missing");
   }
 
   const directoryRequestsBeforeConfirmedLocal = directoryRequests.length;
@@ -1094,6 +1134,7 @@ try {
     guest_demo_without_credentials: true,
     guest_demo_directory_requests: 0,
     guest_demo_owner_seed_readback: true,
+    guest_device_preferences_write_rejected: true,
     guest_demo_close_to_background_session_retained: true,
     guest_demo_reset_after_exit: true,
     guest_demo_reset_after_quit_restart: true,
@@ -1115,18 +1156,19 @@ try {
     confirmed_local_runtime_stopped: true,
     local_setup_form_reached: true,
     remembered_password_fields: 0,
-    remembered_session_token_saved: true,
-    remembered_session_auto_connected: true,
-    auto_login_reused_token_without_password: true,
-    forget_clears_session_token: true,
-    forget_revokes_cloud_session: true,
+    remembered_session_token_saved: rememberedSessionSmokeSupported,
+    remembered_session_ciphertext_saved: rememberedSessionSmokeSupported,
+    remembered_session_auto_connected: rememberedSessionSmokeSupported,
+    auto_login_reused_token_without_password: rememberedSessionSmokeSupported,
+    forget_clears_session_token: rememberedSessionSmokeSupported,
+    forget_revokes_cloud_session: rememberedSessionSmokeSupported,
     cloud_workspace_hides_desktop_chrome: true,
-    workspace_logout_clears_desktop_session: true,
+    workspace_logout_clears_desktop_session: rememberedSessionSmokeSupported,
     close_to_background_session_retained: true,
     same_process_restores_background_window: true,
     windows_tray_background_supported: true,
-    cross_restart_cookie_storage_cache_cleared: true,
-    remembered_login_test_skipped: false,
+    cross_restart_cookie_storage_cache_cleared: rememberedSessionSmokeSupported,
+    remembered_login_test_skipped: !rememberedSessionSmokeSupported,
     cloud_session_persistent: false,
     packaged: Boolean(packagedExecutable),
     viewports: ["1280x820", "960x720"],

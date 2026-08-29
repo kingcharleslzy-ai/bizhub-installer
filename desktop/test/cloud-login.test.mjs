@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -16,6 +16,7 @@ const {
 } = require("../electron/cloud-login.cjs");
 const {
   clearRememberedSession,
+  legacySavedAccountsFilePath,
   legacyCredentialFilePath,
   loadRememberedSession,
   loadSavedAccounts,
@@ -26,6 +27,26 @@ const {
   tokenExpiresAt,
   validateRememberedSession,
 } = require("../electron/credential-store.cjs");
+
+const SAFE_STORAGE = {
+  isEncryptionAvailable: () => true,
+  encryptString: (value) => Buffer.from(`safe-storage:${value}`, "utf8"),
+  decryptString: (value) => {
+    const plaintext = Buffer.from(value).toString("utf8");
+    if (!plaintext.startsWith("safe-storage:")) throw new Error("synthetic_decryption_failed");
+    return plaintext.slice("safe-storage:".length);
+  },
+};
+
+const UNAVAILABLE_SAFE_STORAGE = {
+  isEncryptionAvailable: () => false,
+  encryptString: () => { throw new Error("synthetic_encryption_must_not_run"); },
+  decryptString: () => { throw new Error("synthetic_decryption_must_not_run"); },
+};
+
+function storeOptions(userDataRoot, safeStorage = SAFE_STORAGE) {
+  return { safeStorage, userDataRoot };
+}
 
 function jwtWithExpiry(expiresAtSeconds) {
   return [
@@ -123,17 +144,20 @@ test("remembered session stores no password and can be forgotten", async () => {
   const remembered = rememberedFixture(expiresAt);
   try {
     await writeFile(legacyCredentialFilePath(root), "legacy-password-ciphertext\n");
-    await saveRememberedSession({ remembered, userDataRoot: root });
+    await saveRememberedSession({ remembered, ...storeOptions(root) });
+    await saveRememberedSession({ remembered, ...storeOptions(root) });
     const raw = await readFile(savedAccountsFilePath(root), "utf8");
     assert.ok(raw.includes("demo.user"));
-    assert.ok(raw.includes(remembered.session.token));
+    assert.equal(raw.includes(remembered.session.token), false);
+    assert.ok(raw.includes("bizhub.desktop-encrypted-session.v1"));
     assert.equal(raw.includes("correct cloud password"), false);
-    assert.deepEqual(await loadRememberedSession({ userDataRoot: root }), remembered);
+    assert.deepEqual(await loadRememberedSession(storeOptions(root)), remembered);
     if (process.platform !== "win32") {
       assert.equal((await stat(savedAccountsFilePath(root))).mode & 0o777, 0o600);
     }
     await assert.rejects(stat(legacyCredentialFilePath(root)), { code: "ENOENT" });
-    await clearRememberedSession({ userDataRoot: root });
+    assert.deepEqual(await readdir(root), [path.basename(savedAccountsFilePath(root))]);
+    await clearRememberedSession(storeOptions(root));
     await assert.rejects(stat(savedAccountsFilePath(root)), { code: "ENOENT" });
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -156,7 +180,7 @@ test("legacy cloud session migrates once and local/cloud accounts coexist withou
       schema_version: "bizhub.desktop-remembered-session.v1",
       ...remembered,
     })}\n`);
-    const migrated = await loadSavedAccounts({ userDataRoot: root, now });
+    const migrated = await loadSavedAccounts({ ...storeOptions(root), now });
     assert.equal(migrated.accounts.length, 1);
     assert.equal(migrated.accounts[0].mode, "cloud");
     await assert.rejects(stat(rememberedSessionFilePath(root)), { code: "ENOENT" });
@@ -174,13 +198,73 @@ test("legacy cloud session migrates once and local/cloud accounts coexist withou
           username: "local.admin",
         },
       },
-      userDataRoot: root,
+      ...storeOptions(root),
     });
-    const saved = await loadSavedAccounts({ userDataRoot: root, now });
+    const saved = await loadSavedAccounts({ ...storeOptions(root), now });
     assert.deepEqual(saved.accounts.map((item) => item.mode).sort(), ["cloud", "local"]);
     const raw = await readFile(savedAccountsFilePath(root), "utf8");
     assert.equal(raw.includes("password"), false);
-    assert.ok(raw.includes(localToken));
+    assert.equal(raw.includes(localToken), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("saved-accounts.v2 plaintext sessions migrate once into encrypted v3 storage", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "bizhub-saved-accounts-v2-"));
+  const now = Date.now();
+  const remembered = rememberedFixture(Math.floor(now / 1000) + 3600);
+  try {
+    await writeFile(legacySavedAccountsFilePath(root), `${JSON.stringify({
+      schema_version: "bizhub.desktop-saved-accounts.v2",
+      activeAccountId: remembered.accountId,
+      accounts: [{
+        accountId: remembered.accountId,
+        displayName: remembered.session.accountName,
+        mode: "cloud",
+        savedAt: new Date(now).toISOString(),
+        session: remembered.session,
+      }],
+    })}\n`);
+
+    const migrated = await loadSavedAccounts({ ...storeOptions(root), now });
+    assert.equal(migrated.activeAccountId, remembered.accountId);
+    assert.deepEqual(migrated.accounts[0].session, remembered.session);
+    const raw = await readFile(savedAccountsFilePath(root), "utf8");
+    assert.ok(raw.includes("bizhub.desktop-saved-accounts.v3"));
+    assert.equal(raw.includes(remembered.session.token), false);
+    await assert.rejects(stat(legacySavedAccountsFilePath(root)), { code: "ENOENT" });
+    assert.deepEqual(await readdir(root), [path.basename(savedAccountsFilePath(root))]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("unavailable safeStorage retains account metadata without persisting a session", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "bizhub-safe-storage-unavailable-"));
+  const now = Date.now();
+  const remembered = rememberedFixture(Math.floor(now / 1000) + 3600);
+  try {
+    const saved = await saveAccount({
+      account: {
+        accountId: remembered.accountId,
+        displayName: remembered.session.accountName,
+        mode: "cloud",
+        savedAt: new Date(now).toISOString(),
+        session: remembered.session,
+      },
+      ...storeOptions(root, UNAVAILABLE_SAFE_STORAGE),
+    });
+    assert.equal(saved.accounts[0].displayName, remembered.session.accountName);
+    assert.equal(saved.accounts[0].session, null);
+    const raw = await readFile(savedAccountsFilePath(root), "utf8");
+    assert.ok(raw.includes(remembered.accountId));
+    assert.equal(raw.includes(remembered.session.token), false);
+    assert.equal(JSON.parse(raw).accounts[0].session, null);
+    assert.deepEqual(
+      await loadSavedAccounts({ ...storeOptions(root, UNAVAILABLE_SAFE_STORAGE), now }),
+      saved,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

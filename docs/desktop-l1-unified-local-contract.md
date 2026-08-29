@@ -31,11 +31,14 @@ synchronize, copy, or share a writer.
 
 ## Remembered accounts
 
-Desktop never persists a password. It keeps at most eight account labels and an
-optional Runtime-issued token in `saved-accounts.v2.json`, restricted to the
-current OS user (`0600` where POSIX modes apply). macOS Keychain and Windows
-DPAPI are not required. A valid W1 `remembered-session.v1.json` cloud token is
-migrated once; malformed or expired tokens fail closed.
+Desktop never persists a password. It keeps at most eight account labels in
+plaintext and stores an optional Runtime-issued cloud or local session only as
+Electron `safeStorage` ciphertext in `saved-accounts.v3.json`, restricted to the
+current OS user (`0600` where POSIX modes apply). Writes use a same-directory
+temporary file and atomic rename. When `safeStorage` is unavailable, the label
+remains but no session is saved. Valid `saved-accounts.v2.json` and W1
+`remembered-session.v1.json` plaintext sessions migrate once; malformed or
+expired tokens fail closed.
 
 Local remember tokens contain only purpose, username, administrator
 `auth_version`, and expiry, protected by the existing local secret. Existing

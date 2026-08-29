@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Make the GitHub Release `desktop-update.json` the sole update metadata
+  authority and retain Qilin only as a same-file fallback; encrypt remembered
+  cloud and local sessions with Electron `safeStorage`, migrate plaintext
+  `saved-accounts.v2.json` once, replace the account file atomically, and reject
+  guest writes to device preferences. Runtime Pack, SQLite schema, migration,
+  Profile, Owner, writer, directory mapping, private business rules, and formal
+  data remain unchanged.
 - Simplify the logged-out card further by removing its decorative `BH` /
   `BizHub Desktop` lockup and replacing the previous green emphasis with the
   warm charcoal, neutral surface, and restrained brass accents used by the

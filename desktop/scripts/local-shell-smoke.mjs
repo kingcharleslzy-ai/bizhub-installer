@@ -94,6 +94,9 @@ const packagedExecutable = option("--packaged-executable");
 const packagedResources = option("--packaged-resources");
 const explicitUserDataRoot = option("--user-data-root");
 const keepUserData = flag("--keep-user-data");
+const rememberedSessionSmokeSupported = !(
+  packagedExecutable && process.platform === "darwin"
+);
 if (Boolean(packagedExecutable) !== Boolean(packagedResources)) {
   throw new Error("desktop_local_smoke_packaged_options_incomplete");
 }
@@ -143,6 +146,7 @@ async function launchDesktop() {
     cwd: ROOT,
     env: {
       ...process.env,
+      BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE: "1",
       BIZHUB_DESKTOP_USER_DATA_ROOT: userDataRoot,
       ...(packagedExecutable ? {} : {
         BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG: path.join(temporaryRoot, "must-not-be-read.json"),
@@ -184,12 +188,32 @@ async function submitUnifiedLogin() {
     account.dispatchEvent(new Event("input", { bubbles: true }));
     password.value = ${JSON.stringify(password)};
     password.dispatchEvent(new Event("input", { bubbles: true }));
-    remember.checked = true;
+    remember.checked = ${JSON.stringify(rememberedSessionSmokeSupported)};
     remember.dispatchEvent(new Event("change", { bubbles: true }));
     account.form.requestSubmit();
     return true;
   })()`);
   if (!submitted) throw new Error("desktop_local_unified_login_form_missing");
+}
+
+async function quitDesktop() {
+  if (!child || child.exitCode !== null) return;
+  const exitingChild = child;
+  const exited = new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("desktop_local_shell_quit_timeout")),
+      15_000,
+    );
+    exitingChild.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+  await evaluate(shellCdp, "window.bizhubDesktop.quitAppForSmoke()");
+  shellCdp.close();
+  shellCdp = null;
+  await exited;
+  child = null;
 }
 
 try {
@@ -241,28 +265,40 @@ try {
       "desktop_local_settings_missing");
     workspace.close();
   }
-  const savedPath = path.join(userDataRoot, "saved-accounts.v2.json");
+  const savedPath = path.join(userDataRoot, "saved-accounts.v3.json");
   const savedBytes = await readFile(savedPath, "utf8");
-  if (!savedBytes.includes(username) || savedBytes.includes(password)) {
+  if (
+    !savedBytes.includes(username)
+    || savedBytes.includes(password)
+  ) {
     throw new Error("desktop_local_remembered_account_invalid");
   }
-  await stopDesktop();
-  await launchDesktop();
-  const resumedState = await waitFor(async () => {
-    const state = await evaluate(shellCdp, "window.bizhubDesktop.getState()");
-    return state.mode === "local" && state.status === "connected"
-      && state.autoLoginStatus === "connected" ? state : null;
-  }, "desktop_local_remembered_auto_login_failed");
-  if (resumedState.accountLookupStatus !== "idle") {
-    throw new Error("desktop_local_remembered_login_contacted_cloud_directory");
+  if (
+    rememberedSessionSmokeSupported
+    && !savedBytes.includes("bizhub.desktop-encrypted-session.v1")
+  ) {
+    throw new Error("desktop_local_remembered_account_not_encrypted");
   }
-  const resumedWorkspace = await localWorkspaceClient();
-  const resumedTitle = await waitFor(async () => {
-    const value = await evaluate(resumedWorkspace, "document.querySelector('h1')?.textContent?.trim() || ''");
-    return value === "经营概览" ? value : null;
-  }, "desktop_local_remembered_workspace_missing");
-  resumedWorkspace.close();
-  await stopDesktop();
+  let resumedTitle = "";
+  await quitDesktop();
+  if (rememberedSessionSmokeSupported) {
+    await launchDesktop();
+    const resumedState = await waitFor(async () => {
+      const state = await evaluate(shellCdp, "window.bizhubDesktop.getState()");
+      return state.mode === "local" && state.status === "connected"
+        && state.autoLoginStatus === "connected" ? state : null;
+    }, "desktop_local_remembered_auto_login_failed");
+    if (resumedState.accountLookupStatus !== "idle") {
+      throw new Error("desktop_local_remembered_login_contacted_cloud_directory");
+    }
+    const resumedWorkspace = await localWorkspaceClient();
+    resumedTitle = await waitFor(async () => {
+      const value = await evaluate(resumedWorkspace, "document.querySelector('h1')?.textContent?.trim() || ''");
+      return value === "经营概览" ? value : null;
+    }, "desktop_local_remembered_workspace_missing");
+    resumedWorkspace.close();
+    await quitDesktop();
+  }
 
   process.stdout.write(`${JSON.stringify({
     status: "connected",
@@ -270,9 +306,13 @@ try {
     origin_kind: "random_loopback",
     unified_local_login: true,
     local_directory_requests: 0,
-    local_remembered_token_saved: true,
-    local_remembered_auto_login: true,
-    generic_workspace_ready: resumedTitle === "经营概览",
+    local_remembered_token_saved: rememberedSessionSmokeSupported,
+    local_remembered_session_ciphertext_saved: rememberedSessionSmokeSupported,
+    local_remembered_auto_login: rememberedSessionSmokeSupported,
+    remembered_login_test_skipped: !rememberedSessionSmokeSupported,
+    generic_workspace_ready: rememberedSessionSmokeSupported
+      ? resumedTitle === "经营概览"
+      : firstState.status === "connected",
     settings_ready: true,
     packaged: Boolean(packagedExecutable),
     user_data_root: userDataRoot,

@@ -13,7 +13,7 @@ const {
   downloadUpdateArtifact,
   downloadUpdateArtifactWithFallback,
   normalizeUpdateConfig,
-  selectManifestUrl,
+  selectManifestRelease,
   validateUpdateManifest,
 } = require("../electron/update-manager.cjs");
 
@@ -23,7 +23,7 @@ const CONFIG = {
   auto_download: true,
   check_interval_hours: 24,
   include_prerelease: true,
-  primary_manifest_url: "https://qilinshuzhi.com/bizhub-updates/latest.json",
+  artifact_fallback_base_url: "https://qilinshuzhi.com/bizhub-updates/releases/",
   release_api_url: "https://api.github.com/repos/example/bizhub/releases?per_page=20",
   tag_prefix: "desktop-v",
   manifest_asset_name: "desktop-update.json",
@@ -39,46 +39,18 @@ function manifest(overrides = {}) {
     platforms: {
       "darwin-arm64": {
         kind: "macos-zip",
-        url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.1/BizHub-Desktop-macOS-arm64-0.1.1.zip",
+        url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.1-internal.1/BizHub-Desktop-macOS-arm64-0.1.1.zip",
         bytes: 123,
         sha256: "a".repeat(64),
       },
       "win32-x64": {
         kind: "windows-squirrel-setup",
-        url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.1/BizHub-Desktop-Setup-Windows-x64-0.1.1.exe",
+        url: "https://github.com/example/bizhub/releases/download/desktop-v0.1.1-internal.1/BizHub-Desktop-Setup-Windows-x64-0.1.1.exe",
         bytes: 456,
         sha256: "b".repeat(64),
       },
     },
     ...overrides,
-  };
-}
-
-function primaryManifest(overrides = {}) {
-  const value = manifest(overrides);
-  return {
-    ...value,
-    platforms: Object.fromEntries(Object.entries(value.platforms).map(([key, asset]) => [
-      key,
-      {
-        ...asset,
-        fallback_url: `https://qilinshuzhi.com/bizhub-updates/releases/desktop-v${value.version}/${path.basename(new URL(asset.url).pathname)}`,
-      },
-    ])),
-  };
-}
-
-function legacyPrimaryManifest(overrides = {}) {
-  const value = manifest(overrides);
-  return {
-    ...value,
-    platforms: Object.fromEntries(Object.entries(value.platforms).map(([key, asset]) => [
-      key,
-      {
-        ...asset,
-        url: `https://qilinshuzhi.com/bizhub-updates/releases/desktop-v${value.version}/${path.basename(new URL(asset.url).pathname)}`,
-      },
-    ])),
   };
 }
 
@@ -102,14 +74,30 @@ test("compares stable and prerelease Desktop versions", () => {
   assert.throws(() => compareVersions("latest", "0.1.0"), /desktop_update_version_invalid/);
 });
 
-test("selects only a non-draft Desktop release manifest", () => {
+test("selects only a non-draft Desktop release manifest and retains its tag identity", () => {
   const config = normalizeUpdateConfig(CONFIG);
   const releases = [
     { draft: true, tag_name: "desktop-v9.0.0", assets: [{ name: "desktop-update.json", browser_download_url: "https://github.com/draft" }] },
     { draft: false, prerelease: true, tag_name: "desktop-v0.1.1", assets: [{ name: "desktop-update.json", browser_download_url: "https://github.com/update.json" }] },
     { draft: false, tag_name: "v0.7.0", assets: [{ name: "desktop-update.json", browser_download_url: "https://github.com/wrong.json" }] },
   ];
-  assert.equal(selectManifestUrl(releases, config), "https://github.com/update.json");
+  assert.deepEqual(selectManifestRelease(releases, config), {
+    manifestUrl: "https://github.com/update.json",
+    tagName: "desktop-v0.1.1",
+    tagVersion: "0.1.1",
+  });
+  assert.throws(
+    () => selectManifestRelease([{
+      draft: false,
+      prerelease: true,
+      tag_name: "desktop-v0.1.1",
+      assets: [{
+        name: "desktop-update.json",
+        browser_download_url: "https://qilinshuzhi.com/bizhub-updates/latest.json",
+      }],
+    }], config),
+    /desktop_update_host_rejected/,
+  );
 });
 
 test("validates platform-specific artifact identity and host", () => {
@@ -121,13 +109,6 @@ test("validates platform-specific artifact identity and host", () => {
   });
   assert.equal(validated.version, "0.1.1");
   assert.equal(validated.asset.kind, "macos-zip");
-  assert.equal(validated.asset.fallbackUrl, "");
-  const withFallback = validateUpdateManifest(primaryManifest(), {
-    allowedHosts: config.allowedHosts,
-    platform: "darwin",
-    arch: "arm64",
-  });
-  assert.equal(withFallback.asset.fallbackUrl.startsWith("https://qilinshuzhi.com/"), true);
   assert.throws(
     () => validateUpdateManifest(manifest({ platforms: { "darwin-arm64": { ...manifest().platforms["darwin-arm64"], url: "https://evil.example/update.zip" } } }), {
       allowedHosts: config.allowedHosts,
@@ -136,39 +117,16 @@ test("validates platform-specific artifact identity and host", () => {
     }),
     /desktop_update_host_rejected/,
   );
-  const mismatchedFallback = primaryManifest();
-  mismatchedFallback.platforms["darwin-arm64"].fallback_url =
-    "https://qilinshuzhi.com/bizhub-updates/wrong-name.zip";
-  assert.throws(
-    () => validateUpdateManifest(mismatchedFallback, {
-      allowedHosts: config.allowedHosts,
-      platform: "darwin",
-      arch: "arm64",
-    }),
-    /desktop_update_artifact_fallback_filename_invalid/,
-  );
-  const untrustedFallback = primaryManifest();
-  untrustedFallback.platforms["darwin-arm64"].fallback_url =
-    "https://evil.example/BizHub-Desktop-macOS-arm64-0.1.1.zip";
-  assert.throws(
-    () => validateUpdateManifest(untrustedFallback, {
-      allowedHosts: config.allowedHosts,
-      platform: "darwin",
-      arch: "arm64",
-    }),
-    /desktop_update_host_rejected/,
-  );
 });
 
-test("uses the GitHub artifact declared by Aliyun metadata and keeps its mirror fallback", async () => {
+test("uses only the GitHub Release manifest and derives an identical Aliyun fallback", async () => {
   const requests = [];
   const fetchImpl = async (url) => {
     requests.push(url);
-    const payload = url === CONFIG.primary_manifest_url
-      ? primaryManifest()
-      : url === CONFIG.release_api_url
-        ? githubReleases()
-        : manifest();
+    if (url.includes("qilinshuzhi.com")) {
+      throw new Error("desktop_update_test_aliyun_metadata_must_not_be_requested");
+    }
+    const payload = url === CONFIG.release_api_url ? githubReleases() : manifest();
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -182,55 +140,18 @@ test("uses the GitHub artifact declared by Aliyun metadata and keeps its mirror 
     arch: "arm64",
   });
   assert.equal(result.status, "available");
-  assert.equal(result.source, "primary");
+  assert.equal(result.source, "github");
   assert.equal(result.manifest.version, "0.1.1");
   assert.equal(result.manifest.asset.url.startsWith("https://github.com/"), true);
   assert.equal(result.fallbackManifest.asset.url.startsWith("https://qilinshuzhi.com/"), true);
   assert.equal(result.fallbackSource, "aliyun");
-  assert.equal(requests.length, 3);
+  assert.deepEqual(requests, [
+    CONFIG.release_api_url,
+    "https://github.com/example/bizhub/releases/download/desktop-v0.1.1-internal.1/desktop-update.json",
+  ]);
 });
 
-test("uses GitHub when the primary manifest is unavailable", async () => {
-  const fetchImpl = async (url) => {
-    if (url === CONFIG.primary_manifest_url) return new Response("unavailable", { status: 503 });
-    return new Response(JSON.stringify(url === CONFIG.release_api_url ? githubReleases() : manifest()), {
-      status: 200,
-    });
-  };
-  const result = await checkForUpdate({
-    fetchImpl,
-    config: CONFIG,
-    currentVersion: "0.1.0",
-    platform: "darwin",
-    arch: "arm64",
-  });
-  assert.equal(result.status, "available");
-  assert.equal(result.source, "github");
-  assert.equal(result.fallbackManifest, null);
-});
-
-test("uses a newer GitHub release when the primary mirror is stale", async () => {
-  const fetchImpl = async (url) => {
-    const payload = url === CONFIG.primary_manifest_url
-      ? primaryManifest({ version: "0.1.1" })
-      : url === CONFIG.release_api_url
-        ? githubReleases("0.1.2")
-        : manifest({ version: "0.1.2" });
-    return new Response(JSON.stringify(payload), { status: 200 });
-  };
-  const result = await checkForUpdate({
-    fetchImpl,
-    config: CONFIG,
-    currentVersion: "0.1.1",
-    platform: "darwin",
-    arch: "arm64",
-  });
-  assert.equal(result.status, "available");
-  assert.equal(result.source, "github");
-  assert.equal(result.manifest.version, "0.1.2");
-});
-
-test("fails only when both update metadata sources are unavailable", async () => {
+test("fails closed when the sole GitHub manifest source is unavailable", async () => {
   await assert.rejects(
     checkForUpdate({
       fetchImpl: async () => new Response("unavailable", { status: 503 }),
@@ -239,31 +160,42 @@ test("fails only when both update metadata sources are unavailable", async () =>
       platform: "darwin",
       arch: "arm64",
     }),
-    /desktop_update_sources_unavailable/,
+    /desktop_update_http_503/,
   );
 });
 
-test("does not attach a mismatched GitHub artifact as download fallback", async () => {
+test("rejects a release whose GitHub manifest version does not match its tag", async () => {
   const fetchImpl = async (url) => {
-    let payload;
-    if (url === CONFIG.primary_manifest_url) payload = legacyPrimaryManifest();
-    else if (url === CONFIG.release_api_url) payload = githubReleases();
-    else {
-      const value = manifest();
-      value.platforms["darwin-arm64"].sha256 = "c".repeat(64);
-      payload = value;
-    }
+    const payload = url === CONFIG.release_api_url
+      ? githubReleases("0.1.2")
+      : manifest({ version: "0.1.1" });
     return new Response(JSON.stringify(payload), { status: 200 });
   };
-  const result = await checkForUpdate({
+  await assert.rejects(checkForUpdate({
     fetchImpl,
     config: CONFIG,
     currentVersion: "0.1.0",
     platform: "darwin",
     arch: "arm64",
-  });
-  assert.equal(result.source, "primary");
-  assert.equal(result.fallbackManifest, null);
+  }), /desktop_update_release_manifest_version_mismatch/);
+});
+
+test("rejects a GitHub manifest that points its primary artifact at the mirror", async () => {
+  const fetchImpl = async (url) => {
+    const value = manifest();
+    value.platforms["darwin-arm64"].url =
+      "https://qilinshuzhi.com/bizhub-updates/releases/desktop-v0.1.1-internal.1/BizHub-Desktop-macOS-arm64-0.1.1.zip";
+    return new Response(JSON.stringify(url === CONFIG.release_api_url ? githubReleases() : value), {
+      status: 200,
+    });
+  };
+  await assert.rejects(checkForUpdate({
+    fetchImpl,
+    config: CONFIG,
+    currentVersion: "0.1.0",
+    platform: "darwin",
+    arch: "arm64",
+  }), /desktop_update_github_artifact_url_invalid/);
 });
 
 test("downloads atomically and rejects a tampered artifact", async () => {

@@ -40,6 +40,7 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "cloudLoginScript",
     "sessionStorageScript",
     "saveDesktopAccount",
+    "safeStorage",
     "clearAccountSession",
     "workspaceView.setVisible(false)",
     "workspaceView.setVisible(true)",
@@ -70,7 +71,6 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     "sql.js",
     "0.0.0.0",
     "persist:workspace-",
-    "safeStorage",
   ]) {
     assert.ok(!main.includes(prohibited), prohibited);
   }
@@ -191,9 +191,10 @@ test("desktop package keeps Node runtime empty and cloud trust public-only", asy
   );
   assert.equal(updateChannel.schema_version, "bizhub.desktop-update-channel.v1");
   assert.equal(
-    updateChannel.primary_manifest_url,
-    "https://qilinshuzhi.com/bizhub-updates/latest.json",
+    updateChannel.artifact_fallback_base_url,
+    "https://qilinshuzhi.com/bizhub-updates/releases/",
   );
+  assert.equal("primary_manifest_url" in updateChannel, false);
   assert.equal(updateChannel.release_api_url.startsWith("https://api.github.com/"), true);
   assert.ok(!JSON.stringify(updateChannel).includes("123" + "crystal"));
 });
@@ -242,23 +243,35 @@ test("guest demo is an isolated disposable instance and never weakens local acco
   assert.doesNotMatch(main, /nav button:last-child/);
 });
 
+test("guest local bridge cannot change device preferences", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  assert.match(
+    main,
+    /ipcMain\.handle\("desktop:local-update-preferences"[\s\S]+workspaceState\.mode === "guest"[\s\S]+desktop_guest_demo_preferences_not_available[\s\S]+updateDesktopPreferences\(patch\)/,
+  );
+});
+
 test("Windows local-shell cleanup retries locked profiles without skipping process evidence", async () => {
   const smoke = await readFile(path.join(ROOT, "scripts", "local-shell-smoke.mjs"), "utf8");
   assert.match(smoke, /maxRetries: process\.platform === "win32" \? 10 : 0/);
   assert.match(smoke, /retryDelay: 200/);
   assert.match(smoke, /residual_runtime_processes: 0/);
   assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
+  assert.match(smoke, /await evaluate\(shellCdp, "window\.bizhubDesktop\.quitAppForSmoke\(\)"\)/);
+  assert.match(smoke, /packagedExecutable && process\.platform === "darwin"/);
 
   const accountFlow = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
   assert.match(accountFlow, /maxRetries: process\.platform === "win32" \? 10 : 0/);
   assert.match(accountFlow, /retryDelay: 200/);
   assert.match(accountFlow, /await stopDesktopProcess\(\);[\s\S]+await rm\(temporaryRoot/);
+  assert.match(accountFlow, /packagedExecutable && process\.platform === "darwin"/);
 });
 
 test("account-flow local submission does not depend on foreground animation frames", async () => {
   const smoke = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
   assert.ok(!smoke.includes("requestAnimationFrame"));
   assert.match(smoke, /await new Promise\(\(resolve\) => setTimeout\(resolve, 0\)\)/);
+  assert.match(smoke, /desktop_account_flow_fresh_login_account_not_persisted/);
 });
 
 function mainTrustSelection(main) {

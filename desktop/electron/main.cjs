@@ -8,6 +8,7 @@ const {
   nativeImage,
   nativeTheme,
   protocol,
+  safeStorage,
   session,
   shell,
   Tray,
@@ -192,6 +193,10 @@ function desktopUserDataRoot() {
   return override ? path.resolve(override) : app.getPath("userData");
 }
 
+function credentialStoreOptions() {
+  return { safeStorage, userDataRoot: desktopUserDataRoot() };
+}
+
 function publicDesktopPreferences() {
   return {
     ...desktopPreferences,
@@ -323,7 +328,7 @@ function savedAccountSummaries(saved) {
 }
 
 async function refreshSavedAccountState() {
-  const saved = await loadSavedAccounts({ userDataRoot: desktopUserDataRoot() });
+  const saved = await loadSavedAccounts(credentialStoreOptions());
   publishState({
     activeAccountId: saved.activeAccountId || "",
     savedAccounts: savedAccountSummaries(saved),
@@ -341,7 +346,7 @@ async function saveDesktopAccount({ accountId, displayName, mode, session: saved
       savedAt: new Date().toISOString(),
       session: savedSession,
     },
-    userDataRoot: desktopUserDataRoot(),
+    ...credentialStoreOptions(),
   });
   publishState({
     activeAccountId: saved.activeAccountId || "",
@@ -1596,10 +1601,10 @@ async function loginAccount(input) {
 
 async function resumeSavedAccount(accountId) {
   const normalized = normalizeAccountId(accountId);
-  const saved = await loadSavedAccounts({ userDataRoot: desktopUserDataRoot() });
+  const saved = await loadSavedAccounts(credentialStoreOptions());
   const account = saved.accounts.find((item) => item.accountId === normalized);
   if (!account || !account.session) throw new Error("desktop_saved_account_session_missing");
-  await setActiveAccount({ accountId: normalized, userDataRoot: desktopUserDataRoot() });
+  await setActiveAccount({ accountId: normalized, ...credentialStoreOptions() });
   publishState({ activeAccountId: normalized, autoLoginStatus: "authenticating", error: "" });
   try {
     if (account.mode === "local") {
@@ -1646,7 +1651,7 @@ async function resumeSavedAccount(accountId) {
       await clearAccountSession({
         accountId: normalized,
         removeAccount: false,
-        userDataRoot: desktopUserDataRoot(),
+        ...credentialStoreOptions(),
       }).catch(() => {});
     }
     await refreshSavedAccountState().catch(() => {});
@@ -1704,7 +1709,7 @@ async function switchAccount(input = {}) {
     autoLoginStatus: "idle",
   });
   if (accountId) {
-    await setActiveAccount({ accountId, userDataRoot: desktopUserDataRoot() });
+    await setActiveAccount({ accountId, ...credentialStoreOptions() });
     await refreshSavedAccountState();
     const selected = workspaceState.savedAccounts.find((item) => item.accountId === accountId);
     if (selected?.canAutoLogin) return resumeSavedAccount(accountId);
@@ -1757,7 +1762,7 @@ async function finalizeCloudLogout({ revokeServerSession = false } = {}) {
       await clearAccountSession({
         accountId: workspaceState.activeAccountId,
         removeAccount: false,
-        userDataRoot: desktopUserDataRoot(),
+        ...credentialStoreOptions(),
       });
     }
     await resetAccountLookup();
@@ -2036,6 +2041,9 @@ function installIpcHandlers() {
   });
   ipcMain.handle("desktop:local-update-preferences", async (event, patch) => {
     requireTrustedLocalSender(event);
+    if (workspaceState.mode === "guest") {
+      throw new Error("desktop_guest_demo_preferences_not_available");
+    }
     return updateDesktopPreferences(patch);
   });
   ipcMain.handle("desktop:local-backup", async (event) => {
@@ -2070,7 +2078,7 @@ function installIpcHandlers() {
       await clearAccountSession({
         accountId,
         removeAccount: false,
-        userDataRoot: desktopUserDataRoot(),
+        ...credentialStoreOptions(),
       });
     }
     return switchAccount();
