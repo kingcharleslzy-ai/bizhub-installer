@@ -218,7 +218,10 @@ Current Desktop versions use the immutable GitHub Release
 `desktop-update.json` as the sole authority for version, filename, byte count,
 and SHA-256. The client derives a Qilin artifact URL only as a download fallback
 for those exact bytes and never reads Qilin `latest.json` to choose a version.
-No speed race, new permission system, or artifact trust source is introduced.
+GitHub remains first; 30 seconds without any response or byte progress is treated
+as a stalled transfer and switches to the identical Qilin file, while the
+30-minute total bound remains. No speed race, new permission system, or artifact
+trust source is introduced.
 
 The macOS release path first verifies the fixed unsigned Runtime Pack, signs
 every Runtime Mach-O object with the same Developer ID used for the Shell,

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep GitHub as the first artifact source, but treat 30 seconds without any
+  response or download progress as a stalled transfer and retry the
+  byte-identical Qilin mirror immediately. The existing 30-minute total bound,
+  GitHub-only Manifest authority, filename, byte-count, and SHA-256 checks stay
+  unchanged. Desktop version advances to `0.1.14`; Runtime Pack, SQLite schema,
+  migration, Profile, Owner, writer, account directory, private business rules,
+  and formal data remain unchanged.
 - Make the GitHub Release `desktop-update.json` the sole update metadata
   authority and retain Qilin only as a same-file fallback; encrypt remembered
   cloud and local sessions with Electron `safeStorage`, migrate plaintext

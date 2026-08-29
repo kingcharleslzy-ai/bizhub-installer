@@ -366,6 +366,7 @@ async function downloadUpdateArtifact({
   allowedHosts,
   destination,
   timeoutMs = 30 * 60 * 1000,
+  stallTimeoutMs = 30 * 1000,
   onProgress = () => {},
 }) {
   validateHttpsUrl(asset.url, allowedHosts);
@@ -373,7 +374,19 @@ async function downloadUpdateArtifact({
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   await rm(partial, { force: true });
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let abortReason = "";
+  let stallTimer = null;
+  const abortDownload = (reason) => {
+    if (controller.signal.aborted) return;
+    abortReason = reason;
+    controller.abort();
+  };
+  const timer = setTimeout(() => abortDownload("timeout"), timeoutMs);
+  const armStallTimer = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => abortDownload("stalled"), stallTimeoutMs);
+  };
+  armStallTimer();
   let fileHandle = null;
   let reader = null;
   try {
@@ -397,7 +410,11 @@ async function downloadUpdateArtifact({
     let bytes = 0;
     while (true) {
       const chunkResult = await reader.read();
-      if (chunkResult.done) break;
+      if (chunkResult.done) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+        break;
+      }
       const chunk = Buffer.from(chunkResult.value);
       bytes += chunk.length;
       if (bytes > ARTIFACT_MAX_BYTES || bytes > asset.bytes) {
@@ -407,6 +424,7 @@ async function downloadUpdateArtifact({
       digest.update(chunk);
       await fileHandle.write(chunk);
       onProgress({ bytes, totalBytes: asset.bytes });
+      armStallTimer();
     }
     await fileHandle.sync();
     await fileHandle.close();
@@ -419,12 +437,15 @@ async function downloadUpdateArtifact({
   } catch (error) {
     if (controller.signal.aborted || error?.name === "AbortError") {
       await rm(partial, { force: true });
-      fail("desktop_update_download_timeout");
+      fail(abortReason === "stalled"
+        ? "desktop_update_download_stalled"
+        : "desktop_update_download_timeout");
     }
     await rm(partial, { force: true });
     throw error;
   } finally {
     clearTimeout(timer);
+    clearTimeout(stallTimer);
     if (fileHandle) await fileHandle.close().catch(() => {});
     reader?.releaseLock?.();
   }
@@ -437,6 +458,7 @@ async function downloadUpdateArtifactWithFallback({
   allowedHosts,
   destination,
   timeoutMs = 30 * 60 * 1000,
+  stallTimeoutMs = 30 * 1000,
   source = "primary",
   fallbackSource = "github",
   onProgress = () => {},
@@ -448,6 +470,7 @@ async function downloadUpdateArtifactWithFallback({
       allowedHosts,
       destination,
       timeoutMs,
+      stallTimeoutMs,
       onProgress,
     });
     return { ...downloaded, source };
@@ -459,6 +482,7 @@ async function downloadUpdateArtifactWithFallback({
       allowedHosts,
       destination,
       timeoutMs,
+      stallTimeoutMs,
       onProgress,
     });
     return { ...downloaded, source: fallbackSource };
