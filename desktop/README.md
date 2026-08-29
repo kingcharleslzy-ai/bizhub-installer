@@ -11,9 +11,13 @@ account + password -> exact existing local account -> fixed Generic Runtime -> l
 guest button       -> disposable Generic sample room -> synthetic Owner-backed data -> reset on exit
 ```
 
-The Shell presents account and password in one form, but the account-directory
-request still contains only the normalized account identifier and never the
-password. After one signed Workspace is verified, the Shell submits the password
+The unauthenticated Shell uses a bundled, customer-neutral blurred workbench as
+its background; it does not load a customer Workspace, remote business page, or
+business data before login. A saved account is shown as one compact identity row
+and asks only for its password; choosing `切换账号` expands the account field and
+saved-account picker. The account-directory request still contains only the
+normalized account identifier and never the password. After one signed Workspace
+is verified, the Shell submits the password
 only to that Workspace's same-origin BizHub authentication route and opens the
 authenticated application without exposing the intermediate web login page.
 After authentication, the cloud Workspace replaces the Desktop chrome and uses

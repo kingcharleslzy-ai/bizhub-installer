@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Replace the wide unauthenticated Desktop header with an integrated native
+  title area, a bundled customer-neutral blurred workbench background, and one
+  compact login card. A selected saved account now asks only for its password;
+  `切换账号` expands the account field and saved-account picker. Repeated login,
+  guest, and data-boundary copy is removed while update, guest, Generic Local,
+  automatic-login, and password-routing behavior stays unchanged. Desktop
+  version advances to `0.1.11`; Runtime Pack, SQLite schema, Profile, migration,
+  Owner, writer, directory mapping, and production data remain unchanged.
 - Prefer immutable GitHub Release files for Desktop downloads while retaining
   the byte-identical Qilin-hosted artifact as a validated `fallback_url`.
   Existing clients ignore the optional field and use GitHub immediately; this
