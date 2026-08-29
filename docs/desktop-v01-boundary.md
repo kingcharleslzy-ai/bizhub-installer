@@ -149,6 +149,10 @@ workbench preview. The preview performs no remote load and contains no customer
 or formal business data. A selected saved account collapses the account field
 until the user chooses `切换账号`; login, password routing, automatic-login,
 guest, Generic Local, update, Runtime, and formal-data boundaries are unchanged.
+Desktop 0.1.12 removes the decorative login-card brand lockup and aligns the
+logged-out palette with the formal workspace's neutral surfaces, charcoal
+actions, and restrained warm accent. It changes no login behavior, account
+directory, guest flow, Generic Local lifecycle, Runtime, or data authority.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag

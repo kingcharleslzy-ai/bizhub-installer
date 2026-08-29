@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Simplify the logged-out card further by removing its decorative `BH` /
+  `BizHub Desktop` lockup and replacing the previous green emphasis with the
+  warm charcoal, neutral surface, and restrained brass accents used by the
+  formal business workspace. Authentication, guest, Generic Local, update,
+  Runtime, and data-authority behavior remain unchanged. Desktop version
+  advances to `0.1.12`.
 - Replace the wide unauthenticated Desktop header with an integrated native
   title area, a bundled customer-neutral blurred workbench background, and one
   compact login card. A selected saved account now asks only for its password;
