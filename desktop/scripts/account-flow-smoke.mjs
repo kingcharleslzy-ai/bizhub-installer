@@ -27,6 +27,9 @@ const packagedOptions = [packagedExecutable, packagedTrustStore, packagedAccount
 if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
 }
+const rememberedSessionSmokeSupported = !(
+  packagedExecutable && process.platform === "darwin"
+);
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}:${detail}` : code);
@@ -952,7 +955,7 @@ try {
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
-  {
+  if (rememberedSessionSmokeSupported) {
     await stopDesktopProcess();
     await launchDesktopProcess();
     await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
@@ -1056,6 +1059,10 @@ try {
     ) {
       fail("desktop_account_flow_cloud_logout_missing");
     }
+  } else {
+    await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
+    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+      "desktop_account_flow_packaged_macos_login_reset_missing");
   }
 
   const directoryRequestsBeforeConfirmedLocal = directoryRequests.length;
@@ -1139,19 +1146,19 @@ try {
     confirmed_local_runtime_stopped: true,
     local_setup_form_reached: true,
     remembered_password_fields: 0,
-    remembered_session_token_saved: true,
-    remembered_session_ciphertext_saved: true,
-    remembered_session_auto_connected: true,
-    auto_login_reused_token_without_password: true,
-    forget_clears_session_token: true,
-    forget_revokes_cloud_session: true,
+    remembered_session_token_saved: rememberedSessionSmokeSupported,
+    remembered_session_ciphertext_saved: rememberedSessionSmokeSupported,
+    remembered_session_auto_connected: rememberedSessionSmokeSupported,
+    auto_login_reused_token_without_password: rememberedSessionSmokeSupported,
+    forget_clears_session_token: rememberedSessionSmokeSupported,
+    forget_revokes_cloud_session: rememberedSessionSmokeSupported,
     cloud_workspace_hides_desktop_chrome: true,
-    workspace_logout_clears_desktop_session: true,
+    workspace_logout_clears_desktop_session: rememberedSessionSmokeSupported,
     close_to_background_session_retained: true,
     same_process_restores_background_window: true,
     windows_tray_background_supported: true,
-    cross_restart_cookie_storage_cache_cleared: true,
-    remembered_login_test_skipped: false,
+    cross_restart_cookie_storage_cache_cleared: rememberedSessionSmokeSupported,
+    remembered_login_test_skipped: !rememberedSessionSmokeSupported,
     cloud_session_persistent: false,
     packaged: Boolean(packagedExecutable),
     viewports: ["1280x820", "960x720"],

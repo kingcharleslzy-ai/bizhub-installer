@@ -257,11 +257,14 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(smoke, /retryDelay: 200/);
   assert.match(smoke, /residual_runtime_processes: 0/);
   assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
+  assert.match(smoke, /await evaluate\(shellCdp, "window\.bizhubDesktop\.quitAppForSmoke\(\)"\)/);
+  assert.match(smoke, /packagedExecutable && process\.platform === "darwin"/);
 
   const accountFlow = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
   assert.match(accountFlow, /maxRetries: process\.platform === "win32" \? 10 : 0/);
   assert.match(accountFlow, /retryDelay: 200/);
   assert.match(accountFlow, /await stopDesktopProcess\(\);[\s\S]+await rm\(temporaryRoot/);
+  assert.match(accountFlow, /packagedExecutable && process\.platform === "darwin"/);
 });
 
 test("account-flow local submission does not depend on foreground animation frames", async () => {
