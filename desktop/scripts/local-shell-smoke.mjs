@@ -211,6 +211,16 @@ async function localWorkspaceClient() {
   return client;
 }
 
+function preEntryWorkspaceReady(product) {
+  return (
+    product.title === "开始使用"
+    && product.nav.length === 1
+    && product.nav.includes("开始使用")
+    && product.text.includes("进入我的企业空间")
+    && !product.text.includes("BizHub is ready")
+  );
+}
+
 async function submitUnifiedLogin() {
   const submitted = await evaluate(shellCdp, `(() => {
     const account = document.querySelector('input[autocomplete="username"]');
@@ -273,19 +283,14 @@ try {
   }
   {
     const workspace = await localWorkspaceClient();
-    const product = await waitFor(async () => {
+    await waitFor(async () => {
       const value = await evaluate(workspace, `({
         title: document.querySelector("h1")?.textContent?.trim() || "",
         nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
         text: document.body.innerText
       })`);
-      return value.title === "开始使用" && value.nav.includes("开始使用") ? value : null;
+      return preEntryWorkspaceReady(value) ? value : null;
     }, "desktop_local_workspace_product_missing");
-    if (
-      product.nav.length !== 1
-      || !product.text.includes("进入我的企业空间")
-      || product.text.includes("BizHub is ready")
-    ) throw new Error("desktop_local_workspace_product_invalid");
     await assertWorkspaceViewports(
       workspace,
       "进入我的企业空间",
