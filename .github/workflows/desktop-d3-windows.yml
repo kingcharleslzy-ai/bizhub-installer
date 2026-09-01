@@ -15,6 +15,7 @@ on:
     branches:
       - codex/desktop-d3-windows-x64
       - codex/desktop-l1-unified-local-20260827
+      - generic/customer-cobuild-pack-a-desktop-20260901
 
 permissions:
   contents: write

@@ -1,11 +1,11 @@
 {
-  "allowlist_contract_sha256": "b594369d0e8a1b3e9c418963d6eaac48efd5fcc8a760075f7a18a7af32118af2",
-  "allowlist_tree_digest": "3c2770526b509439f4a1a3b2226066b3b86456b7595f462fead848e8ae98211d",
+  "allowlist_contract_sha256": "5e7a8aa8ef1acb796857c317c9d0fabd712634262fe68686253d47d4f911b1ca",
+  "allowlist_tree_digest": "8a86f0d67f48d9518287ca0f0324bb7b749d562e70589bfcab3fa3841e586bc6",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72",
-  "core_artifact_digest": "sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72",
+  "artifact_sha256": "5109d59e2443ca86b96db8e3873e4959e9669298099a46e9a6d5360a17096f4f",
+  "core_artifact_digest": "sha256:5109d59e2443ca86b96db8e3873e4959e9669298099a46e9a6d5360a17096f4f",
   "deterministic_rebuild_equal": true,
-  "file_count": 41,
+  "file_count": 42,
   "files": [
     {
       "path": "backend/__init__.py",
@@ -14,12 +14,12 @@
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.json",
-      "sha256": "768a21143f91d6990a69f53b707922bcb0655c8d3f87de970970e562c03e914b",
-      "size": 28224
+      "sha256": "765c9da965c0548847315824d641a34898bfd13235256ffd7386f0d3038858e1",
+      "size": 29327
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.sha256",
-      "sha256": "1da7013adeae1f31b4ba918a738dfa65f6e15162058c63ef608017ec5c97c768",
+      "sha256": "d8d3fc37a2a2c7a55f041215a3645895fa731a06f43aafbeb779f1ab83285a4b",
       "size": 65
     },
     {
@@ -29,8 +29,8 @@
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "ec435e8aa65070a902ebcab452e0e46dfbc8d195b94a631d941ace01209d3cc7",
-      "size": 9284
+      "sha256": "e3ebd8b5fbbfd63d8a3a47a21dc0c0877d587672e3a6f01ed7c2cd17d86ff2be",
+      "size": 11335
     },
     {
       "path": "backend/generic_kernel/backup.py",
@@ -46,6 +46,11 @@
       "path": "backend/generic_kernel/models.py",
       "sha256": "995c11f81ea907f14a5bd0a0c9e8eeb265eae72537c145662879a2b60534f8be",
       "size": 2515
+    },
+    {
+      "path": "backend/generic_kernel/onboarding.py",
+      "sha256": "bfcea24b2de54cadcb8183105855c9fcf5866d3fdc02351fcd2882edab0b0ee2",
+      "size": 13123
     },
     {
       "path": "backend/generic_kernel/profile.py",
@@ -69,13 +74,13 @@
     },
     {
       "path": "backend/kernel/module_contract.py",
-      "sha256": "f35c221cb1e06c8e75dfa33bae186e60fdd56467a52aab8392e0671973c6800f",
-      "size": 2078
+      "sha256": "153d7ea6a1c8ecd60820f0fcf04a530708759729e8c0098e5b65e2148566fbcb",
+      "size": 2834
     },
     {
       "path": "backend/kernel/profile_registry.py",
-      "sha256": "3c0631fbbb2c0e5934e802d1003cd51c6861cf62fd9de5d6451f0d2321868fca",
-      "size": 19565
+      "sha256": "1e8349af373a45f3dadb7359284ad9ef193d18798c0a26080d1845711546f4c1",
+      "size": 18591
     },
     {
       "path": "backend/modules/__init__.py",
@@ -199,8 +204,8 @@
     },
     {
       "path": "backend/profiles/generic-kernel-smoke.lock.json",
-      "sha256": "b7f33cc0bb10be8206837ba1f014d8ce491a5a4218bc5883b129a49858565a49",
-      "size": 2297
+      "sha256": "24444760abbecbbe400028235a652c699ed4a174770a86ef7314977f22296162",
+      "size": 2258
     },
     {
       "path": "requirements-generic.txt",
@@ -215,5 +220,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "0c05a44a22dc049ef4760173307a6b4af5a3dfad"
+  "source_commit": "a5f01dbf3cec935858fafc33d5c80073745df9c9"
 }

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add the Generic first-entry candidate on top of the existing unified Desktop
+  login, signed cloud discovery, explicit local-company creation, and single
+  Runtime authority. A new Workspace is bound to one stable identity and keeps
+  every business API/menu closed until the authenticated user explicitly enters
+  it; restart resumes the same stage. The state reuses the existing kernel audit
+  Owner and adds no migration, business table, module, or writer. The empty
+  system now explains data location and offers a few plain-language first tasks
+  instead of opening on a zero-filled dashboard. This is unreleased and does not
+  implement registration, cloud provisioning/invitations, co-build chat, or a
+  module Builder.
 - Keep GitHub as the first artifact source, but treat 30 seconds without any
   response or download progress as a stalled transfer and retry the
   byte-identical Qilin mirror immediately. The existing 30-minute total bound,

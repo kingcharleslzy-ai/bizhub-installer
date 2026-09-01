@@ -38,6 +38,9 @@ test("guest seed uses preview apply and validates readback", async () => {
   const fetchRuntime = async (_runtime, pathname, options = {}) => {
     requests.push({ pathname, options });
     const response = { ok: true, status: 200 };
+    if (pathname === "/api/workspace-onboarding/state") {
+      return { response, body: { stage: "workspace_ready", revision: 1 } };
+    }
     if (pathname === "/api/delivery/overview") {
       return { response, body: {
         parties: 4,
@@ -69,11 +72,20 @@ test("guest seed uses preview apply and validates readback", async () => {
   assert.equal(result.overview.inventory_movements, 3);
   assert.equal(result.inventory_balances.length, 2);
   const mutations = requests.filter((item) => item.options.method === "POST");
-  assert.equal(mutations.length, 16);
+  assert.equal(mutations.length, 17);
   for (const item of mutations) {
     assert.equal(item.options.headers["X-BizHub-Request"], "1");
   }
   const paths = requests.map((item) => item.pathname);
+  assert.deepEqual(paths.slice(0, 2), [
+    "/api/workspace-onboarding/state",
+    "/api/workspace-onboarding/enter",
+  ]);
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    schema_version: "bizhub.workspace-onboarding-state.v1",
+    expected_revision: 1,
+    idempotency_key: "guest-demo-enter-v1",
+  });
   for (const basePath of ["/api/master-data/catalog", "/api/procurement", "/api/sales", "/api/inventory"]) {
     assert.ok(paths.includes(`${basePath}/preview`), basePath);
     assert.ok(paths.includes(`${basePath}/apply`), basePath);

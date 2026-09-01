@@ -259,6 +259,11 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
   assert.match(smoke, /await evaluate\(shellCdp, "window\.bizhubDesktop\.quitAppForSmoke\(\)"\)/);
   assert.match(smoke, /packagedExecutable && process\.platform === "darwin"/);
+  assert.match(smoke, /return preEntryWorkspaceReady\(value\) \? value : null/);
+  assert.match(
+    smoke,
+    /function preEntryWorkspaceReady\(product\)[\s\S]+product\.nav\.length === 1[\s\S]+product\.text\.includes\("进入我的企业空间"\)[\s\S]+!product\.text\.includes\("BizHub is ready"\)/,
+  );
 
   const accountFlow = await readFile(path.join(ROOT, "scripts", "account-flow-smoke.mjs"), "utf8");
   assert.match(accountFlow, /maxRetries: process\.platform === "win32" \? 10 : 0/);

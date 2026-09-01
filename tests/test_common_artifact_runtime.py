@@ -64,6 +64,10 @@ def test_public_delivery_runs_the_vendored_common_owner(tmp_path: Path) -> None:
                 "brand_mark": "S",
                 "timezone": "UTC",
                 "currency": "USD",
+                "data_identity": "deployment:synthetic-public",
+                "data_authority_mode": "cloud",
+                "authority_epoch": 1,
+                "writer_instance_id": "deployment-writer:synthetic-public",
             }
         ),
         encoding="utf-8",
@@ -104,6 +108,26 @@ with TestClient(app) as client:
     system_map = client.get("/api/system-map").json()
     assert system_map["profile_id"] == "generic-kernel-smoke"
     assert system_map["core_artifact_digest"] == health.json()["core_artifact_digest"]
+    onboarding = client.get("/api/workspace-onboarding/state")
+    assert onboarding.status_code == 200
+    assert onboarding.json()["workspace_id"] == "deployment:synthetic-public"
+    assert onboarding.json()["stage"] == "workspace_ready"
+    assert onboarding.json()["accepts_business_material"] is False
+    blocked = client.get("/api/delivery/overview")
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "workspace_onboarding_required"
+    entered = client.post(
+        "/api/workspace-onboarding/enter",
+        headers={"X-BizHub-Request": "1"},
+        json={
+            "schema_version": "bizhub.workspace-onboarding-state.v1",
+            "expected_revision": 1,
+            "idempotency_key": "synthetic-public-enter-0001",
+        },
+    )
+    assert entered.status_code == 200
+    assert entered.json()["stage"] == "enterprise_context_ready"
+    assert entered.json()["accepts_business_material"] is True
     drafts = [
         {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
         {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},

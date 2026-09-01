@@ -102,7 +102,19 @@ try {
 
   runtime = await startLocalRuntime({ instanceRoot, runtimePack, trustPath });
   await loginLocalRuntime(runtime, username, password);
+  const onboarding = await fetchRuntime(runtime, "/api/workspace-onboarding/state");
+  assert.equal(onboarding.response.status, 200);
+  let onboardingStage = onboarding.body.stage;
   if (options.mode === "create") {
+    assert.equal(onboardingStage, "workspace_ready");
+    const entered = await mutation(runtime, "/api/workspace-onboarding/enter", {
+      schema_version: "bizhub.workspace-onboarding-state.v1",
+      expected_revision: onboarding.body.revision,
+      idempotency_key: "desktop-upgrade-enter-v1",
+    });
+    assert.equal(entered.response.status, 200);
+    assert.equal(entered.body.stage, "enterprise_context_ready");
+    onboardingStage = entered.body.stage;
     const drafts = [
       { resource_kind: "party", resource_id: "upgrade-supplier", canonical_name: "Synthetic Upgrade Supplier" },
       { resource_kind: "product", resource_id: "upgrade-product", canonical_name: "Synthetic Upgrade Product" },
@@ -116,6 +128,8 @@ try {
     assert.equal(applied.body.owner_ref, "master_data:catalog-owner");
     assert.equal(applied.body.disposition, "applied");
     applyDisposition = applied.body.disposition;
+  } else {
+    assert.equal(onboardingStage, "enterprise_context_ready");
   }
   const health = await fetchRuntime(runtime, "/api/health");
   assert.equal(health.response.status, 200);
@@ -137,6 +151,7 @@ try {
     runtime_pack_tree_digest: release.manifest.pack_tree_digest,
     owner_ref: "master_data:catalog-owner",
     apply_disposition: applyDisposition,
+    onboarding_stage: onboardingStage,
     readback_location_id: location.location_id,
     readback_canonical_name: location.canonical_name,
     residual_runtime_processes: 0,

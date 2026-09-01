@@ -53,6 +53,18 @@ test("cross-version fixtures always produce a distinct older semantic version", 
   assert.throws(() => previousFixtureVersion("1.2"), /desktop_fixture_current_version_invalid/);
 });
 
+test("cross-version Owner readback enters once and preserves the onboarding gate", async () => {
+  const source = await readFile(path.join(ROOT, "scripts", "versioned-owner-readback.mjs"), "utf8");
+  const state = source.indexOf('fetchRuntime(runtime, "/api/workspace-onboarding/state")');
+  const enter = source.indexOf('mutation(runtime, "/api/workspace-onboarding/enter"');
+  const preview = source.indexOf('mutation(runtime, "/api/master-data/catalog/preview"');
+  assert.ok(state >= 0 && enter > state && preview > enter);
+  assert.match(source, /assert\.equal\(onboardingStage, "workspace_ready"\)/);
+  assert.match(source, /assert\.equal\(onboardingStage, "enterprise_context_ready"\)/);
+  assert.match(source, /idempotency_key: "desktop-upgrade-enter-v1"/);
+  assert.match(source, /onboarding_stage: onboardingStage/);
+});
+
 test("the configured W2 temporary directory remains an intentional production blocker", async () => {
   const directory = JSON.parse(await readFile(path.join(ROOT, "config", "account-directory.json"), "utf8"));
   assert.throws(() => validateProductionDirectory(directory), /desktop_release_directory_/);

@@ -38,6 +38,12 @@ DERIVED_EXTENSION_MODE = "read-only-reference"
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMPORT_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
+COMPANY_IDENTITY_FIELDS = {
+    "authority_epoch",
+    "data_authority_mode",
+    "data_identity",
+    "writer_instance_id",
+}
 
 
 def now() -> str:
@@ -191,6 +197,24 @@ def canonical(value: Any) -> bytes:
 def plan_hash(plan: dict[str, Any]) -> str:
     payload = {key: value for key, value in plan.items() if key != "plan_hash"}
     return hashlib.sha256(canonical(payload)).hexdigest()
+
+
+def company_profile_transition(
+    existing: dict[str, Any],
+    planned: dict[str, Any],
+) -> str:
+    """Allow only the one-time addition of stable Workspace identity fields."""
+
+    if existing == planned:
+        return "unchanged"
+    legacy_shape = {
+        key: value
+        for key, value in planned.items()
+        if key not in COMPANY_IDENTITY_FIELDS
+    }
+    if existing == legacy_shape:
+        return "identity_enrichment"
+    raise RuntimeError("company profile changes are not supported by update")
 
 
 def validate_bind(access: str, bind_address: str, hostname: str) -> None:
@@ -392,6 +416,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
     if args.hostname and not re.fullmatch(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", args.hostname):
         raise ValueError("hostname is invalid")
     source = source_identity()
+    fingerprint = target_fingerprint()
     deployment_image = deployment_image_plan(
         candidate_core_image=args.candidate_core_image,
         candidate_image=args.candidate_image,
@@ -405,6 +430,14 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
         "brand_mark": args.brand_mark.strip(),
         "timezone": args.timezone,
         "currency": args.currency,
+        "data_identity": "deployment:" + hashlib.sha256(
+            f"{fingerprint}:{args.profile_id}".encode()
+        ).hexdigest(),
+        "data_authority_mode": "cloud",
+        "authority_epoch": 1,
+        "writer_instance_id": "deployment-writer:" + hashlib.sha256(
+            f"{fingerprint}:{args.profile_id}:writer".encode()
+        ).hexdigest(),
     }
     external_steps = []
     if args.access == "domain":
@@ -422,7 +455,7 @@ def make_plan(args: argparse.Namespace) -> dict[str, Any]:
         },
         "deployment_image": deployment_image,
         "target": {
-            "fingerprint": target_fingerprint(),
+            "fingerprint": fingerprint,
             "platform": "ubuntu-24.04",
             "paths": {"config": str(ETC), "data": str(APP_DATA), "backups": str(BACKUPS), "state": str(STATE)},
         },
@@ -870,12 +903,18 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
             "health": wait_healthy(plan),
             "resources": require_container_resources(plan["instance"]),
         }
-    if json.loads((ETC / "company.json").read_text(encoding="utf-8")) != plan["company_profile"]:
-        raise RuntimeError("company profile changes are not supported by update")
+    company_path = ETC / "company.json"
+    existing_company_profile = json.loads(company_path.read_text(encoding="utf-8"))
+    profile_transition = company_profile_transition(
+        existing_company_profile,
+        plan["company_profile"],
+    )
     backup = backup_instance("before-update")
     old_image = previous["image"]
     image = build_image(plan)
     try:
+        if profile_transition == "identity_enrichment":
+            write_secure(company_path, canonical(plan["company_profile"]) + b"\n")
         start_container(plan, image)
         health = wait_healthy(plan)
         resources = require_container_resources(plan["instance"])
@@ -890,6 +929,8 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
         shutil.copy2(source, destination)
         os.chown(destination, 10001, 10001)
         os.chmod(destination, 0o600)
+        if profile_transition == "identity_enrichment":
+            write_secure(company_path, canonical(existing_company_profile) + b"\n")
         rollback_instance = {**previous["instance"], "resource_limits": plan["instance"]["resource_limits"]}
         start_container({"instance": rollback_instance}, old_image)
         wait_healthy({"instance": previous["instance"]})
@@ -914,7 +955,13 @@ def update_instance(args: argparse.Namespace) -> dict[str, Any]:
         "rollback_point": rollback_point,
     }
     write_state(updated)
-    return {"status": "updated", "backup": backup, "health": health, "resources": resources}
+    return {
+        "status": "updated",
+        "backup": backup,
+        "health": health,
+        "resources": resources,
+        "company_profile_transition": profile_transition,
+    }
 
 
 def rollback_instance(args: argparse.Namespace) -> dict[str, Any]:

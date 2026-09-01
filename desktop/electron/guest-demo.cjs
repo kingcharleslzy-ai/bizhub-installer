@@ -167,6 +167,25 @@ async function applyOwner(fetchRuntime, runtime, basePath, command) {
 }
 
 async function seedGuestDemo(runtime, fetchRuntime) {
+  const onboarding = await requestJson(
+    fetchRuntime,
+    runtime,
+    "/api/workspace-onboarding/state",
+  );
+  await requestJson(
+    fetchRuntime,
+    runtime,
+    "/api/workspace-onboarding/enter",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-BizHub-Request": "1" },
+      body: JSON.stringify({
+        schema_version: "bizhub.workspace-onboarding-state.v1",
+        expected_revision: onboarding.revision,
+        idempotency_key: "guest-demo-enter-v1",
+      }),
+    },
+  );
   const catalogPreview = await requestJson(
     fetchRuntime,
     runtime,

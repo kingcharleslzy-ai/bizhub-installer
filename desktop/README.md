@@ -9,6 +9,7 @@ account + password -> exact existing local account -> fixed Generic Runtime -> l
                    -> otherwise account-only HTTPS directory -> signed cloud Workspace -> direct cloud login
                    -> confirmed unknown + no local instance -> explicit first-time local creation
 guest button       -> disposable Generic sample room -> synthetic Owner-backed data -> reset on exit
+authenticated Runtime -> 开始使用 -> explicit enter -> existing business pages
 ```
 
 The unauthenticated Shell uses a bundled, customer-neutral blurred workbench as
@@ -31,7 +32,7 @@ Workspace is an independently signed, expiring connection envelope bound to
 `runtime_mode=cloud` and `data_authority_mode=cloud`. That Workspace Runtime owns
 authentication, permissions, UI, Owners, and formal data. A confirmed unknown
 account may create the machine's one Generic local instance inline. The combined
-login surface also exposes one explicit `创建本地账号` action whenever no local
+login surface also exposes one explicit `第一次使用，创建本机企业` action whenever no local
 instance exists; opening it does not query the directory or create data before
 confirmation. Confirmation performs a fresh directory lookup and calls bootstrap
 only after an explicit `not_found`. An existing cloud Workspace, a registered
@@ -39,7 +40,7 @@ account with no Workspace, directory timeout/error, invalid signature/response,
 or missing configuration never creates local data or changes a saved cloud
 account.
 
-The same login surface has one `游客体验` button. It needs no account or
+The same login surface has one `先看看样板` button. It needs no account or
 password and never calls the account directory. Desktop creates the sample room
 under a separate `guest-demo` root, uses the fixed Generic Runtime, and loads
 only customer-neutral synthetic master data, procurement, sales, and inventory
@@ -60,8 +61,11 @@ account's token and returns to the same form.
 
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Its Vue
-workspace provides overview, master data, procurement, sales, inventory, and a
-small settings page. Bounded delivery read models project existing tables;
+workspace first shows one plain-language `开始使用` page. Until the user
+explicitly enters the bound company Workspace, business APIs and menus stay
+closed. After entry it provides overview, basic data, procurement, sales,
+inventory, and a small settings page, and restart preserves that stage. Bounded
+delivery read models project existing tables;
 formal mutations still submit typed previews to the existing Generic Owners.
 Procurement and sales actions require a source-evidence reference supplied by
 the user before preview.
@@ -128,11 +132,16 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`55d85fbf7a8be3ea2f04abfb79cbd3e59fe71d6314ffd524b1e399346662a95f`) and
+`db3c92e6c88ae5d7d1dfb6d5e2b0a7cdf86a864e5091ef781d388a1c341765d3`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`76462083376acd82b0ca2a303b8250599ce9560f35a7190882da0c697b1f938f`).
+`260bb35720ec12d37ffb389912096bb1430b13f9e184d98bc0ed2facbe82a325`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
+
+Both fixed review inputs above now bind the Pack A common artifact. The Windows
+input was rebuilt twice on `windows-2022` and captured only after the two pack
+trees matched. Merge readiness still requires the complete D3 and Workspace
+Flow matrices to pass on this exact follow-up head.
 
 ## Local lifecycle
 

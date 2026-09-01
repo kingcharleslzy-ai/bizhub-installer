@@ -90,6 +90,39 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
+const WORKSPACE_VIEWPORTS = [
+  [1920, 1080],
+  [1366, 768],
+  [960, 720],
+  [768, 900],
+  [414, 896],
+  [375, 812],
+  [320, 720],
+];
+
+async function assertWorkspaceViewports(cdp, expectedText, code) {
+  try {
+    for (const [width, height] of WORKSPACE_VIEWPORTS) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: width <= 414,
+      });
+      const layout = await evaluate(cdp, `({
+        text: document.body.innerText,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        rootHeight: document.querySelector("#app")?.getBoundingClientRect().height || 0,
+      })`);
+      if (!layout.text.includes(expectedText) || layout.overflow > 2 || layout.rootHeight <= 0) {
+        throw new Error(`${code}:${width}x${height}:${layout.overflow}`);
+      }
+    }
+  } finally {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+  }
+}
+
 const packagedExecutable = option("--packaged-executable");
 const packagedResources = option("--packaged-resources");
 const explicitUserDataRoot = option("--user-data-root");
@@ -178,6 +211,16 @@ async function localWorkspaceClient() {
   return client;
 }
 
+function preEntryWorkspaceReady(product) {
+  return (
+    product.title === "开始使用"
+    && product.nav.length === 1
+    && product.nav.includes("开始使用")
+    && product.text.includes("进入我的企业空间")
+    && !product.text.includes("BizHub is ready")
+  );
+}
+
 async function submitUnifiedLogin() {
   const submitted = await evaluate(shellCdp, `(() => {
     const account = document.querySelector('input[autocomplete="username"]');
@@ -228,7 +271,7 @@ try {
     },
   });
   await launchDesktop();
-  await waitFor(async () => (await evaluate(shellCdp, "document.body.innerText")).includes("登录 BizHub"),
+  await waitFor(async () => (await evaluate(shellCdp, "document.body.innerText")).includes("进入你的 BizHub"),
     "desktop_local_unified_login_screen_missing");
   await submitUnifiedLogin();
   const firstState = await waitFor(async () => {
@@ -240,21 +283,39 @@ try {
   }
   {
     const workspace = await localWorkspaceClient();
-    const product = await waitFor(async () => {
+    await waitFor(async () => {
       const value = await evaluate(workspace, `({
         title: document.querySelector("h1")?.textContent?.trim() || "",
         nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
         text: document.body.innerText
       })`);
-      return value.title === "经营概览" && value.nav.includes("设置") ? value : null;
+      return preEntryWorkspaceReady(value) ? value : null;
     }, "desktop_local_workspace_product_missing");
-    if (
-      !product.nav.includes("主数据")
-      || !product.nav.includes("采购")
-      || !product.nav.includes("销售")
-      || !product.nav.includes("库存")
-      || product.text.includes("BizHub is ready")
-    ) throw new Error("desktop_local_workspace_product_invalid");
+    await assertWorkspaceViewports(
+      workspace,
+      "进入我的企业空间",
+      "desktop_local_workspace_pre_entry_responsive_invalid",
+    );
+    await evaluate(workspace, `(() => {
+      const button = [...document.querySelectorAll("button")]
+        .find((item) => item.textContent.trim() === "进入我的企业空间");
+      button?.click();
+      return Boolean(button);
+    })()`);
+    await waitFor(async () => {
+      const value = await evaluate(workspace, `({
+        nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
+        text: document.body.innerText,
+      })`);
+      return value.nav.includes("设置")
+        && value.nav.includes("基础资料")
+        && value.text.includes("系统现在还是空的") ? value : null;
+    }, "desktop_local_workspace_entry_not_persisted");
+    await assertWorkspaceViewports(
+      workspace,
+      "系统现在还是空的",
+      "desktop_local_workspace_post_entry_responsive_invalid",
+    );
     await evaluate(workspace, `(() => {
       const button = [...document.querySelectorAll("nav button")]
         .find((item) => item.textContent.trim() === "设置");
@@ -294,7 +355,7 @@ try {
     const resumedWorkspace = await localWorkspaceClient();
     resumedTitle = await waitFor(async () => {
       const value = await evaluate(resumedWorkspace, "document.querySelector('h1')?.textContent?.trim() || ''");
-      return value === "经营概览" ? value : null;
+      return value === "开始使用" ? value : null;
     }, "desktop_local_remembered_workspace_missing");
     resumedWorkspace.close();
     await quitDesktop();
@@ -311,9 +372,11 @@ try {
     local_remembered_auto_login: rememberedSessionSmokeSupported,
     remembered_login_test_skipped: !rememberedSessionSmokeSupported,
     generic_workspace_ready: rememberedSessionSmokeSupported
-      ? resumedTitle === "经营概览"
+      ? resumedTitle === "开始使用"
       : firstState.status === "connected",
     settings_ready: true,
+    responsive_workspace_states: 2,
+    responsive_workspace_viewports: WORKSPACE_VIEWPORTS.length,
     packaged: Boolean(packagedExecutable),
     user_data_root: userDataRoot,
     residual_runtime_processes: 0,

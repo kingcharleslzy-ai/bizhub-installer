@@ -110,7 +110,7 @@ const localCreationVisible = computed(() => (
   localCreationRequested.value || state.value.canCreateLocal
 ));
 const localEntryLabel = computed(() => (
-  state.value.localInitialized ? "使用本地账号" : "创建本地账号"
+  state.value.localInitialized ? "使用这台电脑上的企业" : "第一次使用，创建本机企业"
 ));
 
 function syncActiveAccount() {
@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
           <div class="preview-nav"><i></i><span>采购</span></div>
           <div class="preview-nav"><i></i><span>销售</span></div>
           <div class="preview-nav"><i></i><span>库存</span></div>
-          <div class="preview-nav"><i></i><span>主数据</span></div>
+          <div class="preview-nav"><i></i><span>基础资料</span></div>
           <div class="preview-sidebar-foot"><i></i><span>设置</span></div>
         </aside>
         <section class="preview-workspace">
@@ -246,9 +246,9 @@ onBeforeUnmount(() => {
             <div class="preview-search"></div>
           </header>
           <div class="preview-summary">
-            <div><span>本月采购</span><b>128</b><small>待处理 8</small></div>
-            <div><span>本月销售</span><b>96</b><small>待发货 5</small></div>
-            <div><span>当前库存</span><b>1,842</b><small>库存正常</small></div>
+            <div><span>本月采购</span><b>—</b><small>登录后查看</small></div>
+            <div><span>本月销售</span><b>—</b><small>登录后查看</small></div>
+            <div><span>当前库存</span><b>—</b><small>登录后查看</small></div>
           </div>
           <div class="preview-content">
             <div class="preview-section-title"><b>最近业务</b><span>查看全部</span></div>
@@ -263,7 +263,8 @@ onBeforeUnmount(() => {
 
       <section class="login-panel" aria-labelledby="login-title">
         <div class="card-heading">
-          <h1 id="login-title">登录 BizHub</h1>
+          <h1 id="login-title">进入你的 BizHub</h1>
+          <p>已有企业直接登录；第一次使用也可以在这台电脑上创建。</p>
         </div>
 
         <form class="unified-form" @submit.prevent="login">
@@ -297,21 +298,21 @@ onBeforeUnmount(() => {
           <label class="remember-login"><input v-model="form.remember" type="checkbox"><span>保持登录</span></label>
           <p class="login-status" aria-live="polite">{{ working ? statusLabel : '' }}</p>
           <div class="login-actions">
-            <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在进入…' : '进入 BizHub' }}</button>
-            <button class="guest-button" type="button" :disabled="working" @click="openGuestDemo">游客体验</button>
+            <button class="primary-button" type="submit" :disabled="working">{{ working ? '正在进入…' : '登录并进入' }}</button>
+            <button class="guest-button" type="button" :disabled="working" @click="openGuestDemo">先看看样板</button>
             <button class="local-entry-button" type="button" :disabled="working" @click="beginLocalEntry">{{ localEntryLabel }}</button>
           </div>
         </form>
 
         <section v-if="localCreationVisible" class="local-create">
           <div>
-            <strong>创建本地 BizHub</strong>
+            <strong>创建我的本机企业</strong>
             <p v-if="state.pendingLocalAccountId">账号 <b>{{ state.pendingLocalAccountId }}</b> 没有企业云端工作区，可以在本机创建独立空间。</p>
-            <p v-else>使用当前账号创建本机独立空间；确认时会先验证它不属于企业云端。</p>
+            <p v-else>资料只保存在这台电脑，不会自动同步到云端；确认前会先检查这个账号是否已有企业空间。</p>
           </div>
           <form @submit.prevent="createLocal">
-            <label>本地企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>
-            <div class="form-actions"><button class="secondary-button" type="button" @click="cancelLocalCreation">取消</button><button class="primary-button" type="submit" :disabled="working || !form.accountId.trim() || !form.password">明确创建并进入</button></div>
+            <label>企业名称<input v-model="companyName" maxlength="80" placeholder="例如：绿光科技" required></label>
+            <div class="form-actions"><button class="secondary-button" type="button" @click="cancelLocalCreation">取消</button><button class="primary-button" type="submit" :disabled="working || !form.accountId.trim() || !form.password">创建并进入</button></div>
           </form>
         </section>
 

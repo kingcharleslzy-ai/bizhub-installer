@@ -13,6 +13,7 @@ from backend.generic_kernel.app import create_app as create_common_app
 from backend.modules.master_data.contracts import CatalogDraft, CatalogPreview
 from backend.modules.master_data.owner import apply_catalog, preview_catalog
 from backend.modules.master_data.public import MasterDataError
+from backend.generic_kernel.onboarding import read_workspace_onboarding
 
 from . import __version__
 from .config import common_identity, common_root, company_profile, cookie_secure, database_path, static_path
@@ -117,6 +118,23 @@ def create_app() -> FastAPI:
             if username is None:
                 return JSONResponse(status_code=401, content={"detail": "authentication required"})
             request.state.username = username
+            onboarding_paths = {
+                "/api/core-identity",
+                "/api/profile",
+                "/api/system-map",
+                "/api/workspace-onboarding/state",
+                "/api/workspace-onboarding/enter",
+            }
+            if not path.startswith("/api/auth/") and path not in onboarding_paths:
+                onboarding = read_workspace_onboarding(
+                    database_path(),
+                    enabled_module_ids=module_ids(),
+                )
+                if onboarding["stage"] != "enterprise_context_ready":
+                    return JSONResponse(
+                        status_code=409,
+                        content={"detail": {"code": "workspace_onboarding_required"}},
+                    )
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             if request.headers.get("X-BizHub-Request") != "1":
                 return JSONResponse(status_code=403, content={"detail": "missing same-origin mutation marker"})

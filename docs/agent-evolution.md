@@ -27,6 +27,26 @@ customer Agent to generate and activate a new writer, migration, scheduled job,
 or UI bundle. Those changes still require a private source review, module tests,
 an immutable image, and a separately approved deployment plan.
 
+## Start with the customer, not the module list
+
+An empty customer Workspace is not an invitation to ask for every company rule
+up front. After the protected account and Workspace entry is complete, the Agent
+should explain that an empty system is normal, ask what useful thing the customer
+wants to finish first, and ask only one missing question at a time. It may offer
+two or three ordinary examples such as整理常用客户和产品、记录一笔采购、记录一笔销售，
+or查看库存怎么记录. The customer may answer“不知道”or skip the question.
+
+Conversation, files and screenshots first produce a source-linked candidate.
+They do not directly create formal business facts, Profile rules, migrations,
+modules or deployments. Existing business facts still use the typed Owner
+preview/apply/readback contract. A later Agent must read the same bounded
+Workspace progress before asking anything already answered.
+
+The current unreleased Pack A candidate implements only the protected first-entry
+state and plain-language start screen. Co-build conversation/evidence storage,
+next-question planning, cross-Agent Handoff and a Blueprint/module Builder are
+not implemented by that screen.
+
 ## Discovery questions
 
 Before generating anything, the Agent asks only the questions needed for the

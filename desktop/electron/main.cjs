@@ -626,16 +626,14 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
             nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
             text: document.body.innerText,
           }))()`, true).catch(() => null);
-          if (product?.title === "经营概览" && product.nav.includes("设置")) break;
+          if (product?.title === "开始使用" && product.nav.includes("开始使用")) break;
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
         const productReady = (
-          product?.title === "经营概览"
-          && product.nav.includes("主数据")
-          && product.nav.includes("采购")
-          && product.nav.includes("销售")
-          && product.nav.includes("库存")
-          && product.nav.includes("设置")
+          product?.title === "开始使用"
+          && product.nav.length === 1
+          && product.nav.includes("开始使用")
+          && product.text.includes("进入我的企业空间")
           && !product.text.includes("BizHub is ready")
         );
         await stopLocalMode();
@@ -653,13 +651,24 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   setWorkspaceBounds();
   await workspaceView.webContents.loadURL(`${localOrigin}/`);
   if (guest) {
-    await workspaceView.webContents.executeJavaScript(`(() => {
-      const settingsButton = [...document.querySelectorAll("nav button")]
-        .find((item) => item.textContent.trim() === "设置");
-      if (!settingsButton) return false;
-      settingsButton.dataset.page = "settings";
-      return true;
-    })()`, true);
+    const deadline = Date.now() + 10_000;
+    let navigationReady = false;
+    while (Date.now() < deadline) {
+      navigationReady = await workspaceView.webContents.executeJavaScript(`(() => {
+        const buttons = [...document.querySelectorAll("nav button")];
+        const overviewButton = buttons.find((item) => item.textContent.trim() === "概览");
+        const settingsButton = buttons.find((item) => item.textContent.trim() === "设置");
+        if (!overviewButton || !settingsButton) return false;
+        settingsButton.dataset.page = "settings";
+        overviewButton.click();
+        return true;
+      })()`, true).catch(() => false);
+      if (navigationReady) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!navigationReady) {
+      throw new Error("desktop_guest_demo_workspace_navigation_missing");
+    }
     await workspaceView.webContents.insertCSS(
       "nav button[data-page=\"settings\"]{display:none!important}.account small{display:none!important}",
     );
