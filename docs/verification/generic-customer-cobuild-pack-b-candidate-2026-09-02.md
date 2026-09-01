@@ -11,6 +11,7 @@ uses a parallel Desktop knowledge store.
 Fixed common source identity:
 
 - private source commit: `834781b079c5d23d33bbaa45a7e4b27864d9d644`
+- public source commit: `335b5d5`
 - common artifact SHA-256:
   `d662fccc3a06b38feb43eb9e8b55f05e383dfdd5cd29d95c966cf7fe8e76a7a9`
 - allowlisted files: `43`
@@ -26,9 +27,22 @@ Implemented interactions:
 - visible source/classification boundary and suggestion-only experience cards;
 - authenticated, post-entry, read-only successor Handoff.
 
-The common-artifact Runtime tests currently pass (`4 passed`) and the Vue
-type-check/production build passes. Final Electron viewport evidence and remote
-macOS/Windows results are added only after the public review head is fixed.
+Current local evidence:
+
+- public Python artifact/CLI contracts: `24 passed`;
+- Desktop source/security/release tests: `104 passed`;
+- Vue type-check and production build: passed;
+- macOS Runtime archive SHA-256:
+  `f61d0ad13f03e7d9024ac445a0b227389ddc604670ea7f62622080615ea2591b`;
+- coordinated Runtime/Manifest tamper: rejected by independent trust;
+- real Electron local Workspace: `5` UI states × `7` viewports = `35`
+  combinations, no document-level horizontal overflow;
+- restart readback: the first candidate and the next unanswered question resume
+  from the same Workspace revision; residual Runtime processes: `0`.
+
+The tracked Windows Runtime still binds Pack A. Remote `windows-2022` must
+rebuild and capture Pack B before the final dual-platform Workspace Flow can be
+called green.
 
 This candidate is not a fixed release. It does not authorize customer-data
 migration, a production writer switch, deployment, arbitrary file/OCR/table
