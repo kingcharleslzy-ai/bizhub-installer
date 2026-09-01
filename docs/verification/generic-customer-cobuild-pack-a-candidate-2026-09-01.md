@@ -21,6 +21,8 @@ Status: `implemented_candidate_not_released`
 - allowlist tree: `8a86f0d67f48d9518287ca0f0324bb7b749d562e70589bfcab3fa3841e586bc6`
 - macOS Runtime pack tree: `6b1e106c5527922561e73c0e9740474707e2096ce9b02809e22ecdfcdb2cc882`
 - macOS Runtime archive: `db3c92e6c88ae5d7d1dfb6d5e2b0a7cdf86a864e5091ef781d388a1c341765d3`
+- Windows Runtime pack tree: `35860274aa5bf71f536d83c5a499b94befbec66e47ec746b14c73e12714ac169`
+- Windows Runtime archive: `260bb35720ec12d37ffb389912096bb1430b13f9e184d98bc0ed2facbe82a325`
 
 ## Local evidence
 
@@ -36,12 +38,11 @@ Status: `implemented_candidate_not_released`
 
 ## Remaining release gate
 
-The Windows Runtime currently binds the prior common artifact
-`sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72`.
-The public boundary correctly rejects that mixed state. The branch-specific
-Windows workflow must deterministically rebuild and capture the Windows x64
-Runtime, after which a separate follow-up commit must run the complete dual-
-platform gates. Until then this candidate is not merge-ready or released.
+Windows workflow run `22` rebuilt the Runtime twice with equal pack trees and
+captured the fixed x64 input against the same common artifact. The remaining
+gate is the complete D3 Windows suite plus the macOS/Windows Workspace Flow
+matrix on this exact follow-up head. Until both pass, this candidate is not
+merge-ready or released.
 
 No production database, customer payload, production deployment, Shadow,
 migration, business table, Profile-specific private rule, or second writer was
