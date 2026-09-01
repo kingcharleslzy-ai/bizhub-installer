@@ -1,6 +1,6 @@
 # Generic customer co-build Pack A candidate
 
-Status: `implemented_candidate_not_released`
+Status: `merge_ready_not_released`
 
 ## User-visible result
 
@@ -36,13 +36,29 @@ Status: `implemented_candidate_not_released`
 - real Electron account flow: cloud, local, guest, directory, remembered session,
   logout and cleanup boundaries passed
 
-## Remaining release gate
+## Isolated runner evidence
 
-Windows workflow run `22` rebuilt the Runtime twice with equal pack trees and
-captured the fixed x64 input against the same common artifact. The remaining
-gate is the complete D3 Windows suite plus the macOS/Windows Workspace Flow
-matrix on this exact follow-up head. Until both pass, this candidate is not
-merge-ready or released.
+The tested product head is
+`f589d82819416b679ccfe2c4dee4a016adf34d60`.
+
+- [Desktop Workspace Flow run 18](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/33529844154):
+  macOS arm64 and Windows x64 source, packaged-product, account, local Workspace,
+  first-entry and cleanup flows passed.
+- [Desktop D3 Windows x64 run 24](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/33529844091):
+  deterministic Runtime rebuild, fixed-input binding, tamper rejection, Owner
+  lifecycle, signed Squirrel package, install/readback/uninstall, residual-process
+  checks and evidence publication passed.
+
+The macOS packaged-flow defect found on the preceding head was a smoke timing
+race: the assertion ran after the title appeared but before the asynchronous
+first-entry state finished loading. The final smoke waits for the entire product
+contract without weakening any required state.
+
+## Remaining boundary
+
+The candidate is merge-ready, but it is not a release or production deployment.
+Release signing/publication and production adoption remain separately authorized
+operations.
 
 No production database, customer payload, production deployment, Shadow,
 migration, business table, Profile-specific private rule, or second writer was
