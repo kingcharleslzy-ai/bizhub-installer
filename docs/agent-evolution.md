@@ -42,10 +42,12 @@ modules or deployments. Existing business facts still use the typed Owner
 preview/apply/readback contract. A later Agent must read the same bounded
 Workspace progress before asking anything already answered.
 
-The current unreleased Pack A candidate implements only the protected first-entry
-state and plain-language start screen. Co-build conversation/evidence storage,
-next-question planning, cross-Agent Handoff and a Blueprint/module Builder are
-not implemented by that screen.
+The current unreleased Pack A/B candidate implements the protected first-entry
+state plus append-only co-build answers/material observations, deterministic
+one-question planning, four customer views, first-value candidates, and a
+bounded read-only successor Handoff. It is still agent-neutral Runtime state:
+arbitrary file parsing, model inference, Runtime Handshake/MCP, executable
+Blueprint compilation, and a module Builder are not implemented.
 
 ## Discovery questions
 

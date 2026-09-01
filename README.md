@@ -26,13 +26,16 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-The current source branch may contain an unreleased first-entry candidate that
-is not part of either fixed release above. It keeps an authenticated user in a
-plain-language `开始使用` context until they explicitly enter the one bound
-company Workspace; only then are existing business pages and Owner APIs
-available. This candidate adds no migration, business table, module, or writer,
-and it does not implement account registration, cloud company provisioning,
-invitations, a co-build chat Agent, or automatic module generation.
+The current source branch may contain an unreleased first-entry and co-build
+candidate that is not part of either fixed release above. It keeps an
+authenticated user in a plain-language `开始使用` context until they explicitly
+enter the one bound company Workspace. After entry, it asks one ordinary
+question at a time and projects dialogue, knowledge, pending confirmation,
+improvement opportunities, a first inspectable candidate, and a bounded
+read-only handoff from the existing Generic Runtime Owner. It adds no migration,
+business table, module, knowledge database, or writer. Account registration,
+cloud company provisioning/invitations, arbitrary file parsing, model inference,
+and automatic module generation remain unimplemented.
 
 ## Give the release to an Agent
 

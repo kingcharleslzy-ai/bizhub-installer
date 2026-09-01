@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Extend the Generic first-entry candidate with a resumable Pack B co-build
+  workspace. After the authenticated user enters the one bound company
+  Workspace, the existing Generic Runtime Owner asks one plain-language
+  question at a time, accepts unknown/deferred/skipped answers, records bounded
+  material observations, and projects dialogue, knowledge, pending confirmation,
+  improvement opportunities, a first inspectable candidate, and a read-only
+  successor handoff. The Desktop exposes the same four customer views and keeps
+  experience cards visibly suggestion-only. No business table, module, Profile,
+  migration, knowledge database, or writer is added; no formal business write,
+  module activation, Runtime self-modification, or deployment is authorized.
+  Account registration, cloud provisioning/invitations, arbitrary file/OCR/table
+  parsing, model inference, Blueprint compilation, and a module Builder remain
+  outside this candidate.
 - Add the Generic first-entry candidate on top of the existing unified Desktop
   login, signed cloud discovery, explicit local-company creation, and single
   Runtime authority. A new Workspace is bound to one stable identity and keeps
@@ -10,8 +23,7 @@
   Owner and adds no migration, business table, module, or writer. The empty
   system now explains data location and offers a few plain-language first tasks
   instead of opening on a zero-filled dashboard. This is unreleased and does not
-  implement registration, cloud provisioning/invitations, co-build chat, or a
-  module Builder.
+  implement registration, cloud provisioning/invitations, or a module Builder.
 - Keep GitHub as the first artifact source, but treat 30 seconds without any
   response or download progress as a stalled transfer and retry the
   byte-identical Qilin mirror immediately. The existing 30-minute total bound,
