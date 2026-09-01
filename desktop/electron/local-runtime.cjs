@@ -637,6 +637,7 @@ async function bootstrapLocalInstance({ userDataRoot, runtimePack, trustPath, in
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         currency: "CNY",
         data_identity: dataIdentity,
+        data_authority_mode: "local",
         authority_epoch: 1,
         writer_instance_id: writerInstanceId,
       }),

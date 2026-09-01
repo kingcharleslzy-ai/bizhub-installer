@@ -6,9 +6,10 @@ from backend.generic_kernel.migrations import (
     readback_database,
     retained_migrations_for_database,
 )
+from backend.generic_kernel.onboarding import initialize_workspace_onboarding
 from backend.generic_kernel.profile import get_generic_registry
 
-from .config import common_root, database_path
+from .config import common_root, company_profile, database_path
 
 
 def registry():
@@ -32,6 +33,14 @@ def database_migrations():
 
 def initialize_database() -> None:
     ensure_generic_database(database_path(), migrations=database_migrations())
+    profile = company_profile()
+    initialize_workspace_onboarding(
+        database_path(),
+        workspace_id=str(profile["data_identity"]),
+        display_name=str(profile["display_name"]),
+        data_authority_mode=str(profile["data_authority_mode"]),
+        enabled_module_ids=module_ids(),
+    )
 
 
 def database_state() -> dict[str, object]:

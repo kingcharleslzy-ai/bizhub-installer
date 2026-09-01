@@ -170,7 +170,7 @@ async function submitLocalCreation(cdp, accountId, password, companyName) {
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
     const submit = [...document.querySelectorAll("button")]
-      .find((item) => item.textContent.trim() === "明确创建并进入");
+      .find((item) => item.textContent.trim() === "创建并进入");
     if (!submit || submit.disabled) return false;
     submit.click();
     return true;
@@ -512,14 +512,14 @@ try {
       updateRows: document.querySelectorAll('.update-row[role="status"]').length,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
     })`);
-    return value.text.includes("登录 BizHub") ? value : null;
+    return value.text.includes("进入你的 BizHub") ? value : null;
   }, "desktop_account_flow_initial_ui_missing");
   if (initial.passwords !== 1 || initial.remember !== 1 || initial.updateRows !== 1 || initial.overflow > 2) {
     fail("desktop_account_flow_initial_boundary_invalid");
   }
   if (initial.text.includes("开始本地设置")) fail("desktop_account_flow_separate_local_entry_present");
-  if (!initial.text.includes("创建本地账号")) fail("desktop_account_flow_local_create_entry_missing");
-  if (!initial.text.includes("游客体验")) fail("desktop_account_flow_guest_entry_missing");
+  if (!initial.text.includes("第一次使用，创建本机企业")) fail("desktop_account_flow_local_create_entry_missing");
+  if (!initial.text.includes("先看看样板")) fail("desktop_account_flow_guest_entry_missing");
   const defaultPreferences = await evaluate(cdp, "window.bizhubDesktop.getPreferences()");
   if (
     defaultPreferences.theme !== "system"
@@ -541,7 +541,7 @@ try {
     return value.theme === "dark" && value.density === "compact";
   }, "desktop_account_flow_preferences_not_applied");
   const directoryRequestsBeforeGuest = directoryRequests.length;
-  if (!await clickButton(cdp, "游客体验")) fail("desktop_account_flow_guest_entry_not_clickable");
+  if (!await clickButton(cdp, "先看看样板")) fail("desktop_account_flow_guest_entry_not_clickable");
   const guestState = await waitFor(async () => {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     if (value.guestDemoStatus === "error" || value.status === "error") {
@@ -578,7 +578,7 @@ try {
       return value.title === "经营概览" && value.text.includes("星河新材料样板间") ? value : null;
     }, "desktop_account_flow_guest_product_missing");
     if (
-      !product.visibleNav.includes("主数据")
+      !product.visibleNav.includes("基础资料")
       || !product.visibleNav.includes("采购")
       || !product.visibleNav.includes("销售")
       || !product.visibleNav.includes("库存")
@@ -633,7 +633,7 @@ try {
   }
 
   await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("进入你的 BizHub"),
     "desktop_account_flow_guest_exit_not_returned");
   try {
     await stat(path.join(userDataRoot, "guest-demo"));
@@ -645,7 +645,7 @@ try {
     fail("desktop_account_flow_guest_contacted_directory");
   }
 
-  if (!await clickButton(cdp, "游客体验")) fail("desktop_account_flow_guest_restart_entry_not_clickable");
+  if (!await clickButton(cdp, "先看看样板")) fail("desktop_account_flow_guest_restart_entry_not_clickable");
   await waitFor(async () => {
     const value = await evaluate(cdp, "window.bizhubDesktop.getState()");
     return value.mode === "guest" && value.status === "connected" ? value : null;
@@ -659,7 +659,7 @@ try {
     if (error?.code !== "ENOENT") throw error;
   }
   await launchDesktopProcess();
-  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+  await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("进入你的 BizHub"),
     "desktop_account_flow_guest_restart_initial_ui_missing");
   const restartedPreferences = await evaluate(cdp, "window.bizhubDesktop.getPreferences()");
   if (
@@ -676,7 +676,7 @@ try {
   }
 
   const directoryRequestsBeforeDirectLocal = directoryRequests.length;
-  if (!await clickButton(cdp, "创建本地账号")) {
+  if (!await clickButton(cdp, "第一次使用，创建本机企业")) {
     fail("desktop_account_flow_local_create_entry_not_clickable");
   }
   await waitFor(async () => {
@@ -685,7 +685,7 @@ try {
       companyFields: [...document.querySelectorAll("input")]
         .filter((item) => item.placeholder.includes("绿光")).length
     })`);
-    return value.text.includes("创建本地 BizHub") && value.companyFields === 1 ? value : null;
+    return value.text.includes("创建我的本机企业") && value.companyFields === 1 ? value : null;
   }, "desktop_account_flow_direct_local_setup_missing");
   if (directoryRequests.length !== directoryRequestsBeforeDirectLocal) {
     fail("desktop_account_flow_direct_local_setup_contacted_directory");
@@ -837,7 +837,7 @@ try {
     cdp,
     'document.querySelector(\'input[autocomplete="username"]\')?.value || ""',
   );
-  if (!await clickButton(cdp, "创建本地账号")) {
+  if (!await clickButton(cdp, "第一次使用，创建本机企业")) {
     fail("desktop_account_flow_saved_cloud_local_create_entry_missing");
   }
   const savedCloudLocalSetup = await waitFor(async () => {
@@ -845,7 +845,7 @@ try {
       username: document.querySelector('input[autocomplete="username"]')?.value || "",
       text: document.body.innerText
     })`);
-    return value.text.includes("确认时会先验证它不属于企业云端") ? value : null;
+    return value.text.includes("确认前会先检查这个账号是否已有企业空间") ? value : null;
   }, "desktop_account_flow_saved_cloud_local_setup_missing");
   if (savedCloudLocalSetup.username !== savedCloudAccountBeforeExpand) {
     fail("desktop_account_flow_saved_cloud_account_changed_on_expand");
@@ -876,7 +876,7 @@ try {
   await assertLocalInstanceMissing("desktop_account_flow_cloud_account_created_local_instance");
   if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_saved_cloud_local_cancel_missing");
 
-  if (!await clickButton(cdp, "创建本地账号")) {
+  if (!await clickButton(cdp, "第一次使用，创建本机企业")) {
     fail("desktop_account_flow_registered_local_create_entry_missing");
   }
   const directoryRequestsBeforeRegisteredCreate = directoryRequests.length;
@@ -898,7 +898,7 @@ try {
   await assertLocalInstanceMissing("desktop_account_flow_registered_account_created_local_instance");
   if (!await clickButton(cdp, "取消")) fail("desktop_account_flow_registered_local_cancel_missing");
 
-  if (!await clickButton(cdp, "创建本地账号")) {
+  if (!await clickButton(cdp, "第一次使用，创建本机企业")) {
     fail("desktop_account_flow_network_error_local_create_entry_missing");
   }
   const directoryRequestsBeforeNetworkErrorCreate = directoryRequests.length;
@@ -944,7 +944,7 @@ try {
       text: document.body.innerText
     }))()`);
     const resolved = value.state;
-    return resolved.canCreateLocal && value.text.includes("创建本地 BizHub")
+    return resolved.canCreateLocal && value.text.includes("创建我的本机企业")
       ? { ...resolved, text: value.text }
       : null;
   }, "desktop_account_flow_unknown_state_missing");
@@ -961,14 +961,14 @@ try {
       username: document.querySelector('input[autocomplete="username"]')?.value || "",
       companyFields: [...document.querySelectorAll("input")].filter((item) => item.placeholder.includes("绿光")).length
     })`);
-    return value.text.includes("创建本地 BizHub") && value.companyFields === 1 ? value : null;
+    return value.text.includes("创建我的本机企业") && value.companyFields === 1 ? value : null;
   }, "desktop_account_flow_local_setup_missing");
   if (setup.username !== "unknown.account") fail("desktop_account_flow_local_username_not_carried");
 
   if (rememberedSessionSmokeSupported) {
     await stopDesktopProcess();
     await launchDesktopProcess();
-    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("进入你的 BizHub"),
       "desktop_account_flow_restart_initial_ui_missing");
     if (!await enterCredentials(cdp, "Charles.Example", "correct-cloud-password", true)) {
       fail("desktop_account_flow_remembered_login_input_missing");
@@ -1054,7 +1054,7 @@ try {
       workspaceCdp.close();
       if (!clicked) fail("desktop_account_flow_workspace_logout_control_missing");
     }
-    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("进入你的 BizHub"),
       "desktop_account_flow_workspace_logout_not_returned");
     const signedOutSavedAccounts = JSON.parse(await readFile(rememberedSessionPath, "utf8"));
     const signedOutAccount = signedOutSavedAccounts.accounts.find(
@@ -1071,12 +1071,12 @@ try {
     }
   } else {
     await evaluate(cdp, "window.bizhubDesktop.switchAccount()");
-    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("登录 BizHub"),
+    await waitFor(async () => (await evaluate(cdp, "document.body.innerText")).includes("进入你的 BizHub"),
       "desktop_account_flow_packaged_macos_login_reset_missing");
   }
 
   const directoryRequestsBeforeConfirmedLocal = directoryRequests.length;
-  if (!await clickButton(cdp, "创建本地账号")) {
+  if (!await clickButton(cdp, "第一次使用，创建本机企业")) {
     fail("desktop_account_flow_confirmed_local_create_entry_missing");
   }
   if (!await submitLocalCreation(

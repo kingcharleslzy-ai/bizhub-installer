@@ -200,7 +200,8 @@ button { -webkit-app-region: no-drag; }
   animation: login-enter 320ms cubic-bezier(.2, .75, .25, 1) both;
 }
 
-.card-heading h1 { margin: 0 0 22px; font-size: 27px; line-height: 1.15; letter-spacing: -.035em; }
+.card-heading h1 { margin: 0; font-size: 27px; line-height: 1.15; letter-spacing: -.035em; }
+.card-heading p { margin: 8px 0 22px; color: var(--shell-muted); font-size: 11px; line-height: 1.55; }
 
 .unified-form { display: grid; gap: 14px; }
 .form-field, .local-create label { display: grid; gap: 7px; color: var(--shell-muted); font-size: 12px; font-weight: 650; }

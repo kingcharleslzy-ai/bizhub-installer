@@ -154,6 +154,22 @@ try {
   assert.equal(systemMap.response.status, 200);
   assert.equal(systemMap.body.profile_id, "generic-kernel-smoke");
   assert.ok(!JSON.stringify(systemMap.body).toLocaleLowerCase().includes("daz" + "heng"));
+  const onboarding = await fetchRuntime(runtime, "/api/workspace-onboarding/state");
+  assert.equal(onboarding.response.status, 200);
+  assert.equal(onboarding.body.workspace_id, created.instance.data_identity);
+  assert.equal(onboarding.body.stage, "workspace_ready");
+  assert.equal(onboarding.body.accepts_business_material, false);
+  const blockedDelivery = await fetchRuntime(runtime, "/api/delivery/overview");
+  assert.equal(blockedDelivery.response.status, 409);
+  assert.equal(blockedDelivery.body.detail.code, "workspace_onboarding_required");
+  const entered = await mutation(runtime, "/api/workspace-onboarding/enter", {
+    schema_version: "bizhub.workspace-onboarding-state.v1",
+    expected_revision: onboarding.body.revision,
+    idempotency_key: "desktop-smoke-enter-v1",
+  });
+  assert.equal(entered.response.status, 200);
+  assert.equal(entered.body.stage, "enterprise_context_ready");
+  assert.equal(entered.body.accepts_business_material, true);
   const emptyDelivery = await fetchRuntime(runtime, "/api/delivery/overview");
   assert.equal(emptyDelivery.response.status, 200);
   assert.equal(emptyDelivery.body.procurement_orders, 0);
@@ -314,6 +330,8 @@ try {
   assert.equal(liveRuntimePids.size, 0);
   runtime = await lifecycle.start();
   await resumeLocalRuntime(runtime, firstLogin.rememberSession.token);
+  const restartedOnboarding = await fetchRuntime(runtime, "/api/workspace-onboarding/state");
+  assert.equal(restartedOnboarding.body.stage, "enterprise_context_ready");
   const restarted = await fetchRuntime(runtime, "/api/master-data/locations");
   assert.equal(restarted.body.items.length, 1);
   assert.equal(restarted.body.items[0].canonical_name, "Synthetic Warehouse");
@@ -346,6 +364,9 @@ try {
     apply_disposition: applied.body.disposition,
     replay_disposition: replay.body.disposition,
     failure_zero_write: true,
+    onboarding_gate_before_business: blockedDelivery.body.detail.code,
+    onboarding_entered: entered.body.stage,
+    onboarding_restart_stage: restartedOnboarding.body.stage,
     delivery_owner_chain: {
       inventory: inventoryApplied.body.owner_ref,
       procurement: procurementCreated.body.owner_ref,

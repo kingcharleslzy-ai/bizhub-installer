@@ -26,6 +26,14 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
+The current source branch may contain an unreleased first-entry candidate that
+is not part of either fixed release above. It keeps an authenticated user in a
+plain-language `开始使用` context until they explicitly enter the one bound
+company Workspace; only then are existing business pages and Owner APIs
+available. This candidate adds no migration, business table, module, or writer,
+and it does not implement account registration, cloud company provisioning,
+invitations, a co-build chat Agent, or automatic module generation.
+
 ## Give the release to an Agent
 
 Give the Agent one fixed release URL from the table above and ask it to:

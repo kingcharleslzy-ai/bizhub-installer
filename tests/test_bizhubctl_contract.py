@@ -107,6 +107,10 @@ def test_loopback_plan_binds_resource_limits_without_an_external_step(monkeypatc
         "pids_limit": 128,
     }
     assert plan["external_steps"] == []
+    assert plan["company_profile"]["data_authority_mode"] == "cloud"
+    assert plan["company_profile"]["authority_epoch"] == 1
+    assert plan["company_profile"]["data_identity"].startswith("deployment:")
+    assert plan["company_profile"]["writer_instance_id"].startswith("deployment-writer:")
     assert plan["plan_hash"] == cli.plan_hash(plan)
 
 
@@ -231,6 +235,34 @@ def test_plan_hash_detects_any_change():
     first = cli.plan_hash(plan)
     plan["source"]["commit"] = "b" * 40
     assert cli.plan_hash(plan) != first
+
+
+def test_company_profile_update_only_allows_identity_enrichment():
+    cli = load_cli()
+    planned = {
+        "schema_version": 1,
+        "profile_id": "example-company",
+        "legal_name": "Example Company Ltd.",
+        "display_name": "Example Company",
+        "brand_mark": "EX",
+        "timezone": "Asia/Shanghai",
+        "currency": "CNY",
+        "data_identity": "deployment:" + "a" * 64,
+        "data_authority_mode": "cloud",
+        "authority_epoch": 1,
+        "writer_instance_id": "deployment-writer:" + "b" * 64,
+    }
+    legacy = {
+        key: value
+        for key, value in planned.items()
+        if key not in cli.COMPANY_IDENTITY_FIELDS
+    }
+    assert cli.company_profile_transition(planned, planned) == "unchanged"
+    assert cli.company_profile_transition(legacy, planned) == "identity_enrichment"
+    with pytest.raises(RuntimeError, match="company profile changes"):
+        cli.company_profile_transition({**legacy, "display_name": "Other"}, planned)
+    with pytest.raises(RuntimeError, match="company profile changes"):
+        cli.company_profile_transition({**legacy, "authority_epoch": 1}, planned)
 
 
 def test_build_image_binds_the_planned_core_commit(monkeypatch):
