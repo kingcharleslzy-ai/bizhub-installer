@@ -304,18 +304,59 @@ try {
     })()`);
     await waitFor(async () => {
       const value = await evaluate(workspace, `({
+        title: document.querySelector("h1")?.textContent?.trim() || "",
         nav: [...document.querySelectorAll("nav button")].map((item) => item.textContent.trim()),
         text: document.body.innerText,
       })`);
       return value.nav.includes("设置")
         && value.nav.includes("基础资料")
-        && value.text.includes("系统现在还是空的") ? value : null;
+        && value.nav.includes("和助手聊聊")
+        && value.nav.includes("我们已了解")
+        && value.nav.includes("待确认")
+        && value.nav.includes("改进机会")
+        && value.title === "和助手聊聊"
+        && value.text.includes("你现在最希望系统先帮你解决什么？") ? value : null;
     }, "desktop_local_workspace_entry_not_persisted");
     await assertWorkspaceViewports(
       workspace,
-      "系统现在还是空的",
+      "你现在最希望系统先帮你解决什么？",
       "desktop_local_workspace_post_entry_responsive_invalid",
     );
+    const answered = await evaluate(workspace, `(() => {
+      const field = document.querySelector(".current-question textarea");
+      const button = [...document.querySelectorAll(".answer-actions button")]
+        .find((item) => item.textContent.trim() === "发送");
+      if (!field || !button) return false;
+      field.value = "先把每天收到的订单和遗漏整理清楚";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      button.click();
+      return true;
+    })()`);
+    if (!answered) throw new Error("desktop_local_cobuild_answer_controls_missing");
+    await waitFor(async () => {
+      const text = await evaluate(workspace, "document.body.innerText");
+      return text.includes("已有可检查候选")
+        && text.includes("为了先做出一个能检查的结果") ? text : null;
+    }, "desktop_local_cobuild_first_candidate_missing");
+    for (const [label, expected, code] of [
+      ["我们已了解", "先把每天收到的订单和遗漏整理清楚", "knowledge"],
+      ["待确认", "目前没有待确认事项", "confirmations"],
+      ["改进机会", "第一项共建目标", "opportunities"],
+    ]) {
+      await evaluate(workspace, `(() => {
+        const button = [...document.querySelectorAll("nav button")]
+          .find((item) => item.textContent.trim() === ${JSON.stringify(label)});
+        button?.click();
+        return Boolean(button);
+      })()`);
+      await waitFor(async () => (await evaluate(workspace, "document.body.innerText")).includes(expected),
+        `desktop_local_cobuild_${code}_missing`);
+      await assertWorkspaceViewports(
+        workspace,
+        expected,
+        `desktop_local_cobuild_${code}_responsive_invalid`,
+      );
+    }
     await evaluate(workspace, `(() => {
       const button = [...document.querySelectorAll("nav button")]
         .find((item) => item.textContent.trim() === "设置");
@@ -354,8 +395,21 @@ try {
     }
     const resumedWorkspace = await localWorkspaceClient();
     resumedTitle = await waitFor(async () => {
-      const value = await evaluate(resumedWorkspace, "document.querySelector('h1')?.textContent?.trim() || ''");
-      return value === "开始使用" ? value : null;
+      const opened = await evaluate(resumedWorkspace, `(() => {
+        const button = [...document.querySelectorAll("nav button")]
+          .find((item) => item.textContent.trim() === "和助手聊聊");
+        button?.click();
+        return Boolean(button);
+      })()`);
+      if (!opened) return null;
+      const value = await evaluate(resumedWorkspace, `({
+        title: document.querySelector("h1")?.textContent?.trim() || "",
+        text: document.body.innerText,
+      })`);
+      return value.title === "和助手聊聊"
+        && value.text.includes("已有可检查候选")
+        && value.text.includes("为了先做出一个能检查的结果")
+        ? value.title : null;
     }, "desktop_local_remembered_workspace_missing");
     resumedWorkspace.close();
     await quitDesktop();
@@ -372,10 +426,10 @@ try {
     local_remembered_auto_login: rememberedSessionSmokeSupported,
     remembered_login_test_skipped: !rememberedSessionSmokeSupported,
     generic_workspace_ready: rememberedSessionSmokeSupported
-      ? resumedTitle === "开始使用"
+      ? resumedTitle === "和助手聊聊"
       : firstState.status === "connected",
     settings_ready: true,
-    responsive_workspace_states: 2,
+    responsive_workspace_states: 5,
     responsive_workspace_viewports: WORKSPACE_VIEWPORTS.length,
     packaged: Boolean(packagedExecutable),
     user_data_root: userDataRoot,

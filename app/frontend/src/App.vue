@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 
 type Json = Record<string, any>;
-type Page = "start" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
+type Page = "start" | "chat" | "knowledge" | "confirmations" | "opportunities" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
 
 const page = ref<Page>("start");
 const user = ref("");
@@ -12,6 +12,11 @@ const error = ref("");
 const profile = ref<Json>({});
 const health = ref<Json>({});
 const onboarding = ref<Json>({ stage: "loading", revision: 0 });
+const cobuild = ref<Json>({
+  revision: 0,
+  views: { dialogue: { items: [] }, knowledge: { items: [] }, confirmations: { items: [] }, opportunities: { items: [], experience_cards: [] } },
+  next_question: null,
+});
 const overview = ref<Json>({});
 const catalog = ref<Json>({ parties: [], products: [], units: [], locations: [] });
 const procurement = ref<Json[]>([]);
@@ -24,6 +29,8 @@ const orderForm = reactive({ order_id: "", party_id: "", line_id: "", product_id
 const receiveForm = reactive({ order_id: "", line_id: "", quantity: "1", occurred_at: new Date().toISOString().slice(0, 16), evidence_ref: "" });
 const movementForm = reactive({ action: "inbound", product_id: "", unit_id: "", quantity: "1", location_id: "", occurred_at: new Date().toISOString().slice(0, 16), reason: "手工业务调整" });
 const passwordForm = reactive({ currentPassword: "", newPassword: "", confirmPassword: "", remember: true });
+const answerForm = reactive({ text: "" });
+const materialForm = reactive({ material_kind: "spreadsheet", display_name: "", summary: "" });
 
 const activeParties = computed(() => catalog.value.parties.filter((item: Json) => item.status === "active"));
 const activeProducts = computed(() => catalog.value.products.filter((item: Json) => item.status === "active"));
@@ -33,6 +40,10 @@ const navigationItems = computed<Array<[Page, string]>>(() => {
   const items: Array<[Page, string]> = [["start", "开始使用"]];
   if (onboarding.value.stage === "enterprise_context_ready") {
     items.push(
+      ["chat", "和助手聊聊"],
+      ["knowledge", "我们已了解"],
+      ["confirmations", "待确认"],
+      ["opportunities", "改进机会"],
       ["overview", "概览"],
       ["master", "基础资料"],
       ["procurement", "采购"],
@@ -45,6 +56,10 @@ const navigationItems = computed<Array<[Page, string]>>(() => {
 });
 const title = computed(() => ({
   start: "开始使用",
+  chat: "和助手聊聊",
+  knowledge: "我们已经了解什么",
+  confirmations: "还有什么需要确认",
+  opportunities: "我发现的改进机会",
   overview: "经营概览",
   master: "基础资料",
   procurement: "采购",
@@ -79,13 +94,15 @@ async function refresh() {
   health.value = nextHealth;
   onboarding.value = nextOnboarding;
   if (nextOnboarding.stage !== "enterprise_context_ready") return;
-  const [nextOverview, nextCatalog, nextProcurement, nextSales, nextInventory] = await Promise.all([
+  const [nextCobuild, nextOverview, nextCatalog, nextProcurement, nextSales, nextInventory] = await Promise.all([
+    api("/api/workspace-cobuild/state"),
     api("/api/delivery/overview"),
     api("/api/delivery/catalog"),
     api("/api/delivery/procurement/orders"),
     api("/api/delivery/sales/orders"),
     api("/api/delivery/inventory"),
   ]);
+  cobuild.value = nextCobuild;
   overview.value = nextOverview;
   catalog.value = nextCatalog;
   procurement.value = nextProcurement.items;
@@ -107,6 +124,72 @@ async function enterEnterpriseContext() {
     });
     notice.value = "企业空间已准备好。你可以从一件小事开始。";
     await refresh();
+    page.value = "chat";
+  } catch (caught: any) {
+    error.value = caught.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function answerCobuild(answerKind: "answered" | "unknown" | "deferred" | "skipped") {
+  if (!cobuild.value.next_question) return;
+  if (answerKind === "answered" && !answerForm.text.trim()) {
+    error.value = "先用一句话告诉我你的想法；如果暂时不知道，也可以直接跳过。";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    cobuild.value = await api("/api/workspace-cobuild/answers", {
+      method: "POST",
+      body: JSON.stringify({
+        schema_version: "bizhub.workspace-cobuild-state.v1",
+        expected_revision: cobuild.value.revision,
+        question_id: cobuild.value.next_question.question_id,
+        text: answerForm.text.trim(),
+        answer_kind: answerKind,
+        actor_ref: "desktop:authenticated-admin",
+        idempotency_key: `desktop:${crypto.randomUUID()}`,
+      }),
+    });
+    answerForm.text = "";
+    notice.value = cobuild.value.first_value_candidate
+      ? "已经整理出一个可检查的候选，没有写入正式业务记录。"
+      : "已记住你的选择，接下来只问一个新问题。";
+  } catch (caught: any) {
+    error.value = caught.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function recordMaterial() {
+  if (!materialForm.display_name.trim() || !materialForm.summary.trim()) {
+    error.value = "请填写资料名称，并粘贴一小段内容或用一句话说明资料里有什么。";
+    return;
+  }
+  busy.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    cobuild.value = await api("/api/workspace-cobuild/materials", {
+      method: "POST",
+      body: JSON.stringify({
+        schema_version: "bizhub.workspace-cobuild-state.v1",
+        expected_revision: cobuild.value.revision,
+        material_kind: materialForm.material_kind,
+        display_name: materialForm.display_name.trim(),
+        summary: materialForm.summary.trim(),
+        source_ref: `desktop:material-${crypto.randomUUID()}`,
+        provided_by: "desktop:authenticated-admin",
+        idempotency_key: `desktop:${crypto.randomUUID()}`,
+      }),
+    });
+    materialForm.display_name = "";
+    materialForm.summary = "";
+    notice.value = "资料线索已保存为带来源的候选，没有写入正式业务记录。";
   } catch (caught: any) {
     error.value = caught.message;
   } finally {
@@ -301,20 +384,89 @@ onMounted(async () => {
         <article v-else-if="onboarding.stage === 'enterprise_context_ready'" class="onboarding-primary">
           <p class="eyebrow">从一件小事开始</p>
           <h2>系统现在还是空的，这很正常</h2>
-          <p>不用一次整理完全部资料。先选择你现在最想处理的一件事，之后可以随时回来继续。</p>
-          <div class="first-task-grid">
-            <button class="choice" @click="selectPage('master')"><strong>整理客户、供应商或产品</strong><span>先把最常用的基础资料放进来</span></button>
-            <button class="choice" @click="selectPage('procurement')"><strong>记录一笔采购</strong><span>从正在发生的订单开始</span></button>
-            <button class="choice" @click="selectPage('sales')"><strong>记录一笔销售</strong><span>先保存客户和订单来源</span></button>
-            <button class="choice" @click="selectPage('inventory')"><strong>看看库存怎么记录</strong><span>从一个产品和地点开始</span></button>
-          </div>
-          <p class="quiet-note">还不确定也没关系。先停在这里，关闭后下次仍会从当前进度继续。</p>
+          <p>不用先填表，也不用一次讲完整家公司。助手每次只问一个简单问题，先帮你整理出一件能检查的结果。</p>
+          <button class="start-cobuild" @click="selectPage('chat')">和助手从一件小事开始</button>
+          <p class="quiet-note">可以回答“不知道”、以后再说或直接跳过。关闭后会从同一进度继续。</p>
         </article>
         <article v-else class="onboarding-primary">
           <p class="eyebrow">需要检查</p>
           <h2>企业空间暂时不能进入</h2>
           <p>请先点击右上角“刷新”。如果仍然没有恢复，再把页面上的错误信息发给技术支持。</p>
         </article>
+      </section>
+
+      <section v-if="page === 'chat'" class="cobuild-layout">
+        <article class="conversation-panel">
+          <div class="section-heading"><div><p>一步一步来</p><h2>不用准备完整资料</h2></div><span class="candidate-badge" v-if="cobuild.first_value_candidate">已有可检查候选</span></div>
+          <div class="conversation-list">
+            <div v-for="message in cobuild.views.dialogue.items" :key="message.message_id" :class="['message', message.role]">
+              <small>{{ message.role === 'agent' ? '助手' : '你' }}</small><p>{{ message.text }}</p>
+            </div>
+          </div>
+          <div v-if="cobuild.next_question" class="current-question">
+            <p class="question-reason">{{ cobuild.next_question.reason }}</p>
+            <h3>{{ cobuild.next_question.prompt }}</h3>
+            <div class="question-examples"><span v-for="example in cobuild.next_question.examples" :key="example">{{ example }}</span></div>
+            <textarea v-model="answerForm.text" rows="4" placeholder="用平时说话的方式告诉我就行"></textarea>
+            <div class="answer-actions">
+              <button :disabled="busy" @click="answerCobuild('answered')">发送</button>
+              <button class="secondary" :disabled="busy" @click="answerCobuild('unknown')">不知道</button>
+              <button class="secondary" :disabled="busy" @click="answerCobuild('deferred')">以后再说</button>
+              <button class="secondary" :disabled="busy" @click="answerCobuild('skipped')">先跳过</button>
+            </div>
+          </div>
+          <div v-else class="conversation-complete"><strong>第一轮了解已经完成</strong><p>以后有新情况时仍可以继续补充，不会重新采访你。</p></div>
+        </article>
+
+        <article class="material-panel">
+          <p class="eyebrow">也可以先给我一份资料</p>
+          <h2>从你平时就在用的东西开始</h2>
+          <p>粘贴一小段内容，或用一句话说明资料里有什么。这里不接收密码、验证码或登录密钥。</p>
+          <form @submit.prevent="recordMaterial">
+            <label>资料类型<select v-model="materialForm.material_kind"><option value="spreadsheet">表格</option><option value="chat">聊天记录</option><option value="image">图片</option><option value="screenshot">截图</option><option value="file">其他文件</option><option value="other">其他</option></select></label>
+            <label>资料名称<input v-model="materialForm.display_name" placeholder="例如：每天使用的订单表.xlsx" maxlength="180" required></label>
+            <label>粘贴一小段内容或说明<textarea v-model="materialForm.summary" rows="7" maxlength="4000" placeholder="例如：里面有客户、产品、数量和交期，客户名称经常有不同写法" required></textarea></label>
+            <button :disabled="busy">保存为资料候选</button>
+          </form>
+          <p class="quiet-note">它只是一份带来源的候选。你确认前不会写入客户、订单、库存或启用任何模块。</p>
+        </article>
+      </section>
+
+      <section v-if="page === 'knowledge'" class="cobuild-view">
+        <div class="view-intro"><p>企业认识</p><h2>这些是目前从你和资料中了解到的内容</h2><span>每一条都保留来源；“待确认”不会被当成事实。</span></div>
+        <div class="knowledge-list">
+          <article v-for="item in cobuild.views.knowledge.items" :key="item.knowledge_id" class="knowledge-item">
+            <div><span :class="['classification', item.classification]">{{ item.classification === 'user_confirmed' ? '你已说明' : item.classification === 'source_observed' ? '资料中看到' : '待确认' }}</span></div>
+            <p>{{ item.statement }}</p>
+            <footer>已保留来源记录</footer>
+          </article>
+          <p v-if="!cobuild.views.knowledge.items.length" class="empty-state">还没有企业认识。先和助手聊一句，或提供一份资料线索。</p>
+        </div>
+      </section>
+
+      <section v-if="page === 'confirmations'" class="cobuild-view">
+        <div class="view-intro"><p>少量待确认</p><h2>不知道也没关系，可以以后再补</h2><span>这些事项不会阻止你先拿到第一个有用结果。</span></div>
+        <div class="confirmation-list">
+          <article v-for="item in cobuild.views.confirmations.items" :key="item.confirmation_id" class="confirmation-item">
+            <span>{{ item.status === 'unknown' ? '暂时不知道' : item.status === 'deferred' ? '以后再说' : '已跳过' }}</span>
+            <h3>{{ item.title }}</h3><p>{{ item.reason }}</p>
+          </article>
+          <p v-if="!cobuild.views.confirmations.items.length" class="empty-state">目前没有待确认事项。</p>
+        </div>
+      </section>
+
+      <section v-if="page === 'opportunities'" class="cobuild-view">
+        <div class="view-intro"><p>候选，不是正式变更</p><h2>先看得懂、能检查，再决定要不要继续</h2><span>这里不会自动写业务数据、启用模块或修改系统规则。</span></div>
+        <div class="opportunity-list">
+          <article v-for="item in cobuild.views.opportunities.items" :key="item.candidate_id" class="opportunity-item">
+            <span>可检查候选</span><h3>{{ item.title }}</h3><p>{{ item.summary }}</p><footer>{{ item.status === 'candidate_requires_confirmation' ? '等你确认后再讨论下一步' : item.status }}</footer>
+          </article>
+          <p v-if="!cobuild.views.opportunities.items.length" class="empty-state">聊一句或提供一份资料后，这里会出现第一个可检查候选。</p>
+        </div>
+        <div class="experience-section">
+          <div><p>通用经验建议</p><h2>这些只帮助助手更会提问</h2></div>
+          <div class="experience-list"><article v-for="card in cobuild.views.opportunities.experience_cards" :key="card.card_id"><span>建议，不是贵公司事实</span><h3>{{ card.title }}</h3><p>{{ card.suggestion }}</p><small>适用时：{{ card.applies_when }}</small></article></div>
+        </div>
       </section>
 
       <section v-if="page === 'overview'" class="metric-grid">

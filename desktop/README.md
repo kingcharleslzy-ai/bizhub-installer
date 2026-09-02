@@ -62,10 +62,12 @@ account's token and returns to the same form.
 The local Runtime is a PyInstaller `onedir` built from the existing public
 delivery adapter and the exact vendored `bizhub-common` artifact. Its Vue
 workspace first shows one plain-language `开始使用` page. Until the user
-explicitly enters the bound company Workspace, business APIs and menus stay
-closed. After entry it provides overview, basic data, procurement, sales,
-inventory, and a small settings page, and restart preserves that stage. Bounded
-delivery read models project existing tables;
+explicitly enters the bound company Workspace, business and co-build APIs and
+menus stay closed. After entry it provides four resumable co-build views plus
+overview, basic data, procurement, sales, inventory, and a small settings page.
+The co-build Owner asks one question at a time and creates only source-linked,
+inspectable candidates; restart preserves the same revision. Bounded delivery
+read models project existing tables;
 formal mutations still submit typed previews to the existing Generic Owners.
 Procurement and sales actions require a source-evidence reference supplied by
 the user before preview.
@@ -132,16 +134,17 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`db3c92e6c88ae5d7d1dfb6d5e2b0a7cdf86a864e5091ef781d388a1c341765d3`) and
+`f61d0ad13f03e7d9024ac445a0b227389ddc604670ea7f62622080615ea2591b`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`260bb35720ec12d37ffb389912096bb1430b13f9e184d98bc0ed2facbe82a325`).
+`4ce1791170957d6dcf2abf60ab3f1753ce2fafd8896e1ce09668916d482da7b8`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
-Both fixed review inputs above now bind the Pack A common artifact. The Windows
-input was rebuilt twice on `windows-2022` and captured only after the two pack
-trees matched. Merge readiness still requires the complete D3 and Workspace
-Flow matrices to pass on this exact follow-up head.
+Both fixed review inputs now bind the Pack B common artifact. The
+`windows-2022` D3 workflow rebuilt the Windows Runtime twice, proved equal pack
+trees, and captured the fixed bytes at `0856291`. Merge readiness still
+requires the complete D3 and Workspace Flow matrices to pass on the final exact
+head.
 
 ## Local lifecycle
 

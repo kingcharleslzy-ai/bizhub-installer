@@ -1,11 +1,11 @@
 {
-  "allowlist_contract_sha256": "5e7a8aa8ef1acb796857c317c9d0fabd712634262fe68686253d47d4f911b1ca",
-  "allowlist_tree_digest": "8a86f0d67f48d9518287ca0f0324bb7b749d562e70589bfcab3fa3841e586bc6",
+  "allowlist_contract_sha256": "a8fca049a24d345d41930d17757ae09892d7e60b9eb50dd5b423d13a374b8a37",
+  "allowlist_tree_digest": "aff94ba89d92348319ee9ae2537579150f5e87e85041fd071111c24e10cdce5a",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "5109d59e2443ca86b96db8e3873e4959e9669298099a46e9a6d5360a17096f4f",
-  "core_artifact_digest": "sha256:5109d59e2443ca86b96db8e3873e4959e9669298099a46e9a6d5360a17096f4f",
+  "artifact_sha256": "d662fccc3a06b38feb43eb9e8b55f05e383dfdd5cd29d95c966cf7fe8e76a7a9",
+  "core_artifact_digest": "sha256:d662fccc3a06b38feb43eb9e8b55f05e383dfdd5cd29d95c966cf7fe8e76a7a9",
   "deterministic_rebuild_equal": true,
-  "file_count": 42,
+  "file_count": 43,
   "files": [
     {
       "path": "backend/__init__.py",
@@ -14,12 +14,12 @@
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.json",
-      "sha256": "765c9da965c0548847315824d641a34898bfd13235256ffd7386f0d3038858e1",
-      "size": 29327
+      "sha256": "6d46f523a158b34d71b488d821fa2baf137beb2f2542aef9c66294324a1f1914",
+      "size": 31289
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.sha256",
-      "sha256": "d8d3fc37a2a2c7a55f041215a3645895fa731a06f43aafbeb779f1ab83285a4b",
+      "sha256": "bd59f29657d915ec4b9a7df33f769d70e68824f1db4e643c7b44e00e21d89f3c",
       "size": 65
     },
     {
@@ -29,13 +29,18 @@
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "e3ebd8b5fbbfd63d8a3a47a21dc0c0877d587672e3a6f01ed7c2cd17d86ff2be",
-      "size": 11335
+      "sha256": "167931d0c9540363e32b9bc6eb7153d44a467be12b3eb08668f43f0aa0061f71",
+      "size": 16067
     },
     {
       "path": "backend/generic_kernel/backup.py",
       "sha256": "3d450e19a6108d0d3bd30819ea350c21547edc937fa8594ff38f03f9375cae40",
       "size": 3031
+    },
+    {
+      "path": "backend/generic_kernel/cobuild.py",
+      "sha256": "46d6a57b437dc1ff7a26d30af5591997c9efd100416c79dff5cdc2abed55a676",
+      "size": 32705
     },
     {
       "path": "backend/generic_kernel/migrations.py",
@@ -204,7 +209,7 @@
     },
     {
       "path": "backend/profiles/generic-kernel-smoke.lock.json",
-      "sha256": "24444760abbecbbe400028235a652c699ed4a174770a86ef7314977f22296162",
+      "sha256": "eb69dbae5c80a802c9f123f00d1dee482da2669cfb1062085dfa12765f2e97bc",
       "size": 2258
     },
     {
@@ -220,5 +225,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "a5f01dbf3cec935858fafc33d5c80073745df9c9"
+  "source_commit": "834781b079c5d23d33bbaa45a7e4b27864d9d644"
 }

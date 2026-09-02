@@ -116,6 +116,9 @@ with TestClient(app) as client:
     blocked = client.get("/api/delivery/overview")
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "workspace_onboarding_required"
+    cobuild_blocked = client.get("/api/workspace-cobuild/state")
+    assert cobuild_blocked.status_code == 409
+    assert cobuild_blocked.json()["detail"]["code"] == "workspace_onboarding_required"
     entered = client.post(
         "/api/workspace-onboarding/enter",
         headers={"X-BizHub-Request": "1"},
@@ -128,6 +131,31 @@ with TestClient(app) as client:
     assert entered.status_code == 200
     assert entered.json()["stage"] == "enterprise_context_ready"
     assert entered.json()["accepts_business_material"] is True
+    cobuild = client.get("/api/workspace-cobuild/state")
+    assert cobuild.status_code == 200
+    assert cobuild.json()["next_question"]["question_id"] == "priority_goal"
+    answer = client.post(
+        "/api/workspace-cobuild/answers",
+        headers={"X-BizHub-Request": "1"},
+        json={
+            "schema_version": "bizhub.workspace-cobuild-state.v1",
+            "expected_revision": 0,
+            "question_id": "priority_goal",
+            "text": "First organize incoming orders",
+            "answer_kind": "answered",
+            "actor_ref": "desktop:authenticated-admin",
+            "idempotency_key": "synthetic-public-answer-0001",
+        },
+    )
+    assert answer.status_code == 200
+    assert answer.json()["first_value_candidate"]["business_write_authorized"] is False
+    assert answer.json()["first_value_candidate"]["module_activation_authorized"] is False
+    handoff = client.get("/api/workspace-cobuild/handoff")
+    assert handoff.status_code == 200
+    assert handoff.json()["read_only"] is True
+    assert handoff.json()["successor_must_revalidate"] == [
+        "workspace", "profile", "release", "permissions", "evidence_refs"
+    ]
     drafts = [
         {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
         {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},
