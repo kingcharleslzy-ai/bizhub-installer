@@ -49,12 +49,22 @@ Current local evidence before the Windows capture:
   restart;
 - macOS Runtime archive SHA-256:
   `e49e245c292c7bc62a313ae0dccfc281394c52120bd607d94a58a7b45f1b5dd4`;
+- Windows Runtime capture commit: `36a8f68`;
+- Windows Runtime archive SHA-256:
+  `edfbb26efe08ba739bca388412670db5d1517ad5ddcbf17337613af676c9e232`;
+- Windows Runtime manifest SHA-256:
+  `f1b6bff85810979e435354a973c0e899ee5c8ec7fd3b3b88c9fad348b6d0432e`;
+- Windows Runtime pack tree:
+  `d68ea580312de25d8f5c21f6003320de05b1fca103382cb1af5848a6837773e3`;
+- Windows deterministic capture:
+  [Desktop D3 Windows x64 run](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/33579356442),
+  passed;
 - coordinated Runtime/Manifest trust and zero residual Runtime process checks:
   passed.
 
-Windows Pack C Runtime capture, the final complete local source suites, and the
-remote dual-platform workflow evidence are still pending. They must be recorded
-on the exact final public head before merge readiness is claimed.
+The final complete local source suites and remote dual-platform workflow
+evidence are still required on the exact follow-up public head before merge
+readiness is claimed.
 
 This candidate is not a fixed release. It does not authorize production data,
 deployment, arbitrary file/OCR/table parsing, model inference, customer-private

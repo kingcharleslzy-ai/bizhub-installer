@@ -136,15 +136,14 @@ The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
 `e49e245c292c7bc62a313ae0dccfc281394c52120bd607d94a58a7b45f1b5dd4`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`4ce1791170957d6dcf2abf60ab3f1753ce2fafd8896e1ce09668916d482da7b8`).
+`edfbb26efe08ba739bca388412670db5d1517ad5ddcbf17337613af676c9e232`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
-The macOS review input now binds the Pack C common artifact. The tracked Windows
-input still binds Pack B until the `windows-2022` D3 workflow rebuilds it twice,
-proves equal pack trees, and commits the new fixed bytes. Pack C is not
-merge-ready until that capture is followed by complete D3 and Workspace Flow
-matrices on the final exact head.
+Both fixed review inputs now bind the Pack C common artifact. The
+`windows-2022` D3 workflow rebuilt the Windows Runtime twice, proved equal pack
+trees, and captured the fixed bytes at `36a8f68`. Pack C is not merge-ready
+until complete D3 and Workspace Flow matrices pass on the final exact head.
 
 ## Local lifecycle
 
