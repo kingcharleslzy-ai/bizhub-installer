@@ -140,10 +140,12 @@ The fixed review inputs are
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
-Both fixed review inputs now bind the Pack C common artifact. The
-`windows-2022` D3 workflow rebuilt the Windows Runtime twice, proved equal pack
-trees, and captured the fixed bytes at `36a8f68`. Pack C is not merge-ready
-until complete D3 and Workspace Flow matrices pass on the final exact head.
+Both fixed review inputs bind the Pack C common artifact. The `windows-2022` D3
+workflow rebuilt the Windows Runtime twice, proved equal pack trees, and
+captured the fixed bytes at `36a8f68`; complete D3, Workspace Flow, and R1
+Synthetic matrices passed on the Pack C review head before merge. Desktop
+`0.1.15` packages that merged Pack A/B/C customer co-build flow through the
+existing internal update channel.
 
 ## Local lifecycle
 

@@ -26,9 +26,10 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-The current source branch may contain an unreleased Pack A/B/C first-entry,
-co-build, and system-candidate implementation that is not part of either fixed
-release above. It keeps an
+Desktop `0.1.15` packages the Pack A/B/C first-entry, co-build, and
+system-candidate implementation for the existing internal update channel. It
+is not part of either fixed server release above and does not turn that
+prerelease channel into broad-public publisher authority. It keeps an
 authenticated user in a plain-language `开始使用` context until they explicitly
 enter the one bound company Workspace. After entry, it asks one ordinary
 question at a time and projects dialogue, knowledge, pending confirmation,

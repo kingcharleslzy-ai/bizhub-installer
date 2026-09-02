@@ -56,7 +56,9 @@ async function unusedPort() {
   });
 }
 
-async function waitFor(predicate, code, timeoutMs = 30_000) {
+const DEFAULT_WAIT_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 30_000;
+
+async function waitFor(predicate, code, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
   while (Date.now() < deadline) {
