@@ -73,7 +73,7 @@ e20271aa92f4c2d12030c0e61246898a3aa3a99987f945c12ae13d65245d947d  deploy/cloudfl
 2f854c92910cb73b8ef14cbd797f563d4ba5515bc60dc41c3c2e699572887506  desktop/config/entitlements.macos.synthetic-app.plist
 6171322313601c1a15c8695ce1f321d6884ed5aae1cd2016f58e7dc3bf2abad9  desktop/config/entitlements.macos.synthetic-runtime.plist
 6adfbbe4cbcdcfc61365fa49402ad6164b169651c62b2c626090e10a7269f7ba  desktop/config/generic-runtime-trust.json
-8cbabb4ea1494b10ed473c618e9e2c2aa47a9309e52c87918bf2bc47145a9c52  desktop/config/generic-runtime-trust.win32-x64.json
+c957c2167540fdce9e9deae7d73be3f5ca25300d535ec98397950d5dfc07d9e6  desktop/config/generic-runtime-trust.win32-x64.json
 37fb49a762f5e878b07f3f8e3a496c47c2299ac562a5fdbc6fb0fe310b251014  desktop/config/trusted-connection-keys.json
 5ff244bc0e47a905882126fbf7aa80ec74e7c4aaf6550a48ea714397d398d288  desktop/config/update-channel.json
 143399573733057bd0141bd80f3b212d8c8e07a316b612be0afa681af2d689db  desktop/electron/account-directory.cjs
@@ -105,8 +105,8 @@ c1935feb35458a2d4f209976b55d6b9b6849af8362aaa1f7cf92a73a0bea2398  desktop/runtim
 281be7efa1315be7e7c6af12fc8c0997d25c921811050149a50169d558b3ab75  desktop/runtime/vendor/README.md
 e9ea80626fce03ed07da6d765d0794008a7688ce33c4f190739a4309a83710d4  desktop/runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.sha256
 e49e245c292c7bc62a313ae0dccfc281394c52120bd607d94a58a7b45f1b5dd4  desktop/runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip
-374f2e96b13c32bbc9d5e0dd27c4a474d6fa0c5425cd66ba84ff545c4addbcb1  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.sha256
-4ce1791170957d6dcf2abf60ab3f1753ce2fafd8896e1ce09668916d482da7b8  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip
+3a62329b0d9d3e22be6f3ac64bf5a308fc8b314c559be21558ac5682fcfb8b9b  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.sha256
+edfbb26efe08ba739bca388412670db5d1517ad5ddcbf17337613af676c9e232  desktop/runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip
 44fe9b2a17dafdc4a6a976a5466afc1e9ae45aee7fe454d4a2b39db1ae3b87a0  desktop/scripts/account-flow-smoke.mjs
 5435092b54d89408aad1e1b55eef5054d0d1445848d172634a558987fbdd9cf4  desktop/scripts/cloud-smoke.mjs
 9d771086f0be22df3200f17dbfc92cb4a08420fc283a514668265105d822a896  desktop/scripts/create-synthetic-windows-signing-certificate.ps1
