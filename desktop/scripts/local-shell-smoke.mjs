@@ -359,6 +359,66 @@ try {
     }
     await evaluate(workspace, `(() => {
       const button = [...document.querySelectorAll("nav button")]
+        .find((item) => item.textContent.trim() === "和助手聊聊");
+      button?.click();
+      return Boolean(button);
+    })()`);
+    for (const [text, expected] of [
+      ["每天使用的订单表格", "这件事现在通常是谁先开始"],
+      ["销售接单后交给仓库发货，负责人检查完成", "这件事最容易在哪一步出错"],
+      ["客户名称不一致时容易匹配错", "这件事最终由哪个岗位"],
+      ["销售负责人最终确认", "第一轮了解已经完成"],
+    ]) {
+      const submitted = await evaluate(workspace, `(() => {
+        const field = document.querySelector(".current-question textarea");
+        const button = [...document.querySelectorAll(".answer-actions button")]
+          .find((item) => item.textContent.trim() === "发送");
+        if (!field || !button) return false;
+        field.value = ${JSON.stringify(text)};
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        button.click();
+        return true;
+      })()`);
+      if (!submitted) throw new Error("desktop_local_cobuild_completion_controls_missing");
+      await waitFor(async () => (await evaluate(workspace, "document.body.innerText")).includes(expected),
+        "desktop_local_cobuild_completion_step_missing");
+    }
+    const materialSubmitted = await evaluate(workspace, `(() => {
+      const form = document.querySelector(".material-panel form");
+      const name = form?.querySelector("input");
+      const summary = form?.querySelector("textarea");
+      if (!form || !name || !summary) return false;
+      name.value = "日常订单表.xlsx";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      summary.value = "表格包含客户、商品、数量、库存和发货日期。";
+      summary.dispatchEvent(new Event("input", { bubbles: true }));
+      form.requestSubmit();
+      return true;
+    })()`);
+    if (!materialSubmitted) throw new Error("desktop_local_cobuild_material_controls_missing");
+    await waitFor(async () => (await evaluate(workspace, "document.body.innerText")).includes("系统方案草案已经可以检查"),
+      "desktop_local_system_candidate_not_ready");
+    await evaluate(workspace, `(() => {
+      const button = [...document.querySelectorAll("nav button")]
+        .find((item) => item.textContent.trim() === "改进机会");
+      button?.click();
+      return Boolean(button);
+    })()`);
+    await waitFor(async () => {
+      const text = await evaluate(workspace, "document.body.innerText");
+      return text.includes("系统方案草案")
+        && text.includes("等你检查")
+        && text.includes("订单流转基础")
+        && text.includes("库存与出入库")
+        && text.includes("不会自动安装、写入业务数据或上线") ? text : null;
+    }, "desktop_local_system_candidate_missing");
+    await assertWorkspaceViewports(
+      workspace,
+      "已经拼出第一版，等你检查",
+      "desktop_local_system_candidate_responsive_invalid",
+    );
+    await evaluate(workspace, `(() => {
+      const button = [...document.querySelectorAll("nav button")]
         .find((item) => item.textContent.trim() === "设置");
       button?.click();
       return Boolean(button);
@@ -429,7 +489,7 @@ try {
       ? resumedTitle === "和助手聊聊"
       : firstState.status === "connected",
     settings_ready: true,
-    responsive_workspace_states: 5,
+    responsive_workspace_states: 6,
     responsive_workspace_viewports: WORKSPACE_VIEWPORTS.length,
     packaged: Boolean(packagedExecutable),
     user_data_root: userDataRoot,

@@ -134,6 +134,8 @@ with TestClient(app) as client:
     cobuild = client.get("/api/workspace-cobuild/state")
     assert cobuild.status_code == 200
     assert cobuild.json()["next_question"]["question_id"] == "priority_goal"
+    assert cobuild.json()["system_candidate"]["status"] == "collecting"
+    assert set(cobuild.json()["system_candidate"]["safety"].values()) == {False}
     answer = client.post(
         "/api/workspace-cobuild/answers",
         headers={"X-BizHub-Request": "1"},
@@ -141,7 +143,7 @@ with TestClient(app) as client:
             "schema_version": "bizhub.workspace-cobuild-state.v1",
             "expected_revision": 0,
             "question_id": "priority_goal",
-            "text": "First organize incoming orders",
+            "text": "先整理销售订单和库存遗漏",
             "answer_kind": "answered",
             "actor_ref": "desktop:authenticated-admin",
             "idempotency_key": "synthetic-public-answer-0001",
@@ -150,9 +152,54 @@ with TestClient(app) as client:
     assert answer.status_code == 200
     assert answer.json()["first_value_candidate"]["business_write_authorized"] is False
     assert answer.json()["first_value_candidate"]["module_activation_authorized"] is False
+    assert {
+        item["capability_id"]
+        for item in answer.json()["system_candidate"]["reusable_capabilities"]
+    } >= {"order-flow-foundation", "inventory-and-warehouse"}
+    remaining = [
+        ("available_material", "每天使用的订单表格"),
+        ("actual_process", "销售接单后交给仓库发货，负责人检查完成"),
+        ("main_exception", "客户名称不一致时容易匹配错"),
+        ("responsible_role", "销售负责人最终确认"),
+    ]
+    for revision, (question_id, text) in enumerate(remaining, start=1):
+        response = client.post(
+            "/api/workspace-cobuild/answers",
+            headers={"X-BizHub-Request": "1"},
+            json={
+                "schema_version": "bizhub.workspace-cobuild-state.v1",
+                "expected_revision": revision,
+                "question_id": question_id,
+                "text": text,
+                "answer_kind": "answered",
+                "actor_ref": "desktop:authenticated-admin",
+                "idempotency_key": f"synthetic-public-answer-{revision + 1:04d}",
+            },
+        )
+        assert response.status_code == 200
+    material = client.post(
+        "/api/workspace-cobuild/materials",
+        headers={"X-BizHub-Request": "1"},
+        json={
+            "schema_version": "bizhub.workspace-cobuild-state.v1",
+            "expected_revision": 5,
+            "material_kind": "spreadsheet",
+            "display_name": "日常订单表.xlsx",
+            "summary": "表格包含客户、商品、数量、库存和发货日期。",
+            "source_ref": "desktop:synthetic-public-material-0001",
+            "provided_by": "desktop:authenticated-admin",
+            "idempotency_key": "synthetic-public-material-0001",
+        },
+    )
+    assert material.status_code == 200
+    system_candidate = material.json()["system_candidate"]
+    assert system_candidate["status"] == "candidate_review_required"
+    assert all(item["status"] == "ready" for item in system_candidate["requirements"])
+    assert set(system_candidate["safety"].values()) == {False}
     handoff = client.get("/api/workspace-cobuild/handoff")
     assert handoff.status_code == 200
     assert handoff.json()["read_only"] is True
+    assert handoff.json()["system_candidate"] == system_candidate
     assert handoff.json()["successor_must_revalidate"] == [
         "workspace", "profile", "release", "permissions", "evidence_refs"
     ]

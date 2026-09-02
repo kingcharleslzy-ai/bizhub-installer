@@ -12,6 +12,7 @@ on:
       - codex/desktop-u1-updater-20260828
       - generic/customer-cobuild-pack-a-desktop-20260901
       - generic/customer-cobuild-pack-b-desktop-20260902
+      - generic/customer-cobuild-pack-c-desktop-20260902
 
 permissions:
   contents: read
