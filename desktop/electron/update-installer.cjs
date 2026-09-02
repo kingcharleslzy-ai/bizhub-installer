@@ -7,6 +7,15 @@ const { promisify } = require("node:util");
 const execFileAsync = promisify(execFile);
 const MAX_PENDING_BYTES = 64 * 1024;
 
+function rollbackFileSystem() {
+  if (!process.versions.electron) return { rm };
+  const originalFileSystem = require("original-fs");
+  if (typeof originalFileSystem.promises?.rm !== "function") {
+    throw new Error("desktop_update_original_fs_unavailable");
+  }
+  return originalFileSystem.promises;
+}
+
 function currentMacBundlePath(executablePath) {
   const executable = path.resolve(executablePath);
   const marker = `${path.sep}Contents${path.sep}MacOS${path.sep}`;
@@ -134,7 +143,11 @@ async function finalizePendingMacUpdate({ executablePath, currentVersion, update
     || pending.destination !== destination
     || pending.backup !== expectedBackup
   ) return { status: "retained" };
-  await rm(pending.backup, { recursive: true, force: true });
+  // Electron's patched fs treats a real app.asar as a virtual directory. A
+  // recursive remove can therefore leave the archive and its parent bundle
+  // behind with ENOTEMPTY. original-fs removes the rollback bundle as ordinary
+  // files after the exact destination/version checks above have succeeded.
+  await rollbackFileSystem().rm(pending.backup, { recursive: true, force: true });
   await rm(pendingPath, { force: true });
   return { status: "finalized" };
 }

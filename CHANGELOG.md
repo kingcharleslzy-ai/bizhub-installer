@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Fix macOS update finalization to remove the verified rollback application
+  bundle through Electron's unpatched `original-fs` implementation. Electron's
+  patched filesystem treated `app.asar` as a virtual directory and could leave
+  a small archive stub plus `pending-macos-update.json` after a successful
+  upgrade. Exact destination, version, and pending-record validation remains
+  unchanged, and the pending marker is removed only after the rollback bundle
+  has been deleted. A real-ASAR Electron regression test covers the production
+  failure mode. Desktop version advances to `0.1.16`; Runtime Pack, SQLite
+  schema, migration, Profile, Owner, writer, customer modules, and formal data
+  remain unchanged.
 - Add the Generic Pack C system-candidate view without adding a new top-level
   page or mutation API. Once confirmed priority, actual process, responsible
   role, and source-observed material are present, the existing Runtime Owner
