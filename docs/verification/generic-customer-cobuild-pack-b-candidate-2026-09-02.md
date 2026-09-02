@@ -34,15 +34,22 @@ Current local evidence:
 - Vue type-check and production build: passed;
 - macOS Runtime archive SHA-256:
   `f61d0ad13f03e7d9024ac445a0b227389ddc604670ea7f62622080615ea2591b`;
+- Windows Runtime capture commit: `0856291`;
+- Windows Runtime archive SHA-256:
+  `4ce1791170957d6dcf2abf60ab3f1753ce2fafd8896e1ce09668916d482da7b8`;
+- Windows Runtime pack tree:
+  `bc812ee18f88f09671cc8fcffd7981a76d73d11972d70047448db18a426536a6`;
+- Windows Runtime deterministic capture:
+  [Desktop D3 Windows x64 run](https://github.com/kingcharleslzy-ai/bizhub-installer/actions/runs/33573719144), passed;
 - coordinated Runtime/Manifest tamper: rejected by independent trust;
 - real Electron local Workspace: `5` UI states × `7` viewports = `35`
   combinations, no document-level horizontal overflow;
 - restart readback: the first candidate and the next unanswered question resume
   from the same Workspace revision; residual Runtime processes: `0`.
 
-The tracked Windows Runtime still binds Pack A. Remote `windows-2022` must
-rebuild and capture Pack B before the final dual-platform Workspace Flow can be
-called green.
+Both tracked Runtime archives now bind Pack B. The follow-up exact head must
+still pass the complete remote D3 and dual-platform Workspace Flow matrices
+before this candidate can be called merge-ready.
 
 This candidate is not a fixed release. It does not authorize customer-data
 migration, a production writer switch, deployment, arbitrary file/OCR/table
