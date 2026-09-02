@@ -26,7 +26,7 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-Desktop `0.1.15` packages the Pack A/B/C first-entry, co-build, and
+Desktop `0.1.16` packages the Pack A/B/C first-entry, co-build, and
 system-candidate implementation for the existing internal update channel. It
 is not part of either fixed server release above and does not turn that
 prerelease channel into broad-public publisher authority. It keeps an
@@ -45,6 +45,12 @@ No migration, business table, knowledge database, Profile entry, or writer is
 added. Account registration, cloud company provisioning/invitations, arbitrary
 file parsing, model inference, code materialization, module installation, and
 deployment remain unimplemented.
+
+On macOS, `0.1.16` also finalizes a successful update with Electron's
+unpatched filesystem implementation so a verified rollback bundle containing
+`app.asar` and its pending marker are removed after exact-version startup. This
+changes only updater housekeeping and grants no new application or data
+authority.
 
 ## Give the release to an Agent
 

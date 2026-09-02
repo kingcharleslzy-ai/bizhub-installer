@@ -144,8 +144,11 @@ Both fixed review inputs bind the Pack C common artifact. The `windows-2022` D3
 workflow rebuilt the Windows Runtime twice, proved equal pack trees, and
 captured the fixed bytes at `36a8f68`; complete D3, Workspace Flow, and R1
 Synthetic matrices passed on the Pack C review head before merge. Desktop
-`0.1.15` packages that merged Pack A/B/C customer co-build flow through the
-existing internal update channel.
+`0.1.16` packages that merged Pack A/B/C customer co-build flow through the
+existing internal update channel. Its macOS update finalizer uses Electron's
+unpatched filesystem implementation only after exact destination and version
+validation, preventing a real `app.asar` rollback bundle from leaving a stale
+pending marker.
 
 ## Local lifecycle
 
