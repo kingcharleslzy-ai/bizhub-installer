@@ -12,7 +12,8 @@
   in-memory candidate; it is Catalog-only and absent from both Runtime Profiles.
   Every write, Profile, Registry, migration, installation, and deployment flag
   remains false. No business table, route, Runtime module, migration, or writer
-  is added, and this candidate is not released or deployed.
+  is added. Desktop version advances to `0.1.15`, packaging the completed Pack
+  A/B/C customer co-build flow for the existing internal update channel.
 - Extend the Generic first-entry candidate with a resumable Pack B co-build
   workspace. After the authenticated user enters the one bound company
   Workspace, the existing Generic Runtime Owner asks one plain-language
@@ -26,7 +27,8 @@
   Account registration, cloud provisioning/invitations, arbitrary file/OCR/table
   parsing, model inference, Blueprint compilation, and a module Builder remained
   outside that Pack B candidate; Pack C adds only the isolated non-executable
-  system-candidate mechanism described above.
+  system-candidate mechanism described above. Pack B ships with Desktop
+  `0.1.15` as part of the same bounded customer co-build flow.
 - Add the Generic first-entry candidate on top of the existing unified Desktop
   login, signed cloud discovery, explicit local-company creation, and single
   Runtime authority. A new Workspace is bound to one stable identity and keeps
@@ -34,8 +36,9 @@
   it; restart resumes the same stage. The state reuses the existing kernel audit
   Owner and adds no migration, business table, module, or writer. The empty
   system now explains data location and offers a few plain-language first tasks
-  instead of opening on a zero-filled dashboard. This is unreleased and does not
-  implement registration, cloud provisioning/invitations, or a module Builder.
+  instead of opening on a zero-filled dashboard. Pack A ships with Desktop
+  `0.1.15`; it does not implement registration, cloud provisioning/invitations,
+  or a module Builder.
 - Keep GitHub as the first artifact source, but treat 30 seconds without any
   response or download progress as a stalled transfer and retry the
   byte-identical Qilin mirror immediately. The existing 30-minute total bound,

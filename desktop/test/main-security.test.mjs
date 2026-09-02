@@ -270,6 +270,11 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(accountFlow, /retryDelay: 200/);
   assert.match(accountFlow, /await stopDesktopProcess\(\);[\s\S]+await rm\(temporaryRoot/);
   assert.match(accountFlow, /packagedExecutable && process\.platform === "darwin"/);
+  assert.match(
+    accountFlow,
+    /DEFAULT_WAIT_TIMEOUT_MS = process\.platform === "win32" \? 60_000 : 30_000/,
+  );
+  assert.match(accountFlow, /timeoutMs = DEFAULT_WAIT_TIMEOUT_MS/);
 });
 
 test("account-flow local submission does not depend on foreground animation frames", async () => {

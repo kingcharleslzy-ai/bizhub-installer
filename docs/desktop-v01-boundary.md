@@ -163,6 +163,13 @@ Desktop 0.1.14 keeps that trust model and adds only a 30-second no-progress
 download cutoff before retrying the identical Qilin artifact. GitHub remains the
 first source and the sole Manifest authority; both files still require the exact
 Manifest filename, size, and SHA-256.
+Desktop 0.1.15 packages the merged Generic Pack A/B/C first-entry and customer
+co-build experience. It adds no Desktop mutation authority: the Pack C Builder
+remains build-time only, emits a non-executable candidate, and is absent from
+Runtime Profiles. The existing Runtime Owner remains the sole writer. Windows
+CI allows 60 seconds for each synthetic UI transition because hosted Runner
+startup varies; macOS keeps the 30-second bound. This test-only allowance does
+not change application, network, update, or business-operation timeouts.
 
 Desktop-R1 turns that evolving-version rule into an immutable release rule:
 the current `package.json` version determines the only accepted release tag
