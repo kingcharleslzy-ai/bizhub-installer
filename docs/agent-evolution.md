@@ -42,12 +42,18 @@ modules or deployments. Existing business facts still use the typed Owner
 preview/apply/readback contract. A later Agent must read the same bounded
 Workspace progress before asking anything already answered.
 
-The current unreleased Pack A/B candidate implements the protected first-entry
+The current unreleased Pack A/B/C candidate implements the protected first-entry
 state plus append-only co-build answers/material observations, deterministic
-one-question planning, four customer views, first-value candidates, and a
-bounded read-only successor Handoff. It is still agent-neutral Runtime state:
-arbitrary file parsing, model inference, Runtime Handshake/MCP, executable
-Blueprint compilation, and a module Builder are not implemented.
+one-question planning, four customer views, first-value candidates, a bounded
+read-only successor Handoff, and a customer-readable system candidate. The
+system candidate prefers reusable capabilities from the exact active Generic
+Registry and can describe an isolated `customer.*` scaffold when the existing
+modules cannot express a confirmed need. Its upstream Builder is a Catalog-only
+build-time mechanism: it re-verifies the accepted Blueprint for every call and
+returns only a strict in-memory candidate with all execution authorities false.
+It is absent from both Runtime Profiles. Arbitrary file parsing, model inference,
+Runtime Handshake/MCP, customer code materialization, module installation, and
+deployment are not implemented.
 
 ## Discovery questions
 

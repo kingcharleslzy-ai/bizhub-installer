@@ -26,16 +26,24 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-The current source branch may contain an unreleased first-entry and co-build
-candidate that is not part of either fixed release above. It keeps an
+The current source branch may contain an unreleased Pack A/B/C first-entry,
+co-build, and system-candidate implementation that is not part of either fixed
+release above. It keeps an
 authenticated user in a plain-language `开始使用` context until they explicitly
 enter the one bound company Workspace. After entry, it asks one ordinary
 question at a time and projects dialogue, knowledge, pending confirmation,
 improvement opportunities, a first inspectable candidate, and a bounded
-read-only handoff from the existing Generic Runtime Owner. It adds no migration,
-business table, module, knowledge database, or writer. Account registration,
-cloud company provisioning/invitations, arbitrary file parsing, model inference,
-and automatic module generation remain unimplemented.
+read-only handoff from the existing Generic Runtime Owner. Once the customer has
+provided the minimum confirmed goal, process, responsible role, and one observed
+source, the same opportunity view shows a plain-language system plan: reusable
+active Generic capabilities first, with an isolated `customer.*` scaffold
+candidate only when the current Registry cannot express the need. The upstream
+build-time Builder re-verifies trusted Blueprint acceptance and returns an
+in-memory, non-executable candidate only; it is not packaged as a Runtime module.
+No migration, business table, knowledge database, Profile entry, or writer is
+added. Account registration, cloud company provisioning/invitations, arbitrary
+file parsing, model inference, code materialization, module installation, and
+deployment remain unimplemented.
 
 ## Give the release to an Agent
 

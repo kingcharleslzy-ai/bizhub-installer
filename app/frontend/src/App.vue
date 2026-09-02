@@ -16,6 +16,14 @@ const cobuild = ref<Json>({
   revision: 0,
   views: { dialogue: { items: [] }, knowledge: { items: [] }, confirmations: { items: [] }, opportunities: { items: [], experience_cards: [] } },
   next_question: null,
+  system_candidate: {
+    status: "collecting",
+    reusable_capabilities: [],
+    private_capability_candidate: null,
+    requirements: [],
+    review_steps: [],
+    safety: {},
+  },
 });
 const overview = ref<Json>({});
 const catalog = ref<Json>({ parties: [], products: [], units: [], locations: [] });
@@ -155,7 +163,9 @@ async function answerCobuild(answerKind: "answered" | "unknown" | "deferred" | "
       }),
     });
     answerForm.text = "";
-    notice.value = cobuild.value.first_value_candidate
+    notice.value = cobuild.value.system_candidate?.status === "candidate_review_required"
+      ? "系统方案草案已经整理好，等你检查后再决定是否继续。"
+      : cobuild.value.first_value_candidate
       ? "已经整理出一个可检查的候选，没有写入正式业务记录。"
       : "已记住你的选择，接下来只问一个新问题。";
   } catch (caught: any) {
@@ -189,7 +199,9 @@ async function recordMaterial() {
     });
     materialForm.display_name = "";
     materialForm.summary = "";
-    notice.value = "资料线索已保存为带来源的候选，没有写入正式业务记录。";
+    notice.value = cobuild.value.system_candidate?.status === "candidate_review_required"
+      ? "资料线索已保留来源，系统方案草案已经可以检查。"
+      : "资料线索已保存为带来源的候选，没有写入正式业务记录。";
   } catch (caught: any) {
     error.value = caught.message;
   } finally {
@@ -457,6 +469,36 @@ onMounted(async () => {
 
       <section v-if="page === 'opportunities'" class="cobuild-view">
         <div class="view-intro"><p>候选，不是正式变更</p><h2>先看得懂、能检查，再决定要不要继续</h2><span>这里不会自动写业务数据、启用模块或修改系统规则。</span></div>
+        <article class="system-candidate-panel">
+          <div class="system-candidate-heading">
+            <div><p>系统方案草案</p><h2>{{ cobuild.system_candidate?.status === 'candidate_review_required' ? '已经拼出第一版，等你检查' : '我会边了解，边把系统拼起来' }}</h2></div>
+            <span :class="['system-status', cobuild.system_candidate?.status === 'candidate_review_required' ? 'ready' : 'collecting']">{{ cobuild.system_candidate?.status === 'candidate_review_required' ? '等你检查' : '资料收集中' }}</span>
+          </div>
+          <p class="system-summary">{{ cobuild.system_candidate?.summary || '先从一件实际工作开始，缺少的内容以后可以继续补。' }}</p>
+          <div class="system-requirements">
+            <div v-for="item in cobuild.system_candidate?.requirements || []" :key="item.requirement_id" :class="{ ready: item.status === 'ready' }">
+              <span>{{ item.status === 'ready' ? '✓' : '·' }}</span><strong>{{ item.label }}</strong><small>{{ item.status === 'ready' ? '已有' : '还需要了解' }}</small>
+            </div>
+          </div>
+          <div v-if="cobuild.system_candidate?.reusable_capabilities?.length" class="system-capability-section">
+            <p>可以直接复用的通用能力</p>
+            <div class="system-capability-grid">
+              <article v-for="item in cobuild.system_candidate.reusable_capabilities" :key="item.capability_id">
+                <span>已有基础</span><h3>{{ item.title }}</h3><p>{{ item.description }}</p><small>{{ item.reason }}</small>
+              </article>
+            </div>
+          </div>
+          <article v-if="cobuild.system_candidate?.private_capability_candidate" class="private-candidate">
+            <span>需要单独设计</span><div><h3>{{ cobuild.system_candidate.private_capability_candidate.title }}</h3><p>{{ cobuild.system_candidate.private_capability_candidate.description }}</p></div>
+          </article>
+          <div class="system-review-steps">
+            <div v-for="(step, index) in cobuild.system_candidate?.review_steps || []" :key="step.step_id" :class="{ active: step.status === 'ready' }">
+              <span>{{ index + 1 }}</span><p>{{ step.label }}</p><small>{{ step.status === 'ready' ? '现在可以做' : '到这一步再确认' }}</small>
+            </div>
+          </div>
+          <p class="system-safety-note">这只是草案，不会自动安装、写入业务数据或上线。</p>
+        </article>
+        <div class="opportunity-subheading"><p>逐项发现</p><h2>从对话和资料中整理出的候选</h2></div>
         <div class="opportunity-list">
           <article v-for="item in cobuild.views.opportunities.items" :key="item.candidate_id" class="opportunity-item">
             <span>可检查候选</span><h3>{{ item.title }}</h3><p>{{ item.summary }}</p><footer>{{ item.status === 'candidate_requires_confirmation' ? '等你确认后再讨论下一步' : item.status }}</footer>

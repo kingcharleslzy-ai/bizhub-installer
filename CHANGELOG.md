@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add the Generic Pack C system-candidate view without adding a new top-level
+  page or mutation API. Once confirmed priority, actual process, responsible
+  role, and source-observed material are present, the existing Runtime Owner
+  projects readiness, reusable active Generic capabilities, any isolated
+  customer-private scaffold candidate, and the three human-readable review
+  steps into the existing improvement-opportunities page. The upstream isolated
+  Builder re-verifies trusted Blueprint acceptance and emits only a strict
+  in-memory candidate; it is Catalog-only and absent from both Runtime Profiles.
+  Every write, Profile, Registry, migration, installation, and deployment flag
+  remains false. No business table, route, Runtime module, migration, or writer
+  is added, and this candidate is not released or deployed.
 - Extend the Generic first-entry candidate with a resumable Pack B co-build
   workspace. After the authenticated user enters the one bound company
   Workspace, the existing Generic Runtime Owner asks one plain-language
@@ -13,8 +24,9 @@
   migration, knowledge database, or writer is added; no formal business write,
   module activation, Runtime self-modification, or deployment is authorized.
   Account registration, cloud provisioning/invitations, arbitrary file/OCR/table
-  parsing, model inference, Blueprint compilation, and a module Builder remain
-  outside this candidate.
+  parsing, model inference, Blueprint compilation, and a module Builder remained
+  outside that Pack B candidate; Pack C adds only the isolated non-executable
+  system-candidate mechanism described above.
 - Add the Generic first-entry candidate on top of the existing unified Desktop
   login, signed cloud discovery, explicit local-company creation, and single
   Runtime authority. A new Workspace is bound to one stable identity and keeps

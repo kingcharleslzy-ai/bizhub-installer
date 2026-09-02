@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "a8fca049a24d345d41930d17757ae09892d7e60b9eb50dd5b423d13a374b8a37",
-  "allowlist_tree_digest": "aff94ba89d92348319ee9ae2537579150f5e87e85041fd071111c24e10cdce5a",
+  "allowlist_tree_digest": "d43711901b1752c17699301849a28e42ad5e80afde27d4b9a9e7238750290bd1",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "d662fccc3a06b38feb43eb9e8b55f05e383dfdd5cd29d95c966cf7fe8e76a7a9",
-  "core_artifact_digest": "sha256:d662fccc3a06b38feb43eb9e8b55f05e383dfdd5cd29d95c966cf7fe8e76a7a9",
+  "artifact_sha256": "7f07e42e412272c8441791ac55f77ae05e6832513d07213808a75be42cf6cd70",
+  "core_artifact_digest": "sha256:7f07e42e412272c8441791ac55f77ae05e6832513d07213808a75be42cf6cd70",
   "deterministic_rebuild_equal": true,
   "file_count": 43,
   "files": [
@@ -14,12 +14,12 @@
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.json",
-      "sha256": "6d46f523a158b34d71b488d821fa2baf137beb2f2542aef9c66294324a1f1914",
+      "sha256": "1cbe0f41ecd798bc61894eb50fb6d04d33b8241896b64dcfe83476cd975527a3",
       "size": 31289
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.sha256",
-      "sha256": "bd59f29657d915ec4b9a7df33f769d70e68824f1db4e643c7b44e00e21d89f3c",
+      "sha256": "fd79a5d49ebe000f9f5ccb143009b42fee847beaf107ca83663bc37b477fbc8d",
       "size": 65
     },
     {
@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "167931d0c9540363e32b9bc6eb7153d44a467be12b3eb08668f43f0aa0061f71",
+      "sha256": "3a2c9d1009ce0c2832d55ea1d8b2fc47d488d01676989ff59f0214d8f13aa351",
       "size": 16067
     },
     {
@@ -39,8 +39,8 @@
     },
     {
       "path": "backend/generic_kernel/cobuild.py",
-      "sha256": "46d6a57b437dc1ff7a26d30af5591997c9efd100416c79dff5cdc2abed55a676",
-      "size": 32705
+      "sha256": "efad4ab915f9bb3bea31a5458d3f7a0da73eb00fd131cd1395c717ef8ec574aa",
+      "size": 39986
     },
     {
       "path": "backend/generic_kernel/migrations.py",
@@ -209,7 +209,7 @@
     },
     {
       "path": "backend/profiles/generic-kernel-smoke.lock.json",
-      "sha256": "eb69dbae5c80a802c9f123f00d1dee482da2669cfb1062085dfa12765f2e97bc",
+      "sha256": "fb617fee532949a1459a6a8ce42647c8d15fc563ca144806dc45179105c1803c",
       "size": 2258
     },
     {
@@ -225,5 +225,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "834781b079c5d23d33bbaa45a7e4b27864d9d644"
+  "source_commit": "17d372470e7fa3dc881befa6562414931eac2caf"
 }

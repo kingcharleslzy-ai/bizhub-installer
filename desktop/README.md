@@ -134,17 +134,16 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`f61d0ad13f03e7d9024ac445a0b227389ddc604670ea7f62622080615ea2591b`) and
+`e49e245c292c7bc62a313ae0dccfc281394c52120bd607d94a58a7b45f1b5dd4`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`4ce1791170957d6dcf2abf60ab3f1753ce2fafd8896e1ce09668916d482da7b8`).
+`edfbb26efe08ba739bca388412670db5d1517ad5ddcbf17337613af676c9e232`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
-Both fixed review inputs now bind the Pack B common artifact. The
+Both fixed review inputs now bind the Pack C common artifact. The
 `windows-2022` D3 workflow rebuilt the Windows Runtime twice, proved equal pack
-trees, and captured the fixed bytes at `0856291`. Merge readiness still
-requires the complete D3 and Workspace Flow matrices to pass on the final exact
-head.
+trees, and captured the fixed bytes at `36a8f68`. Pack C is not merge-ready
+until complete D3 and Workspace Flow matrices pass on the final exact head.
 
 ## Local lifecycle
 
