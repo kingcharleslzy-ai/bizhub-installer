@@ -21,8 +21,8 @@ digest
 `sha256:90a43dc622894419c56edabaf4166809f4b557c2dc0ac524d77277e80980bc72`.
 The Dockerfile verifies and extracts it, then adds only the delivery adapter for
 authentication, company configuration, runtime identity, and delegation into
-the common Owners. It does not copy the retained `app/backend/bizhub` business
-directory.
+the common Owners. It does not copy the then-retained `app/backend/bizhub`
+business directory.
 
 The immutable installation plan binds the artifact id, upstream source commit,
 allowlist tree digest, artifact digest, public release commit, target
@@ -53,11 +53,11 @@ Detailed evidence is in
 [`v070-preview1-common-artifact-release-e2e-2026-08-23.md`](verification/v070-preview1-common-artifact-release-e2e-2026-08-23.md)
 and [`cp-5-ubuntu-e2e.json`](verification/cp-5-ubuntu-e2e.json).
 
-## Retained implementation and rollback
+## Legacy retirement and rollback
 
-The previous public business directory remains in Git and the working tree
-because its deletion was not approved. It is inactive in the `v0.7` image and
-must receive no new features. Deletion conditions are fixed in
+The previous public business directory was inactive in the `v0.7` image and was
+subsequently removed from the working tree after the fixed preview passed. Its
+recovery evidence and boundary are recorded in
 [`legacy-core-retirement.md`](legacy-core-retirement.md).
 
 Stable `v0.3.0` remains the supported fallback. This preview does not authorize

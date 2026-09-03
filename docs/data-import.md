@@ -40,4 +40,4 @@ bundle. Those tagged releases and their evidence remain available under
 Reintroducing batch import, external mapping, or dependency bundles requires
 moving the customer-neutral contract into the canonical common source and
 shipping a new common artifact. It must not be restored by adding features to
-the retained legacy public directory.
+the retired legacy public directory.

@@ -68,10 +68,10 @@ A module may own:
 - import mappings that delegate final writes to the owning module;
 - its health checks, evidence references, and bounded Agent context.
 
-Every module declares one `bizhub.module-manifest.v1`. The current built-in
-manifests are returned by authenticated `GET /api/system/modules` and through
-the existing `bizhub_resource_query(resource=system_map)` MCP tool. The schema
-is [module-manifest.v1.schema.json](../schemas/module-manifest.v1.schema.json).
+Every module declares one `bizhub.runtime-module-manifest.v1`. The current
+built-in manifests are returned by authenticated `GET /api/system/modules` and
+through the existing `bizhub_resource_query(resource=system_map)` MCP tool.
+Their authoritative shape lives with the shared runtime module contract.
 
 The manifest is descriptive and enforceable metadata, not execution authority.
 Presence of a manifest never authorizes installation or business writes.
@@ -178,9 +178,9 @@ layer with zero common-path overlap. Both image identities read back the same
 
 The public delivery adapter owns authentication, company configuration,
 installation identity, and delegation into the common Owners. It does not copy
-or recreate the business writers. The former public business directory is
-retained but inactive under the explicit
-[retirement plan](legacy-core-retirement.md).
+or recreate the business writers. The former public business directory has been
+physically removed under the documented
+[retirement record](legacy-core-retirement.md).
 
 This remains build-time composition, not a general plugin runtime. Production
 does not hot-install modules or Agent-generated code. The common-artifact preview

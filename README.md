@@ -264,7 +264,7 @@ remain available only in their immutable `v0.5`/`v0.6` tags. See
 | How a customer's Agent chooses config, mapping, Skill, or module | [Agent evolution](docs/agent-evolution.md) |
 | Executable private read-only extension boundary | [Read-only extension](docs/read-only-extension.md) |
 | Common artifact identity and two-Profile image boundary | [Common artifact delivery](docs/common-artifact-delivery.md) |
-| Retained legacy public core retirement conditions | [Legacy core retirement](docs/legacy-core-retirement.md) |
+| Retired legacy public core and recovery record | [Legacy core retirement](docs/legacy-core-retirement.md) |
 | CP-5 public delivery review object and gates | [CP-5 public delivery report](docs/cp-5-public-delivery-report.md) |
 | Documentation-only customer Skill guidance | [Customer Skill extension](docs/customer-skill-extension.md) |
 | Vulnerability reporting and supported versions | [Security policy](SECURITY.md) |
@@ -281,7 +281,7 @@ uv pip install --python .venv/bin/python \
 
 python scripts/update_checksums.py
 python scripts/verify_checksums.py
-PYTHONPATH=app/backend .venv/bin/pytest -q app/backend/tests tests
+.venv/bin/pytest -q tests
 
 npm --prefix app/frontend ci
 npm --prefix app/frontend run build

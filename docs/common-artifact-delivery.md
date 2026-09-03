@@ -30,8 +30,8 @@ transition.
 The common manifest contains 41 allowlisted text files. Its generated scan
 rejects customer names, private module paths, private frontends, source maps,
 credentials, and secret references. Public tests also verify that the container
-copies the generated artifact and delivery adapter, not the retained legacy
-business directory.
+copies the generated artifact and delivery adapter and that the retired legacy
+business directory remains absent.
 
 The artifact is generated upstream; it must not be hand-edited in this
 repository. Any upstream content change requires a new manifest, digest, public

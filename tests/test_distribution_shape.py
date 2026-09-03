@@ -78,7 +78,7 @@ class DistributionShapeTests(unittest.TestCase):
         frontend = json.loads((ROOT / "app/frontend/package.json").read_text(encoding="utf-8"))
         bootstrap = (ROOT / "install/bootstrap.yaml").read_text(encoding="utf-8")
         installer = (ROOT / "bizhubctl").read_text(encoding="utf-8")
-        backend = (ROOT / "app/backend/bizhub/__init__.py").read_text(encoding="utf-8")
+        runtime = (ROOT / "app/runtime/bizhub/__init__.py").read_text(encoding="utf-8")
         mcp = (PLUGIN / "scripts/bizhub_mcp.py").read_text(encoding="utf-8")
 
         self.assertEqual(plugin["version"], version)
@@ -86,7 +86,7 @@ class DistributionShapeTests(unittest.TestCase):
         self.assertRegex(bootstrap, rf"(?m)^status: implementation_preview$")
         self.assertRegex(bootstrap, rf"(?m)^  release_tag: v{re.escape(version)}$")
         self.assertIn(f'VERSION = "{version}"', installer)
-        self.assertIn(f'__version__ = "{version}"', backend)
+        self.assertIn(f'__version__ = "{version}"', runtime)
         self.assertIn(f'RELEASE_TAG = "v{version}"', mcp)
         self.assertIn('"maturity": "implementation_preview"', mcp)
 

@@ -1,5 +1,4 @@
 frontend/node_modules
-backend/bizhub/static
 backend/tests
 backend/requirements-dev.lock
 runtime/tests
