@@ -105,6 +105,20 @@ condition below must be true:
    publisher identities, Runtime trust, test identities, Actions Artifact
    IDs/digests, and inner install-file hashes.
 
+## Web, macOS and Windows common updates
+
+The existing `bizhub-common-manifest.json` is the only shared release identity.
+Its `source_commit` identifies the canonical Web-side source and its
+`core_artifact_digest` identifies the exact bytes consumed by both Desktop
+Runtimes. `desktop-release-plan.v2` records both values and refuses a candidate
+unless the macOS and Windows Runtime identities use that digest.
+
+The three delivery targets remain independently deployable. A coordinated
+common update exports the manifest once, deploys a Web revision containing its
+source commit, and builds both Desktop platforms from its artifact digest. It
+does not require an additional registry, synchronizer, or all-or-nothing
+three-platform cutover.
+
 Only after the project Owner approves that exact plan SHA may the independent
 publish workflow consume the same run's Artifacts. A second signing run cannot
 substitute different timestamped bytes for the approved candidate.
