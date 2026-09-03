@@ -1,7 +1,7 @@
 331eb1812219c46fb6235697497c1a2f6a38f820290b69553b76409d1aa0ac02  .agents/plugins/marketplace.json
 1edb32daa78c66bc393e6ddd030e77e6e04e039c937e4f60f428a4cc0933e558  .gitattributes
 8070b177e803e6e0bc50df037efed9b75c980e31df9b0ef39353859ec5d12488  .github/workflows/desktop-d1-windows.yml
-e2cf7d51804fd1a740d8762bf4166402436875cb2f84a90d625edf071eb456c0  .github/workflows/desktop-d2-macos.yml
+9d155720a081df014bbe10b7e98c72c0a37e0083809649b4a8c3d1a7f808b533  .github/workflows/desktop-d2-macos.yml
 bcda4520870df0adbfe174e479467b77cbfeea5953aa5c9c994e54a61504f6f4  .github/workflows/desktop-d3-windows.yml
 05a055675442d61069bb299a56e2601558ab06e1256996e470c69499d5410630  .github/workflows/desktop-internal-update.yml
 acc242876e12308d27278386ad323591122d3f99073a99fe89d7a4e6d0375629  .github/workflows/desktop-r1-publish.yml
