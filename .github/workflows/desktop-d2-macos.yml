@@ -61,7 +61,7 @@ jobs:
 
       - name: Run public Python tests
         shell: bash
-        run: PYTHONPATH="$PWD/../app/backend" "$RUNNER_TEMP/bizhub-desktop-test-venv/bin/pytest" -q ../app/backend/tests ../tests
+        run: "$RUNNER_TEMP/bizhub-desktop-test-venv/bin/pytest" -q ../tests
 
       - name: Rebuild Generic Runtime source candidate
         shell: bash

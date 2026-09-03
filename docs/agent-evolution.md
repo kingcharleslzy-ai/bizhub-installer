@@ -112,8 +112,8 @@ A mapping or collector must:
 The separate batch-import, reconcile, and dependency-aware party-bundle
 endpoints remain historical `v0.5`/`v0.6` preview contracts and are not active
 in `v0.7`. If a customer needs them, move the generic contract into the
-canonical common source and publish a new artifact; do not add the behavior to
-the retained legacy public directory.
+canonical common source and publish a new artifact; do not recreate the retired
+legacy public directory.
 
 ## Customer Skill contract
 
@@ -133,7 +133,7 @@ Merge or delete overlapping instructions before adding another Skill.
 
 A generated private module is incomplete unless it has:
 
-- one manifest matching `bizhub.module-manifest.v1`;
+- one manifest matching `bizhub.runtime-module-manifest.v1`;
 - a customer namespace and immutable version;
 - declared dependencies and capabilities with no cycle;
 - owned entities and append-only migrations;

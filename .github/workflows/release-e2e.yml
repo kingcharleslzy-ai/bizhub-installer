@@ -45,7 +45,7 @@ jobs:
           python release/scripts/verify_checksums.py
           python -m venv release/.venv
           release/.venv/bin/pip install --disable-pip-version-check --require-hashes -r release/app/backend/requirements-dev.lock
-          PYTHONPATH="$PWD/release/app/backend" release/.venv/bin/pytest -q release/app/backend/tests release/tests
+          release/.venv/bin/pytest -q release/tests
           npm --prefix release/app/frontend ci --ignore-scripts
           npm --prefix release/app/frontend run build
           npm --prefix release/app/frontend audit --audit-level=high

@@ -239,9 +239,9 @@ assert verify()["status"] == "ok"
     assert completed.returncode == 0, completed.stderr or completed.stdout
 
 
-def test_container_activates_delivery_adapter_not_retained_legacy_core() -> None:
+def test_container_activates_delivery_adapter_without_legacy_core() -> None:
     dockerfile = (ROOT / "app/Dockerfile").read_text(encoding="utf-8")
     assert "COPY vendor/bizhub-common.tar.gz" in dockerfile
     assert "COPY runtime/bizhub ./bizhub" in dockerfile
     assert "COPY backend/bizhub" not in dockerfile
-    assert (ROOT / "app/backend/bizhub").is_dir()
+    assert not (ROOT / "app/backend/bizhub").exists()
