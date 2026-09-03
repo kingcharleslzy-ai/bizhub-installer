@@ -36,6 +36,7 @@ jobs:
             echo "full=true" >> "$GITHUB_OUTPUT"
           elif [[ "$EVENT_NAME" == "pull_request" ]] && git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
             . \
+            ':(exclude).github/workflows/desktop-d2-macos.yml' \
             ':(exclude).github/workflows/desktop-r1-release.yml' \
             ':(exclude)desktop/scripts/release-plan.mjs' \
             ':(exclude)desktop/test/release-plan.test.mjs' \
