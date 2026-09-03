@@ -15,8 +15,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: desktop-r1-scope
+    runs-on: ubuntu-24.04
+    outputs:
+      full: ${{ steps.detect.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: detect
+        name: Detect release-impacting changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "pull_request" ]] && git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            desktop \
+            app/runtime \
+            app/vendor \
+            app/backend/requirements.in \
+            app/backend/requirements.lock \
+            app/backend/requirements-dev.in \
+            app/backend/requirements-dev.lock; then
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" != "pull_request" ]] && git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            .github/workflows/desktop-r1-release.yml \
+            desktop \
+            app/runtime \
+            app/vendor \
+            app/backend/requirements.in \
+            app/backend/requirements.lock \
+            app/backend/requirements-dev.in \
+            app/backend/requirements-dev.lock; then
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
+
   macos-arm64:
     name: desktop-r1-synthetic-macos-arm64
+    needs: scope
     runs-on: macos-14
     timeout-minutes: 55
     env:
@@ -31,15 +74,19 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.12.10
-      - name: Verify source, tests, dependency, and public boundary
+      - name: Verify repository integrity
         run: |
           test "$(uname -m)" = arm64
           python ../scripts/verify_checksums.py
+      - name: Verify source, tests, dependency, and public boundary
+        if: needs.scope.outputs.full == 'true'
+        run: |
           npm ci
           node scripts/release-preflight.mjs
           npm test
@@ -48,6 +95,7 @@ jobs:
           npm run audit:runtime
           npm audit --audit-level=moderate
       - name: Prepare and bind synthetic Runtime
+        if: needs.scope.outputs.full == 'true'
         run: |
           npm run prepare:runtime
           npm run smoke:runtime-tamper
@@ -56,6 +104,7 @@ jobs:
           npm run smoke:local-shell
           node scripts/prepare-signed-macos-runtime.mjs
       - name: Build old and current signed applications
+        if: needs.scope.outputs.full == 'true'
         shell: bash
         run: |
           current_version="$(node -p 'require("./package.json").version')"
@@ -79,6 +128,7 @@ jobs:
             --output out/desktop-r1-macos-upgrade-rollback.json
           git diff --exit-code -- package.json package-lock.json
       - name: Verify current signed product and containers
+        if: needs.scope.outputs.full == 'true'
         shell: bash
         run: |
           product="out/BizHub Desktop-darwin-arm64"
@@ -93,6 +143,7 @@ jobs:
           sleep 2
           ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: needs.scope.outputs.full == 'true'
         with:
           name: desktop-r1-macos-arm64-${{ github.sha }}-synthetic-ci
           path: |
@@ -107,6 +158,7 @@ jobs:
 
   windows-x64:
     name: desktop-r1-synthetic-windows-x64
+    needs: scope
     runs-on: windows-2022
     timeout-minutes: 60
     env:
@@ -126,17 +178,23 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.12.10
-      - name: Verify source, tests, dependency, and public boundary
+      - name: Verify repository integrity
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          if ((node -p "process.platform") -ne "win32" -or (node -p "process.arch") -ne "x64") { throw "desktop_r1_windows_target_invalid" }
+          if ($env:RUNNER_OS -ne "Windows" -or $env:RUNNER_ARCH -ne "X64") { throw "desktop_r1_windows_target_invalid" }
           python ../scripts/verify_checksums.py
+      - name: Verify source, tests, dependency, and public boundary
+        if: needs.scope.outputs.full == 'true'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm ci
           node scripts/release-preflight.mjs
           npm test
@@ -145,6 +203,7 @@ jobs:
           npm run audit:runtime
           npm audit --audit-level=moderate
       - name: Prepare fixed Runtime and synthetic publisher
+        if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -163,12 +222,14 @@ jobs:
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint.Replace(' ', '').ToUpperInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Sign and rebind Runtime
+        if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           node scripts/prepare-signed-windows-runtime.mjs
           ./scripts/verify-windows-runtime-signatures.ps1 -RuntimeRoot runtime-dist/bizhub-runtime -PreparationIdentity out/desktop-r1-windows-runtime-preparation.json -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -Output out/desktop-r1-windows-runtime-identity.json -SigningMode synthetic-ci
       - name: Build old and current signed installers
+        if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -187,6 +248,7 @@ jobs:
           ./scripts/windows-upgrade-rollback-smoke.ps1 -OldSetup "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe" -NewSetup "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -OldVersion $oldVersion -NewVersion $currentVersion -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -Output out/desktop-r1-windows-upgrade-rollback.json -SigningMode synthetic-ci
           git diff --exit-code -- package.json package-lock.json
       - name: Verify current product, installation, and identities
+        if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -210,6 +272,7 @@ jobs:
           }
           $identity | ConvertTo-Json -Depth 5 | Out-File out/desktop-r1-windows-x64-identity.json -Encoding utf8
       - name: Confirm no residual process
+        if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -217,6 +280,7 @@ jobs:
           $left = Get-CimInstance Win32_Process | Where-Object { $_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe" -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) }
           if ($left) { throw "desktop_residual_process_detected" }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: needs.scope.outputs.full == 'true'
         with:
           name: desktop-r1-windows-x64-${{ github.sha }}-synthetic-ci
           path: |
@@ -229,7 +293,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Remove synthetic signing material
-        if: always()
+        if: always() && needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
