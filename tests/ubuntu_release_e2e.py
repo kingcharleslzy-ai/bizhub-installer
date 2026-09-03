@@ -470,6 +470,17 @@ def main() -> None:
         (args.repo / "app/vendor/bizhub-common-manifest.json").read_text(encoding="utf-8")
     )
     assert health["core_artifact_digest"] == common_manifest["core_artifact_digest"]
+    onboarding = api.call("/api/workspace-onboarding/state")
+    assert onboarding["stage"] == "workspace_ready"
+    entered = api.call(
+        "/api/workspace-onboarding/enter",
+        {
+            "schema_version": "bizhub.workspace-onboarding-state.v1",
+            "expected_revision": onboarding["revision"],
+            "idempotency_key": "release-e2e-enter-0001",
+        },
+    )
+    assert entered["stage"] == "enterprise_context_ready"
     exercise_business_flow(api)
 
     backup_result = json.loads(run([str(args.repo / "bizhubctl"), "backup", "--label", "e2e-restore"], cwd=args.repo).stdout)
