@@ -116,13 +116,18 @@ async function build(options) {
   if (containers.package_version !== packageJson.version) fail("desktop_release_plan_version_mismatch");
   const releaseTagPattern = new RegExp(`^desktop-v${packageJson.version.replaceAll(".", "\\.")}(?:-preview\\.[1-9]\\d*)?$`);
   if (!releaseTagPattern.test(options.tag)) fail("desktop_release_plan_tag_version_mismatch");
-  const commonArtifactDigest = (await readJson(path.join(ROOT, "config", "generic-runtime-trust.json"))).core_artifact_digest;
+  const commonManifest = await readJson(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"));
+  const commonArtifactDigest = commonManifest.core_artifact_digest;
+  if (commonArtifactDigest !== `sha256:${commonManifest.artifact_sha256}`
+    || !/^[0-9a-f]{40}$/.test(commonManifest.source_commit || "")) {
+    fail("desktop_release_plan_common_manifest_invalid");
+  }
   if (macRuntime.core_artifact_digest !== commonArtifactDigest || windowsRuntime.core_artifact_digest !== commonArtifactDigest) {
     fail("desktop_release_plan_common_artifact_mismatch");
   }
 
   const plan = {
-    schema_version: "bizhub.desktop-release-plan.v1",
+    schema_version: "bizhub.desktop-release-plan.v2",
     repository: process.env.GITHUB_REPOSITORY || "kingcharleslzy-ai/bizhub-installer",
     source_run: {
       attempt: Number(options.source_run_attempt),
@@ -136,7 +141,10 @@ async function build(options) {
       account_directory_sha256: (await fileIdentity(path.join(ROOT, "config", "account-directory.json"))).sha256,
       workspace_trust_sha256: (await fileIdentity(path.join(ROOT, "config", "trusted-connection-keys.json"))).sha256,
     },
-    common_core_artifact_digest: commonArtifactDigest,
+    common_core: {
+      artifact_digest: commonArtifactDigest,
+      source_commit: commonManifest.source_commit,
+    },
     platforms: {
       macos_arm64: {
         actions_artifact: {
@@ -224,7 +232,12 @@ async function verify(options) {
     fail("desktop_release_plan_sha_mismatch");
   }
   const plan = await readJson(planPath);
-  if (plan.schema_version !== "bizhub.desktop-release-plan.v1") fail("desktop_release_plan_schema_invalid");
+  if (plan.schema_version !== "bizhub.desktop-release-plan.v2") fail("desktop_release_plan_schema_invalid");
+  const commonManifest = await readJson(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"));
+  if (plan.common_core?.artifact_digest !== commonManifest.core_artifact_digest
+    || plan.common_core?.source_commit !== commonManifest.source_commit) {
+    fail("desktop_release_plan_common_identity_mismatch");
+  }
   if (
     plan.source_run.id !== Number(options.source_run_id)
     || plan.source_run.commit !== options.commit

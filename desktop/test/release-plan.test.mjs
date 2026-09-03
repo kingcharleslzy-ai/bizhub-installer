@@ -75,6 +75,13 @@ test("release plan binds exact Actions identities, publisher readback, and inner
       "--windows-artifact-name", "windows-artifact", "--windows-artifact-digest", `sha256:${"8".repeat(64)}`,
       "--output", planPath,
     ]);
+    const plan = JSON.parse(await readFile(planPath, "utf8"));
+    const commonManifest = JSON.parse(await readFile(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"), "utf8"));
+    assert.equal(plan.schema_version, "bizhub.desktop-release-plan.v2");
+    assert.deepEqual(plan.common_core, {
+      artifact_digest: commonManifest.core_artifact_digest,
+      source_commit: commonManifest.source_commit,
+    });
     const planSha = createHash("sha256").update(await readFile(planPath)).digest("hex");
     const verifyArgs = [
       "verify", "--plan", planPath, "--plan-sha256", planSha, "--source-run-id", "123",
