@@ -24,7 +24,7 @@ from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-VERSION = "0.7.0-preview.1"
+VERSION = "0.7.0-preview.2"
 CONTAINER = "bizhub"
 ROOT = Path(os.getenv("BIZHUBCTL_ROOT", "/")).resolve()
 ETC = ROOT / "etc/bizhub"

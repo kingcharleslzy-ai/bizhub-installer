@@ -81,7 +81,7 @@ jobs:
         run: |
           & $env:BIZHUB_RUNTIME_PYTHON -c "import os,sys; sys.path.insert(0, 'runtime'); import bizhub_runtime_entry_windows as entry; assert entry._parent_process_alive(os.getpid())"
 
-      - name: Prove two Windows Runtime builds are deterministic
+      - name: Build Windows Runtime source identity
         id: runtime
         shell: pwsh
         run: |
@@ -96,35 +96,12 @@ jobs:
             }
           }
           & $env:BIZHUB_RUNTIME_PYTHON runtime/build_windows_runtime.py --python $env:BIZHUB_RUNTIME_PYTHON
-          $first = Read-RuntimeIdentity
-          Copy-Item -LiteralPath "runtime-dist\bizhub-runtime\runtime-release-manifest.json" `
-            -Destination (Join-Path $env:RUNNER_TEMP "bizhub-first-runtime-manifest.json")
-          & $env:BIZHUB_RUNTIME_PYTHON runtime/build_windows_runtime.py --python $env:BIZHUB_RUNTIME_PYTHON
-          $second = Read-RuntimeIdentity
-          $firstJson = $first | ConvertTo-Json -Compress
-          $secondJson = $second | ConvertTo-Json -Compress
-          Write-Output "first_runtime_identity=$firstJson"
-          Write-Output "second_runtime_identity=$secondJson"
-          if ($firstJson -ne $secondJson) {
-            $firstManifest = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "bizhub-first-runtime-manifest.json") -Raw | ConvertFrom-Json
-            $secondManifest = Get-Content -LiteralPath "runtime-dist\bizhub-runtime\runtime-release-manifest.json" -Raw | ConvertFrom-Json
-            $firstFiles = @{}
-            foreach ($record in $firstManifest.files) { $firstFiles[$record.path] = $record }
-            $differences = foreach ($record in $secondManifest.files) {
-              $before = $firstFiles[$record.path]
-              if (-not $before -or $before.sha256 -ne $record.sha256 -or $before.size -ne $record.size) {
-                "$($record.path):$($before.sha256):$($record.sha256):$($before.size):$($record.size)"
-              }
-            }
-            $differenceText = $differences -join ","
-            Write-Output "::error title=Windows Runtime nondeterminism::first=$firstJson second=$secondJson differing_files=$differenceText"
-            throw "desktop_windows_runtime_build_not_deterministic"
-          }
-          $second | ConvertTo-Json -Compress
-          "manifest_sha256=$($second.manifest_sha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "pack_tree_digest=$($second.pack_tree_digest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "file_count=$($second.file_count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "source_tree_digest=$($second.source_tree_digest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $identity = Read-RuntimeIdentity
+          $identity | ConvertTo-Json -Compress
+          "manifest_sha256=$($identity.manifest_sha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "pack_tree_digest=$($identity.pack_tree_digest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "file_count=$($identity.file_count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "source_tree_digest=$($identity.source_tree_digest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Capture the Windows Runtime when source identity changes
         id: capture

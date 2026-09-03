@@ -134,17 +134,18 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`e49e245c292c7bc62a313ae0dccfc281394c52120bd607d94a58a7b45f1b5dd4`) and
+`b6cf5ceca6d1fa224c80f9e095cfeaefc0d456c7c59b36afe1ac28e52a9dfe00`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`edfbb26efe08ba739bca388412670db5d1517ad5ddcbf17337613af676c9e232`).
+`8f95e2788dea4da15315d57942ecbd1d8ccdcad029b22765eaaeda67c40f46da`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
 Both fixed review inputs bind the Pack C common artifact. The `windows-2022` D3
-workflow rebuilt the Windows Runtime twice, proved equal pack trees, and
-captured the fixed bytes at `36a8f68`; complete D3, Workspace Flow, and R1
+workflow builds one Windows Runtime identity and captures those fixed bytes;
+the later archive and installer checks verify the same bytes without a duplicate
+Runtime build. Complete D3, Workspace Flow, and R1
 Synthetic matrices passed on the Pack C review head before merge. Desktop
-`0.1.16` packages that merged Pack A/B/C customer co-build flow through the
+`0.1.17` packages that merged Pack A/B/C customer co-build flow through the
 existing internal update channel. Its macOS update finalizer uses Electron's
 unpatched filesystem implementation only after exact destination and version
 validation, preventing a real `app.asar` rollback bundle from leaving a stale

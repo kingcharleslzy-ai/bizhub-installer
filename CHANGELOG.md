@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Publish `bizhub-common` digest `sha256:71e4df905ad6d59ab6a028f011f356da90ecca78cebcdcd43ad87b00a22fa112`
+  from private source commit `7c9265d61e23fd9d7051a0df89adacb6cebd1e54`
+  as Generic Web `0.7.0-preview.2` and Desktop `0.1.17`. The macOS and
+  Windows Runtime trust records must bind this exact digest; release metadata
+  changes continue to use the short CI path while actual Runtime packaging
+  still runs once per platform.
 - Fix macOS update finalization to remove the verified rollback application
   bundle through Electron's unpatched `original-fs` implementation. Electron's
   patched filesystem treated `app.asar` as a virtual directory and could leave

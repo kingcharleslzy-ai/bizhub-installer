@@ -170,6 +170,9 @@ Runtime Profiles. The existing Runtime Owner remains the sole writer. Windows
 CI allows 60 seconds for each synthetic UI transition because hosted Runner
 startup varies; macOS keeps the 30-second bound. This test-only allowance does
 not change application, network, update, or business-operation timeouts.
+Desktop 0.1.17 changes no Owner or writer; it refreshes the fixed macOS and
+Windows Runtime inputs so both package the same `bizhub-common` digest as the
+current Generic Web preview.
 The macOS update finalizer removes an exact-version rollback bundle through
 Electron's unpatched filesystem implementation after successful startup. This
 avoids treating the bundle's `app.asar` as a virtual directory and leaving a

@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "a8fca049a24d345d41930d17757ae09892d7e60b9eb50dd5b423d13a374b8a37",
-  "allowlist_tree_digest": "d43711901b1752c17699301849a28e42ad5e80afde27d4b9a9e7238750290bd1",
+  "allowlist_tree_digest": "5babd325c1af66d3c7093f83783a572e3707d9c1edb1a5d876268be514988dcc",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "7f07e42e412272c8441791ac55f77ae05e6832513d07213808a75be42cf6cd70",
-  "core_artifact_digest": "sha256:7f07e42e412272c8441791ac55f77ae05e6832513d07213808a75be42cf6cd70",
+  "artifact_sha256": "71e4df905ad6d59ab6a028f011f356da90ecca78cebcdcd43ad87b00a22fa112",
+  "core_artifact_digest": "sha256:71e4df905ad6d59ab6a028f011f356da90ecca78cebcdcd43ad87b00a22fa112",
   "deterministic_rebuild_equal": true,
   "file_count": 43,
   "files": [
@@ -14,12 +14,12 @@
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.json",
-      "sha256": "1cbe0f41ecd798bc61894eb50fb6d04d33b8241896b64dcfe83476cd975527a3",
+      "sha256": "8f0c80c0d4ab5d2fec99b9c51ca44ba4e80111fb37aff9081160ef894f9d557c",
       "size": 31289
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.sha256",
-      "sha256": "fd79a5d49ebe000f9f5ccb143009b42fee847beaf107ca83663bc37b477fbc8d",
+      "sha256": "f4326033c6ad42f0caa34bf17d9f64885fdf2b9dcf39e069e926f994f802f505",
       "size": 65
     },
     {
@@ -209,7 +209,7 @@
     },
     {
       "path": "backend/profiles/generic-kernel-smoke.lock.json",
-      "sha256": "fb617fee532949a1459a6a8ce42647c8d15fc563ca144806dc45179105c1803c",
+      "sha256": "2e8a4e11e6be9eddd5d04fd528cf98640d33f032f88481ed5ce3c39a32eb0348",
       "size": 2258
     },
     {
@@ -225,5 +225,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "17d372470e7fa3dc881befa6562414931eac2caf"
+  "source_commit": "7c9265d61e23fd9d7051a0df89adacb6cebd1e54"
 }

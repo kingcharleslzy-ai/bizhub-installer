@@ -15,7 +15,7 @@ Never install from `main` or another moving branch.
 | Channel | Fixed release | Identity | Use |
 | --- | --- | --- | --- |
 | Stable | [`v0.3.0`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.3.0) | `1782417f4b05bb8abf657066f217453410128b92` | Supported single-company deployment |
-| Preview | [`v0.7.0-preview.1`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.1) | Resolve and verify the fixed tag | Same `bizhub-common` artifact used by Generic and the private reference derived-image proof |
+| Preview | [`v0.7.0-preview.2`](https://github.com/kingcharleslzy-ai/bizhub-installer/releases/tag/v0.7.0-preview.2) | Resolve and verify the fixed tag | Same `bizhub-common` artifact used by Generic Web, macOS, Windows, and the private reference derived-image proof |
 
 The stable release passed a clean Ubuntu 24.04 installation, business-flow
 test, backup/restore rehearsal, sensitive-information scan, and fresh-Agent
@@ -26,7 +26,8 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-Desktop `0.1.16` packages the Pack A/B/C first-entry, co-build, and
+Desktop `0.1.17` packages the same `bizhub-common` artifact as the current
+Generic Web preview together with the Pack A/B/C first-entry, co-build, and
 system-candidate implementation for the existing internal update channel. It
 is not part of either fixed server release above and does not turn that
 prerelease channel into broad-public publisher authority. It keeps an
@@ -46,7 +47,7 @@ added. Account registration, cloud company provisioning/invitations, arbitrary
 file parsing, model inference, code materialization, module installation, and
 deployment remain unimplemented.
 
-On macOS, `0.1.16` also finalizes a successful update with Electron's
+On macOS, `0.1.17` also finalizes a successful update with Electron's
 unpatched filesystem implementation so a verified rollback bundle containing
 `app.asar` and its pending marker are removed after exact-version startup. This
 changes only updater housekeeping and grants no new application or data
