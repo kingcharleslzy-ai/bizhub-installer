@@ -2095,7 +2095,7 @@ function installIpcHandlers() {
 }
 
 function installApplicationMenu() {
-  if (process.platform !== "darwin") {
+  if (process.platform === "win32") {
     Menu.setApplicationMenu(null);
     return;
   }
