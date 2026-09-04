@@ -145,8 +145,9 @@ workflow builds one Windows Runtime identity and captures those fixed bytes;
 the later archive and installer checks verify the same bytes without a duplicate
 Runtime build. Complete D3, Workspace Flow, and R1
 Synthetic matrices passed on the Pack C review head before merge. Desktop
-`0.1.18` packages that merged Pack A/B/C customer co-build flow through the
-existing internal update channel, removes the native Windows menu, and contains
+`0.1.19` packages that merged Pack A/B/C customer co-build flow through the
+existing internal update channel, removes the native Windows menu while
+preserving it on macOS and Linux, and contains
 the Shell inside the resizable viewport with only explicit inner scrolling. Its
 macOS update finalizer uses Electron's
 unpatched filesystem implementation only after exact destination and version

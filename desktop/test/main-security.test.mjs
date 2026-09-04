@@ -64,6 +64,10 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   ]) {
     assert.ok(`${main}\n${accountDirectory}`.includes(required), required);
   }
+  assert.match(
+    main,
+    /function installApplicationMenu\(\) \{\s+if \(process\.platform === "win32"\) \{\s+Menu\.setApplicationMenu\(null\);/,
+  );
   for (const prohibited of [
     "BrowserView",
     "<webview",
