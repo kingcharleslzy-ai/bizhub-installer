@@ -2095,38 +2095,34 @@ function installIpcHandlers() {
 }
 
 function installApplicationMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const updateItem = {
     label: "检查更新…",
     click: () => { void checkDesktopUpdate({ interactive: true }); },
   };
-  const template = [];
-  if (process.platform === "darwin") {
-    template.push({
-      label: app.name,
-      submenu: [
-        { role: "about" },
-        updateItem,
-        { type: "separator" },
-        { role: "services" },
-        { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    });
-  } else {
-    template.push({ label: "文件", submenu: [{ role: "quit" }] });
-  }
+  const template = [{
+    label: app.name,
+    submenu: [
+      { role: "about" },
+      updateItem,
+      { type: "separator" },
+      { role: "services" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit" },
+    ],
+  }];
   template.push(
     { label: "编辑", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
     { label: "显示", submenu: [{ role: "reload" }, { role: "togglefullscreen" }] },
     { label: "窗口", submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }] },
   );
-  if (process.platform !== "darwin") {
-    template.push({ label: "帮助", submenu: [updateItem] });
-  }
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -2159,6 +2155,7 @@ function installBackgroundTray() {
   backgroundTray.setToolTip("BizHub Desktop");
   backgroundTray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开 BizHub", click: showMainWindow },
+    { label: "检查更新…", click: () => { void checkDesktopUpdate({ interactive: true }); } },
     { type: "separator" },
     {
       label: "退出 BizHub",
@@ -2177,6 +2174,7 @@ async function createMainWindow() {
     height: 820,
     minWidth: 960,
     minHeight: 640,
+    autoHideMenuBar: process.platform === "win32",
     backgroundColor: publicDesktopPreferences().effectiveTheme === "dark" ? "#15191d" : "#f4f6f8",
     title: "BizHub Desktop",
     ...(process.platform === "darwin" ? {
@@ -2194,6 +2192,7 @@ async function createMainWindow() {
       webSecurity: true,
     },
   });
+  if (process.platform === "win32") mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.session.setPermissionCheckHandler(() => false);
   mainWindow.webContents.session.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false),

@@ -53,6 +53,9 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
     'titleBarStyle: "hiddenInset"',
     "trafficLightPosition",
     "new Tray(createWindowsTrayIcon())",
+    'Menu.setApplicationMenu(null)',
+    'autoHideMenuBar: process.platform === "win32"',
+    "mainWindow.setMenuBarVisibility(false)",
     'mainWindow.on("close", (event)',
     "event.preventDefault()",
     "mainWindow.hide()",
@@ -108,6 +111,9 @@ test("login uses an integrated title area and connected workspaces replace the s
   assert.ok(shell.includes("state.platform === 'darwin'"));
   assert.ok(!shell.includes("退出并清除保持登录"));
   assert.ok(style.includes("--shell-action: #26221c"));
+  assert.match(style, /html, body, #app \{[\s\S]*overflow: hidden;/);
+  assert.match(style, /\.unified-start \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
+  assert.match(style, /\.login-panel \{[\s\S]*max-height: 100%;[\s\S]*overflow-y: auto;/);
   for (const oldGreen of ["#17695f", "#11574f", "#3d9a8c", "#4ba99a", "#25443c", "#9fc5b9"]) {
     assert.ok(!style.includes(oldGreen), oldGreen);
   }

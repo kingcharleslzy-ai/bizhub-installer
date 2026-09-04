@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Remove the native application menu on Windows while retaining update access
+  in the tray. The Shell and hosted Workspace now use fixed viewport roots with
+  explicitly owned inner scrolling, so resizing no longer creates an extra
+  document-level horizontal or vertical scrollbar. Desktop version advances to
+  `0.1.18`; Runtime Pack, Profile, Owner, writer, schema, and business data are
+  unchanged.
 - Publish `bizhub-common` digest `sha256:71e4df905ad6d59ab6a028f011f356da90ecca78cebcdcd43ad87b00a22fa112`
   from private source commit `7c9265d61e23fd9d7051a0df89adacb6cebd1e54`
   as Generic Web `0.7.0-preview.2` and Desktop `0.1.17`. The macOS and
