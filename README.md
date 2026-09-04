@@ -26,7 +26,7 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-Desktop `0.1.18` packages the same `bizhub-common` artifact as the current
+Desktop `0.1.19` packages the same `bizhub-common` artifact as the current
 Generic Web preview together with the Pack A/B/C first-entry, co-build, and
 system-candidate implementation for the existing internal update channel. It
 is not part of either fixed server release above and does not turn that
@@ -47,11 +47,12 @@ added. Account registration, cloud company provisioning/invitations, arbitrary
 file parsing, model inference, code materialization, module installation, and
 deployment remain unimplemented.
 
-On macOS, `0.1.18` retains the update finalizer introduced in `0.1.17`, using
+On macOS, `0.1.19` retains the update finalizer introduced in `0.1.17`, using
 Electron's unpatched filesystem implementation so a verified rollback bundle containing
 `app.asar` and its pending marker are removed after exact-version startup. This
 changes only updater housekeeping and grants no new application or data
-authority.
+authority. It also preserves the native application menu on macOS and Linux;
+only Windows uses the tray-only, menu-less presentation.
 
 ## Give the release to an Agent
 

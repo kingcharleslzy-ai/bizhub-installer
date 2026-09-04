@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve the native application menu on macOS and Linux while continuing to
+  remove it on Windows, where update access remains available in the tray.
+  Desktop version advances to `0.1.19`; Runtime Pack, Profile, Owner, writer,
+  schema, and business data are unchanged.
 - Remove the native application menu on Windows while retaining update access
   in the tray. The Shell and hosted Workspace now use fixed viewport roots with
   explicitly owned inner scrolling, so resizing no longer creates an extra
