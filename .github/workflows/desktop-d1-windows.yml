@@ -117,4 +117,4 @@ jobs:
           name: desktop-d1-windows-x64-${{ github.sha }}
           path: desktop/out/make/zip/win32/x64/BizHub Desktop-win32-x64-0.1.0.zip
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1

@@ -51,7 +51,7 @@ jobs:
           name: desktop-internal-update-macos-${{ github.sha }}
           path: desktop/out/update/*.zip
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   windows-x64:
     if: github.ref == 'refs/heads/main'
@@ -91,7 +91,7 @@ jobs:
           name: desktop-internal-update-windows-${{ github.sha }}
           path: desktop/out/update/*.exe
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   publish:
     if: github.ref == 'refs/heads/main'

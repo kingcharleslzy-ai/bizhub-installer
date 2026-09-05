@@ -1,0 +1,105 @@
+name: Clean CI artifacts
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_run:
+    workflows: [Desktop Internal Update, Desktop R1 Synthetic, Desktop D1 Windows x64, Desktop D2 macOS arm64, Desktop D3 Windows x64]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-ci-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # No checkout: workflow_run must never execute candidate or fork code.
+      - name: Remove completed disposable artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          base = 'https://api.github.com/repos/' + os.environ['GH_REPO']
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                     'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def api(path, method='GET'):
+              request = urllib.request.Request(base + path, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      body = response.read()
+                      return json.loads(body) if body else None
+              except urllib.error.HTTPError as error:
+                  if method == 'DELETE' and error.code == 404:
+                      return None
+                  raise
+
+          def pages(path, key=None):
+              result = []
+              for page in range(1, 101):
+                  data = api(f'{path}?per_page=100&page={page}')
+                  values = data[key] if key else data
+                  result.extend(values)
+                  if len(values) < 100:
+                      return result
+              raise RuntimeError('artifact_cleanup_pagination_limit')
+
+          artifacts = sorted(pages('/actions/artifacts', 'artifacts'),
+                             key=lambda item: item['created_at'], reverse=True)
+          published = {item['target_commitish'] for item in pages('/releases') if not item['draft']}
+          now = dt.datetime.now(dt.timezone.utc)
+          runs, latest = {}, set()
+          removed = total = 0
+          for artifact in artifacts:
+              name = artifact['name']
+              # Signed production candidates and approval plans are intentionally excluded.
+              ai_group = next((prefix for prefix in ('AI-Trader-web-candidate-',
+                  'AI-Trader-macOS-internal-', 'AI-Trader-Windows-candidate-') if name.startswith(prefix)), None)
+              internal = name.startswith('desktop-internal-update-')
+              synthetic = name.endswith('-synthetic-ci') and name.startswith(('desktop-r1-', 'desktop-d3-'))
+              legacy = name.startswith(('desktop-d1-', 'desktop-d2-'))
+              if not (ai_group or internal or synthetic or legacy):
+                  continue
+              run_id = artifact.get('workflow_run', {}).get('id')
+              if not run_id:
+                  continue
+              if run_id not in runs:
+                  runs[run_id] = api(f'/actions/runs/{run_id}')
+              run = runs[run_id]
+              if run['status'] != 'completed':
+                  continue
+              age = (now - dt.datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00'))).total_seconds()
+              delete = artifact['expired']
+              if ai_group:
+                  delete |= ai_group in latest or run['head_sha'] in published or age > 86400
+                  latest.add(ai_group)
+              elif internal:
+                  delete |= run['name'] == 'Desktop Internal Update' and run['conclusion'] == 'success'
+                  delete |= age > 86400
+              elif synthetic:
+                  delete |= artifact['size_in_bytes'] > 10 * 1024 * 1024 or age > 7 * 86400
+              elif legacy:
+                  delete |= age > 86400
+              if delete:
+                  api(f"/actions/artifacts/{artifact['id']}", 'DELETE')
+                  removed += 1
+                  total += artifact['size_in_bytes']
+          print(json.dumps({'repository': os.environ['GH_REPO'], 'deleted': removed,
+                            'reclaimedBytes': total}))
+          PY
