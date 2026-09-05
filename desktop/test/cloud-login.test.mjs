@@ -289,3 +289,22 @@ test("expired or malformed remembered tokens fail closed", () => {
     /desktop_remembered_session_invalid/,
   );
 });
+
+test('superseded credential persistence leaves the previous account file intact', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'bizhub-stale-login-'));
+  try {
+    const account = { accountId: 'current.user', displayName: 'Current', mode: 'cloud', savedAt: new Date().toISOString(), session: null };
+    await saveAccount({ account, ...storeOptions(root) });
+    const before = await readFile(savedAccountsFilePath(root));
+    let checks = 0;
+    await assert.rejects(saveAccount({
+      account: { ...account, accountId: 'stale.user' },
+      ...storeOptions(root),
+      isCurrent: () => ++checks < 2,
+    }), /desktop_login_superseded/);
+    assert.deepEqual(await readFile(savedAccountsFilePath(root)), before);
+    assert.deepEqual(await readdir(root), [path.basename(savedAccountsFilePath(root))]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
