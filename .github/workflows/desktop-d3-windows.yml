@@ -321,7 +321,7 @@ jobs:
             desktop/out/make/squirrel.windows/x64/RELEASES
             desktop/out/desktop-d3-windows-x64-identity.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
       - name: Publish public machine-readable D3 identity
         if: steps.capture.outputs.captured != 'true'

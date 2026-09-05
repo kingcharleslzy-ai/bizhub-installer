@@ -149,7 +149,7 @@ jobs:
             desktop/out/make/zip/darwin/arm64/BizHub Desktop-darwin-arm64-0.1.0.zip
             desktop/out/desktop-d2-macos-arm64-identity.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
       - name: Record Actions Artifact identity
         shell: bash

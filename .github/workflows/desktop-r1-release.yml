@@ -158,14 +158,12 @@ jobs:
         with:
           name: desktop-r1-macos-arm64-${{ github.sha }}-synthetic-ci
           path: |
-            desktop/out/release/BizHub-Desktop-*-macOS-arm64.zip
-            desktop/out/release/BizHub-Desktop-*-macOS-arm64.dmg
             desktop/out/release/desktop-r1-macos-containers.json
             desktop/out/desktop-r1-macos-release-identity.json
             desktop/out/desktop-r1-macos-runtime-identity.json
             desktop/out/desktop-r1-macos-upgrade-rollback.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   windows-x64:
     name: desktop-r1-synthetic-windows-x64
@@ -295,14 +293,11 @@ jobs:
         with:
           name: desktop-r1-windows-x64-${{ github.sha }}-synthetic-ci
           path: |
-            desktop/out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe
-            desktop/out/make/squirrel.windows/x64/*-full.nupkg
-            desktop/out/make/squirrel.windows/x64/RELEASES
             desktop/out/desktop-r1-windows-x64-identity.json
             desktop/out/desktop-r1-windows-runtime-identity.json
             desktop/out/desktop-r1-windows-upgrade-rollback.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
       - name: Remove synthetic signing material
         if: always() && needs.scope.outputs.full == 'true'
         shell: pwsh
