@@ -26,7 +26,7 @@ The preview is a prerelease. It does not replace the stable default and does not
 authorize customer-data migration, a production writer switch, or deployment
 into an existing private system.
 
-Desktop `0.1.19` packages the same `bizhub-common` artifact as the current
+Desktop `0.1.20` packages the same `bizhub-common` artifact as the current
 Generic Web preview together with the Pack A/B/C first-entry, co-build, and
 system-candidate implementation for the existing internal update channel. It
 is not part of either fixed server release above and does not turn that

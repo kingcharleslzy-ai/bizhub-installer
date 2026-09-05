@@ -327,8 +327,9 @@ function savedAccountSummaries(saved) {
   }));
 }
 
-async function refreshSavedAccountState() {
+async function refreshSavedAccountState({ isCurrent = () => true } = {}) {
   const saved = await loadSavedAccounts(credentialStoreOptions());
+  if (!isCurrent()) return saved;
   publishState({
     activeAccountId: saved.activeAccountId || "",
     savedAccounts: savedAccountSummaries(saved),
@@ -337,7 +338,7 @@ async function refreshSavedAccountState() {
   return saved;
 }
 
-async function saveDesktopAccount({ accountId, displayName, mode, session: savedSession }) {
+async function saveDesktopAccount({ accountId, displayName, mode, session: savedSession, isCurrent = () => true }) {
   const saved = await saveAccount({
     account: {
       accountId,
@@ -347,7 +348,9 @@ async function saveDesktopAccount({ accountId, displayName, mode, session: saved
       session: savedSession,
     },
     ...credentialStoreOptions(),
+    isCurrent,
   });
+  if (!isCurrent()) return saved;
   publishState({
     activeAccountId: saved.activeAccountId || "",
     savedAccounts: savedAccountSummaries(saved),
@@ -562,7 +565,8 @@ async function setLocalSessionCookies(runtimeSession, runtime) {
   }
 }
 
-async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
+async function openLocalWorkspaceView({ mode = localRuntimeKind, isCurrent = () => true } = {}) {
+  if (!isCurrent()) return;
   const runtime = localRuntimeLifecycle.current();
   if (!runtime) throw new Error("desktop_local_runtime_not_started");
   const guest = mode === "guest";
@@ -572,6 +576,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   const runtimeSession = session.fromPartition(guest ? "guest-demo" : "persist:local-generic");
   configureLocalSession(runtimeSession, localOrigin);
   await setLocalSessionCookies(runtimeSession, runtime);
+  if (!isCurrent()) return;
   workspaceView = new WebContentsView({
     webPreferences: {
       allowRunningInsecureContent: false,
@@ -585,6 +590,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
       webSecurity: true,
     },
   });
+  const openedView = workspaceView;
   workspaceView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   workspaceView.webContents.on("will-navigate", (event, url) => {
     if (normalizeLocalOrigin(url) !== localOrigin) event.preventDefault();
@@ -595,7 +601,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   workspaceView.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
-      if (!isMainFrame || errorCode === -3) return;
+      if (!isCurrent() || workspaceView !== openedView || !isMainFrame || errorCode === -3) return;
       destroyWorkspaceView();
       publishState({
         mode,
@@ -606,6 +612,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    if (!isCurrent() || workspaceView !== openedView) return;
     sendDesktopPreferences(workspaceView?.webContents);
     if (guest) return;
     publishState({
@@ -650,6 +657,7 @@ async function openLocalWorkspaceView({ mode = localRuntimeKind } = {}) {
   mainWindow.contentView.addChildView(workspaceView);
   setWorkspaceBounds();
   await workspaceView.webContents.loadURL(`${localOrigin}/`);
+  if (!isCurrent() || workspaceView !== openedView) return;
   if (guest) {
     const deadline = Date.now() + 10_000;
     let navigationReady = false;
@@ -1013,8 +1021,9 @@ async function loadConnectionProfile(filePath) {
 async function openWorkspace(
   profile,
   partitionName = workspaceSessionPartition(profile.connectionId, "standalone.profile"),
-  { password = null, rememberedSession = null } = {},
+  { password = null, rememberedSession = null, isCurrent = () => true } = {},
 ) {
+  if (!isCurrent()) throw new Error("desktop_login_superseded");
   destroyWorkspaceView();
   const remoteSession = session.fromPartition(partitionName);
   configureRemoteSession(remoteSession, profile.allowedOrigins);
@@ -1033,6 +1042,12 @@ async function openWorkspace(
       webSecurity: true,
     },
   });
+  const openedView = workspaceView;
+  const requireCurrent = () => {
+    if (!isCurrent() || workspaceView !== openedView) {
+      throw new Error("desktop_login_superseded");
+    }
+  };
   workspaceView.setVisible(false);
   workspaceView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   workspaceView.webContents.on("will-navigate", (event, url) => {
@@ -1044,7 +1059,7 @@ async function openWorkspace(
   workspaceView.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
-      if (!isMainFrame || errorCode === -3) return;
+      if (!isCurrent() || workspaceView !== openedView || !isMainFrame || errorCode === -3) return;
       publishState({
         status: "error",
         error: `workspace_load_failed:${errorCode}:${errorDescription}:${validatedUrl}`,
@@ -1058,6 +1073,7 @@ async function openWorkspace(
     },
   );
   workspaceView.webContents.on("did-finish-load", () => {
+    if (!isCurrent() || workspaceView !== openedView) return;
     sendDesktopPreferences(workspaceView?.webContents);
     if (authenticationPending) return;
     publishState({ status: "connected", error: "" });
@@ -1077,12 +1093,14 @@ async function openWorkspace(
     applicationOrigin: new URL(profile.applicationUrl).origin,
     error: "",
   });
-  await workspaceView.webContents.loadURL(profile.applicationUrl);
+  await openedView.webContents.loadURL(profile.applicationUrl);
+  requireCurrent();
   if (typeof password === "string") {
     const result = await workspaceView.webContents.executeJavaScript(
       cloudLoginScript(password),
       true,
     );
+    requireCurrent();
     const error = cloudLoginError(result);
     if (error) throw new Error(error);
     authenticatedSession = result.session;
@@ -1093,10 +1111,12 @@ async function openWorkspace(
       sessionStorageScript(rememberedSession),
       true,
     );
+    requireCurrent();
     if (resumed !== true) throw new Error("desktop_remembered_session_invalid");
     authenticationPending = false;
     await workspaceView.webContents.loadURL(profile.applicationUrl);
   }
+  requireCurrent();
   return authenticatedSession;
 }
 
@@ -1339,7 +1359,8 @@ async function setupLocalInstance(input) {
   return workspaceState;
 }
 
-async function authenticateLocal(input) {
+async function authenticateLocal(input, generation = accountLookupGeneration.begin()) {
+  const isCurrent = () => accountLookupGeneration.isCurrent(generation);
   if (
     !input
     || typeof input !== "object"
@@ -1350,6 +1371,7 @@ async function authenticateLocal(input) {
   }
   try {
     const runtime = await startLocalMode();
+    if (!isCurrent()) return workspaceState;
     const username = normalizeAccountId(String(input.username || ""));
     const authenticated = await loginLocalRuntime(
       runtime,
@@ -1357,14 +1379,18 @@ async function authenticateLocal(input) {
       String(input.password || ""),
       { remember: input.remember },
     );
+    if (!isCurrent()) return workspaceState;
     await saveDesktopAccount({
       accountId: username,
       displayName: username,
       mode: "local",
       session: authenticated.rememberSession,
+      isCurrent,
     });
-    await openLocalWorkspaceView();
+    if (!isCurrent()) return workspaceState;
+    await openLocalWorkspaceView({ isCurrent });
   } catch (error) {
+    if (!isCurrent()) return workspaceState;
     publishState({
       mode: "local",
       status: "error",
@@ -1391,11 +1417,13 @@ async function createLocalBackup() {
   return workspaceState;
 }
 
-async function stopLocalMode() {
+async function stopLocalMode({ isCurrent = () => true } = {}) {
+  if (!isCurrent()) return workspaceState;
   const wasGuest = localRuntimeKind === "guest";
   destroyWorkspaceView();
   await localRuntimeLifecycle.stop();
   if (wasGuest) await resetGuestDemoData();
+  if (!isCurrent()) return workspaceState;
   localRuntimeKind = "local";
   publishState({
     mode: "none",
@@ -1412,7 +1440,7 @@ async function stopLocalMode() {
   return workspaceState;
 }
 
-async function lookupAccount(input) {
+async function lookupAccount(input, generation = accountLookupGeneration.begin()) {
   if (
     !input
     || typeof input !== "object"
@@ -1421,7 +1449,7 @@ async function lookupAccount(input) {
   ) {
     throw new Error("desktop_account_lookup_shape_invalid");
   }
-  const generation = accountLookupGeneration.begin();
+  if (!accountLookupGeneration.isCurrent(generation)) return null;
   activeEnterpriseProfiles = new Map();
   publishState({
     mode: "none",
@@ -1460,6 +1488,9 @@ async function lookupAccount(input) {
         enterpriseWorkspaces: result.workspaces.map((workspace) => workspace.summary),
       });
     });
+    return accountLookupGeneration.isCurrent(generation)
+      ? { status: result.status, profiles: resolvedProfiles }
+      : null;
   } catch (error) {
     accountLookupGeneration.commit(generation, () => {
       activeEnterpriseProfiles = new Map();
@@ -1472,10 +1503,11 @@ async function lookupAccount(input) {
       });
     });
   }
-  return workspaceState;
+  return null;
 }
 
-async function loginEnterprise(input) {
+async function loginEnterprise(input, generation = accountLookupGeneration.begin()) {
+  const isCurrent = () => accountLookupGeneration.isCurrent(generation);
   let normalized;
   try {
     const validated = validateCloudLoginInput(input);
@@ -1493,10 +1525,10 @@ async function loginEnterprise(input) {
     return workspaceState;
   }
 
-  await lookupAccount({ accountId: normalized.accountId });
-  if (workspaceState.accountLookupStatus !== "resolved") return workspaceState;
-  if (activeEnterpriseProfiles.size === 0) return workspaceState;
-  if (activeEnterpriseProfiles.size !== 1) {
+  const lookup = await lookupAccount({ accountId: normalized.accountId }, generation);
+  if (!isCurrent() || lookup?.status !== "resolved") return workspaceState;
+  if (lookup.profiles.size === 0) return workspaceState;
+  if (lookup.profiles.size !== 1) {
     publishState({
       status: "error",
       error: "desktop_account_multiple_workspaces",
@@ -1506,16 +1538,19 @@ async function loginEnterprise(input) {
   }
 
   try {
-    const workspace = [...activeEnterpriseProfiles.values()][0];
+    const workspace = [...lookup.profiles.values()][0];
     const options = await connectionValidationOptions();
+    if (!isCurrent()) return workspaceState;
     const profile = validateConnectionEnvelope(workspace.envelope, options);
-    await stopLocalMode();
+    await stopLocalMode({ isCurrent });
+    if (!isCurrent()) return workspaceState;
     publishState({ autoLoginStatus: "idle" });
     const authenticatedSession = await openWorkspace(
       profile,
       workspace.partitionName,
-      { password: normalized.password },
+      { password: normalized.password, isCurrent },
     );
+    if (!isCurrent()) return workspaceState;
     let rememberError = "";
     try {
       await saveDesktopAccount({
@@ -1523,16 +1558,19 @@ async function loginEnterprise(input) {
         displayName: authenticatedSession.accountName,
         mode: "cloud",
         session: normalized.remember ? authenticatedSession : null,
+        isCurrent,
       });
     } catch {
       rememberError = "desktop_remembered_session_save_failed";
     }
+    if (!isCurrent()) return workspaceState;
     publishState({
       rememberedLoginAvailable: normalized.remember && !rememberError,
       autoLoginStatus: "idle",
       error: rememberError,
     });
   } catch (error) {
+    if (!isCurrent()) return workspaceState;
     destroyWorkspaceView();
     publishState({
       mode: "none",
@@ -1562,6 +1600,8 @@ function validateUnifiedLoginInput(input) {
 }
 
 async function loginAccount(input) {
+  const generation = accountLookupGeneration.begin();
+  const isCurrent = () => accountLookupGeneration.isCurrent(generation);
   let normalized;
   try {
     normalized = validateUnifiedLoginInput(input);
@@ -1573,18 +1613,21 @@ async function loginAccount(input) {
     return workspaceState;
   }
   const local = await refreshLocalState();
+  if (!isCurrent()) return workspaceState;
   if (local) {
     const admin = await loadLocalAdminIdentity(localInstanceRoot());
+    if (!isCurrent()) return workspaceState;
     if (normalizeAccountId(admin.username) === normalized.accountId) {
       publishState({ canCreateLocal: false, pendingLocalAccountId: "" });
       return authenticateLocal({
         username: normalized.accountId,
         password: normalized.password,
         remember: normalized.remember,
-      });
+      }, generation);
     }
   }
-  const result = await loginEnterprise(normalized);
+  await loginEnterprise(normalized, generation);
+  if (!isCurrent()) return workspaceState;
   if (workspaceState.accountLookupStatus === "not_found") {
     publishState({
       canCreateLocal: !local,
@@ -1608,46 +1651,58 @@ async function loginAccount(input) {
   return workspaceState;
 }
 
-async function resumeSavedAccount(accountId) {
+async function resumeSavedAccount(accountId, generation = accountLookupGeneration.begin()) {
+  const isCurrent = () => accountLookupGeneration.isCurrent(generation);
   const normalized = normalizeAccountId(accountId);
   const saved = await loadSavedAccounts(credentialStoreOptions());
+  if (!isCurrent()) return workspaceState;
   const account = saved.accounts.find((item) => item.accountId === normalized);
   if (!account || !account.session) throw new Error("desktop_saved_account_session_missing");
-  await setActiveAccount({ accountId: normalized, ...credentialStoreOptions() });
+  await setActiveAccount({ accountId: normalized, ...credentialStoreOptions(), isCurrent });
+  if (!isCurrent()) return workspaceState;
   publishState({ activeAccountId: normalized, autoLoginStatus: "authenticating", error: "" });
   try {
     if (account.mode === "local") {
       const local = await refreshLocalState();
+      if (!isCurrent()) return workspaceState;
       if (!local) throw new Error("desktop_local_instance_not_initialized");
       const admin = await loadLocalAdminIdentity(localInstanceRoot());
+      if (!isCurrent()) return workspaceState;
       if (normalizeAccountId(admin.username) !== normalized) {
         throw new Error("desktop_local_account_mismatch");
       }
       const runtime = await startLocalMode();
+      if (!isCurrent()) return workspaceState;
       await resumeLocalRuntime(runtime, account.session.token);
-      await openLocalWorkspaceView();
+      if (!isCurrent()) return workspaceState;
+      await openLocalWorkspaceView({ isCurrent });
     } else {
-      await lookupAccount({ accountId: normalized });
-      if (workspaceState.accountLookupStatus !== "resolved") {
+      const lookup = await lookupAccount({ accountId: normalized }, generation);
+      if (!isCurrent()) return workspaceState;
+      if (lookup?.status !== "resolved") {
         throw new Error(
-          workspaceState.accountLookupStatus === "not_found"
+          lookup?.status === "not_found"
             ? "desktop_saved_cloud_workspace_not_found"
             : "desktop_saved_cloud_workspace_unavailable",
         );
       }
-      if (activeEnterpriseProfiles.size !== 1) {
+      if (lookup.profiles.size !== 1) {
         throw new Error("desktop_saved_cloud_workspace_invalid");
       }
-      const workspace = [...activeEnterpriseProfiles.values()][0];
+      const workspace = [...lookup.profiles.values()][0];
       const profile = validateConnectionEnvelope(
         workspace.envelope,
         await connectionValidationOptions(),
       );
-      await stopLocalMode();
-      await openWorkspace(profile, workspace.partitionName, { rememberedSession: account.session });
+      if (!isCurrent()) return workspaceState;
+      await stopLocalMode({ isCurrent });
+      if (!isCurrent()) return workspaceState;
+      await openWorkspace(profile, workspace.partitionName, { rememberedSession: account.session, isCurrent });
     }
+    if (!isCurrent()) return workspaceState;
     publishState({ autoLoginStatus: "connected", error: "" });
   } catch (error) {
+    if (!isCurrent()) return workspaceState;
     const code = error instanceof Error ? error.message : "desktop_saved_account_login_failed";
     const invalidSession = (
       code.startsWith("desktop_local_remembered_login_failed:401")
@@ -1661,11 +1716,15 @@ async function resumeSavedAccount(accountId) {
         accountId: normalized,
         removeAccount: false,
         ...credentialStoreOptions(),
+        isCurrent,
       }).catch(() => {});
     }
-    await refreshSavedAccountState().catch(() => {});
+    if (!isCurrent()) return workspaceState;
+    await refreshSavedAccountState({ isCurrent }).catch(() => {});
+    if (!isCurrent()) return workspaceState;
     destroyWorkspaceView();
     if (localRuntimeLifecycle.state() !== "stopped") await localRuntimeLifecycle.stop().catch(() => {});
+    if (!isCurrent()) return workspaceState;
     publishState({
       mode: "none",
       status: "error",
@@ -1677,10 +1736,13 @@ async function resumeSavedAccount(accountId) {
 }
 
 async function trySavedAccountLogin() {
+  const generation = accountLookupGeneration.begin();
+  const isCurrent = () => accountLookupGeneration.isCurrent(generation);
   let saved;
   try {
-    saved = await refreshSavedAccountState();
+    saved = await refreshSavedAccountState({ isCurrent });
   } catch (error) {
+    if (!isCurrent()) return workspaceState;
     publishState({
       rememberedLoginAvailable: false,
       autoLoginStatus: "error",
@@ -1688,9 +1750,10 @@ async function trySavedAccountLogin() {
     });
     return workspaceState;
   }
+  if (!isCurrent()) return workspaceState;
   const active = saved.accounts.find((account) => account.accountId === saved.activeAccountId);
   if (!active?.session) return workspaceState;
-  return resumeSavedAccount(active.accountId);
+  return resumeSavedAccount(active.accountId, generation);
 }
 
 async function switchAccount(input = {}) {
@@ -1925,7 +1988,8 @@ function installIpcHandlers() {
   });
   ipcMain.handle("desktop:lookup-account", async (event, input) => {
     requireTrustedShellSender(event);
-    return lookupAccount(input);
+    await lookupAccount(input);
+    return workspaceState;
   });
   ipcMain.handle("desktop:login-enterprise", async (event, input) => {
     requireTrustedShellSender(event);

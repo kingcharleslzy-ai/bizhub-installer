@@ -369,7 +369,23 @@ async function readJsonFile(filePath, missingValue) {
   }
 }
 
-async function writeSavedAccounts({ saved, safeStorage, userDataRoot }) {
+// Serialize replacement of each credential file so an already-dispatched old
+// rename cannot complete after the newest account's save.
+const savedAccountWrites = new Map();
+async function writeSavedAccounts(options) {
+  const root = path.resolve(options.userDataRoot);
+  const previous = savedAccountWrites.get(root) || Promise.resolve();
+  const current = previous.catch(() => {}).then(() => persistSavedAccounts(options));
+  savedAccountWrites.set(root, current);
+  try {
+    return await current;
+  } finally {
+    if (savedAccountWrites.get(root) === current) savedAccountWrites.delete(root);
+  }
+}
+
+async function persistSavedAccounts({ saved, safeStorage, userDataRoot, isCurrent = () => true }) {
+  if (!isCurrent()) fail("desktop_login_superseded");
   const { envelope, persisted } = serializeSavedAccounts(saved, { safeStorage });
   await mkdir(path.resolve(userDataRoot), { recursive: true, mode: 0o700 });
   const target = savedAccountsFilePath(userDataRoot);
@@ -384,6 +400,7 @@ async function writeSavedAccounts({ saved, safeStorage, userDataRoot }) {
     await handle.sync();
     await handle.close();
     handle = null;
+    if (!isCurrent()) fail("desktop_login_superseded");
     await rename(temporary, target);
     await chmod(target, 0o600);
     return persisted;
@@ -464,7 +481,7 @@ async function loadSavedAccounts({ safeStorage, userDataRoot, now = Date.now() }
   return writeSavedAccounts({ saved: migrated, safeStorage, userDataRoot });
 }
 
-async function saveAccount({ account, makeActive = true, safeStorage, userDataRoot }) {
+async function saveAccount({ account, makeActive = true, safeStorage, userDataRoot, isCurrent }) {
   const normalized = validateSavedAccount(account);
   const current = await loadSavedAccounts({ safeStorage, userDataRoot });
   const accounts = current.accounts.filter((item) => item.accountId !== normalized.accountId);
@@ -476,10 +493,11 @@ async function saveAccount({ account, makeActive = true, safeStorage, userDataRo
     },
     safeStorage,
     userDataRoot,
+    isCurrent,
   });
 }
 
-async function setActiveAccount({ accountId, safeStorage, userDataRoot }) {
+async function setActiveAccount({ accountId, safeStorage, userDataRoot, isCurrent }) {
   const normalized = normalizeAccountId(accountId);
   const current = await loadSavedAccounts({ safeStorage, userDataRoot });
   if (!current.accounts.some((item) => item.accountId === normalized)) {
@@ -489,10 +507,11 @@ async function setActiveAccount({ accountId, safeStorage, userDataRoot }) {
     saved: { ...current, activeAccountId: normalized },
     safeStorage,
     userDataRoot,
+    isCurrent,
   });
 }
 
-async function clearAccountSession({ accountId, removeAccount = false, safeStorage, userDataRoot }) {
+async function clearAccountSession({ accountId, removeAccount = false, safeStorage, userDataRoot, isCurrent = () => true }) {
   const normalized = normalizeAccountId(accountId);
   const current = await loadSavedAccounts({ safeStorage, userDataRoot });
   const accounts = removeAccount
@@ -504,6 +523,7 @@ async function clearAccountSession({ accountId, removeAccount = false, safeStora
     ? (accounts[0]?.accountId || null)
     : current.activeAccountId;
   if (!accounts.length) {
+    if (!isCurrent()) fail("desktop_login_superseded");
     await rm(savedAccountsFilePath(userDataRoot), { force: true });
     return emptySavedAccounts();
   }
@@ -511,6 +531,7 @@ async function clearAccountSession({ accountId, removeAccount = false, safeStora
     saved: { activeAccountId, accounts },
     safeStorage,
     userDataRoot,
+    isCurrent,
   });
 }
 
