@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { notarize } from "@electron/notarize";
 import { sign } from "@electron/osx-sign";
+import { electronNotarizeOptions, resolveNotaryCredentials } from "./macos-notary-credentials.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -12,9 +13,6 @@ function fail(code) {
 
 export function validateProductionEnvironment(environment) {
   const result = {
-    appleApiIssuer: environment.BIZHUB_APPLE_API_ISSUER || "",
-    appleApiKey: environment.BIZHUB_APPLE_API_KEY_FILE || "",
-    appleApiKeyId: environment.BIZHUB_APPLE_API_KEY_ID || "",
     identity: environment.BIZHUB_MACOS_SIGNING_IDENTITY || "",
     keychain: environment.BIZHUB_MACOS_KEYCHAIN || "",
     mode: environment.BIZHUB_MACOS_SIGNING_MODE || "",
@@ -25,9 +23,6 @@ export function validateProductionEnvironment(environment) {
     || !result.identity
     || !result.keychain
     || !/^[A-Z0-9]{10}$/.test(result.teamId)
-    || !result.appleApiKey
-    || !result.appleApiKeyId
-    || !result.appleApiIssuer
   ) {
     fail("desktop_macos_production_credentials_missing");
   }
@@ -37,16 +32,13 @@ export function validateProductionEnvironment(environment) {
     }
   }
   if (
-    !path.isAbsolute(result.appleApiKey)
-    || !path.isAbsolute(result.keychain)
-    || !/^[A-Z0-9]{10}$/.test(result.appleApiKeyId)
-    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.appleApiIssuer)
+    !path.isAbsolute(result.keychain)
     || !result.identity.startsWith("Developer ID Application: ")
     || !result.identity.endsWith(`(${result.teamId})`)
   ) {
     fail("desktop_macos_production_credentials_invalid");
   }
-  return result;
+  return { ...result, notary: resolveNotaryCredentials(environment, result.teamId) };
 }
 
 export function productionSigningOptions({ appPath, environment, root = ROOT }) {
@@ -94,17 +86,13 @@ async function main() {
     fail("desktop_macos_production_signing_app_invalid");
   }
   await sign(productionSigningOptions({ appPath, environment }));
-  await notarize({
-    appPath,
-    appleApiIssuer: environment.appleApiIssuer,
-    appleApiKey: environment.appleApiKey,
-    appleApiKeyId: environment.appleApiKeyId,
-  });
+  await notarize(electronNotarizeOptions(appPath, environment.notary));
   process.stdout.write(`${JSON.stringify({
     status: "ok",
     schema_version: "bizhub.desktop-macos-production-signing.v1",
     signing_mode: "production",
     publisher_team_id: environment.teamId,
+    notary_credential_kind: environment.notary.kind,
     notarized_and_stapled: true,
   })}\n`);
 }

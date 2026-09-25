@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Sign and notarize internal macOS updates with Developer ID (Apple ID
+  notarization) and also publish a stapled DMG; the in-app update payload
+  stays the ZIP, and Windows is unchanged.
 - Allow business workspaces (allowed cloud origins or the local Runtime origin)
   to capture audio only, for push-to-talk; video and every other permission
   stay denied and the Shell window still denies all permissions. macOS builds

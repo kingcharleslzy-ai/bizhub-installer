@@ -7,6 +7,11 @@ on:
         description: Short internal update notes
         required: false
         default: BizHub Desktop internal update
+      publish:
+        description: Publish the prerelease (main only); false builds and verifies signed artifacts only
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -17,9 +22,12 @@ concurrency:
 
 jobs:
   macos-arm64:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')
+    environment: desktop-internal-signing
     runs-on: macos-14
-    timeout-minutes: 40
+    timeout-minutes: 90
+    env:
+      BIZHUB_MACOS_SIGNING_MODE: production
     defaults:
       run:
         working-directory: desktop
@@ -31,7 +39,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.12.10
-      - name: Test and build macOS arm64
+      - name: Test macOS arm64 source
         shell: bash
         run: |
           test "$(uname -m)" = arm64
@@ -40,21 +48,84 @@ jobs:
           npm test
           npm run verify:boundary
           npm run audit:runtime
-          npm run package
+      - name: Configure Developer ID publisher keychain
+        shell: bash
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
+        run: |
+          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
+          test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
+          certificate="$RUNNER_TEMP/bizhub-developer-id.p12"
+          keychain="$RUNNER_TEMP/bizhub-internal-signing.keychain-db"
+          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          keychain_password="$(openssl rand -hex 24)"
+          (umask 077 && printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f -- "$certificate"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGNING_IDENTITY"
+          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+      - name: Prepare, sign, and rebind Runtime
+        shell: bash
+        run: |
+          npm run prepare:runtime
+          node scripts/prepare-signed-macos-runtime.mjs
+      - name: Build, sign, and notarize application
+        shell: bash
+        env:
+          BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
+          BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
+        run: |
+          npm run make:macos-release
+          node scripts/sign-production-macos-app.mjs
+      - name: Verify signed application
+        shell: bash
+        run: |
+          product="out/BizHub Desktop-darwin-arm64"
+          app="$product/BizHub Desktop.app"
+          resources="$app/Contents/Resources"
+          npm run verify:artifact -- "$product" --expected-runtime-trust runtime-dist/generic-runtime-trust.json
+          node scripts/verify-macos-release.mjs --app "$app" --expected-runtime-trust runtime-dist/generic-runtime-trust.json --mode production --team-id "$BIZHUB_MACOS_TEAM_ID"
+          node scripts/account-flow-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-trust-store "$resources/trusted-connection-keys.json" --packaged-account-directory "$resources/account-directory.json"
+          node scripts/local-shell-smoke.mjs --packaged-executable "$app/Contents/MacOS/BizHub Desktop" --packaged-resources "$resources"
+      - name: Create and verify notarized ZIP and DMG
+        shell: bash
+        env:
+          BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
+          BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
+        run: |
+          node scripts/make-macos-release-containers.mjs
+          node scripts/verify-macos-release-containers.mjs
           version="$(node -p 'require("./package.json").version')"
           mkdir -p out/update
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent \
-            "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" \
-            "out/update/BizHub-Desktop-macOS-arm64-${version}.zip"
+          cp "out/release/BizHub-Desktop-${version}-macOS-arm64.zip" "out/update/BizHub-Desktop-macOS-arm64-${version}.zip"
+          cp "out/release/BizHub-Desktop-${version}-macOS-arm64.dmg" "out/update/BizHub-Desktop-macOS-arm64-${version}.dmg"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: desktop-internal-update-macos-${{ github.sha }}
-          path: desktop/out/update/*.zip
+          path: |
+            desktop/out/update/*.zip
+            desktop/out/update/*.dmg
           if-no-files-found: error
           retention-days: 1
+      - name: Remove macOS signing material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then security delete-keychain "$BIZHUB_MACOS_KEYCHAIN" || true; fi
+          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; fi
 
   windows-x64:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -94,7 +165,7 @@ jobs:
           retention-days: 1
 
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.publish
     needs: [macos-arm64, windows-x64]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -116,8 +187,9 @@ jobs:
           version="$(node -p 'require("./desktop/package.json").version')"
           tag="desktop-v${version}-internal.${GITHUB_RUN_NUMBER}"
           macos="$(find release-assets -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          macos_dmg="$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           windows="$(find release-assets -maxdepth 1 -type f -name '*.exe' -print -quit)"
-          test -n "$macos" && test -n "$windows"
+          test -n "$macos" && test -n "$macos_dmg" && test -n "$windows"
           node desktop/scripts/make-update-manifest.mjs \
             --version "$version" \
             --repository "${GITHUB_REPOSITORY}" \
@@ -139,4 +211,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "BizHub Desktop $(node -p 'require("./desktop/package.json").version') Internal" \
             --notes "$RELEASE_NOTES" \
-            release-assets/*.zip release-assets/*.exe release-assets/desktop-update.json
+            release-assets/*.zip release-assets/*.dmg release-assets/*.exe release-assets/desktop-update.json
