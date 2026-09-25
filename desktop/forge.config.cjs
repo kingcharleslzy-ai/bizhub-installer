@@ -32,6 +32,7 @@ module.exports = {
         NSAllowsArbitraryLoads: false,
         NSAllowsLocalNetworking: true,
       },
+      NSMicrophoneUsageDescription: "BizHub 桌面端在总监助手按住说话时使用麦克风。",
     },
     extraResource: [
       "config/account-directory.json",

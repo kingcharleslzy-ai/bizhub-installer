@@ -11,6 +11,7 @@ const {
   safeStorage,
   session,
   shell,
+  systemPreferences,
   Tray,
   WebContentsView,
 } = require("electron");
@@ -64,6 +65,7 @@ const {
   seedGuestDemo,
 } = require("./guest-demo.cjs");
 const { handleSquirrelStartup } = require("./squirrel-startup.cjs");
+const { mediaPermissionAllowed, permissionOrigin } = require("./media-permission.cjs");
 const {
   finalizePendingMacUpdate,
   launchMacUpdate,
@@ -464,6 +466,51 @@ function handleCloudLogoutRequest(phase) {
   void finalizeCloudLogout();
 }
 
+let microphoneAccessRequest = null;
+
+function ensureMicrophoneAccess() {
+  if (process.platform !== "darwin") return Promise.resolve(true);
+  const status = systemPreferences.getMediaAccessStatus("microphone");
+  if (status === "granted") return Promise.resolve(true);
+  if (status !== "not-determined") return Promise.resolve(false);
+  if (!microphoneAccessRequest) {
+    microphoneAccessRequest = systemPreferences.askForMediaAccess("microphone")
+      .catch(() => false)
+      .finally(() => {
+        microphoneAccessRequest = null;
+      });
+  }
+  return microphoneAccessRequest;
+}
+
+// Business sessions may capture audio only (push-to-talk) from their allowed origins;
+// every other permission, including video and display capture, stays denied.
+function installMediaPermissionHandlers(targetSession, currentAllowedOrigins) {
+  targetSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) =>
+    mediaPermissionAllowed({
+      permission,
+      mediaTypes: details?.mediaType ? [details.mediaType] : [],
+      requestingOrigin: permissionOrigin(requestingOrigin),
+      allowedOrigins: currentAllowedOrigins(),
+    }));
+  targetSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    const allowed = mediaPermissionAllowed({
+      permission,
+      mediaTypes: details?.mediaTypes,
+      requestingOrigin: permissionOrigin(details?.requestingUrl),
+      allowedOrigins: currentAllowedOrigins(),
+    });
+    if (!allowed) {
+      callback(false);
+      return;
+    }
+    ensureMicrophoneAccess().then(
+      (granted) => callback(granted === true),
+      () => callback(false),
+    );
+  });
+}
+
 function configureRemoteSession(remoteSession, allowedOrigins) {
   const existingPolicy = remoteSessionPolicies.get(remoteSession);
   if (existingPolicy) {
@@ -472,8 +519,7 @@ function configureRemoteSession(remoteSession, allowedOrigins) {
     return;
   }
   const policy = { allowedOrigins, onCloudLogout: handleCloudLogoutRequest };
-  remoteSession.setPermissionCheckHandler(() => false);
-  remoteSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  installMediaPermissionHandlers(remoteSession, () => policy.allowedOrigins);
   remoteSession.webRequest.onBeforeRequest((details, callback) => {
     const requestAllowed = remoteRequestAllowed(details.url, policy.allowedOrigins);
     if (requestAllowed && isCloudLogoutRequest(details, policy.allowedOrigins)) {
@@ -505,8 +551,7 @@ function configureLocalSession(runtimeSession, localOrigin) {
     return;
   }
   const policy = { localOrigin };
-  runtimeSession.setPermissionCheckHandler(() => false);
-  runtimeSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  installMediaPermissionHandlers(runtimeSession, () => [policy.localOrigin]);
   runtimeSession.webRequest.onBeforeRequest((details, callback) => {
     callback({ cancel: !localRequestAllowed(details.url, policy.localOrigin) });
   });
