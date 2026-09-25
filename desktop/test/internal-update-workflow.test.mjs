@@ -6,14 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-test("internal updates remain one manual main-only native build and prerelease", async () => {
+test("internal updates stay one manual native build with a Developer ID macOS publisher", async () => {
   const workflow = await readFile(
     path.join(ROOT, ".github", "workflows", "desktop-internal-update.yml"),
     "utf8",
   );
   for (const required of [
     "workflow_dispatch:",
-    "github.ref == 'refs/heads/main'",
     "runs-on: macos-14",
     "runs-on: windows-2022",
     "make-update-manifest.mjs",
@@ -22,14 +21,28 @@ test("internal updates remain one manual main-only native build and prerelease",
     "desktop-update.json",
     "npm run verify:boundary",
     "npm run audit:runtime",
+    "environment: desktop-internal-signing",
+    "node scripts/prepare-signed-macos-runtime.mjs",
+    "node scripts/sign-production-macos-app.mjs",
+    "--mode production",
+    "node scripts/make-macos-release-containers.mjs",
+    "node scripts/verify-macos-release-containers.mjs",
+    "security delete-keychain",
+    "release-assets/*.dmg",
   ]) assert.ok(workflow.includes(required), required);
   for (const prohibited of [
     "pull_request:",
     "push:",
-    "environment:",
-    "BIZHUB_APPLE_",
+    "desktop-production-signing",
+    "BIZHUB_APPLE_API_",
+    "BIZHUB_DESKTOP_RELEASE_",
     "BIZHUB_WINDOWS_CERTIFICATE_",
     "desktop-r1-signed-candidate",
     "desktop-r1-publish",
   ]) assert.ok(!workflow.includes(prohibited), prohibited);
+  const jobs = workflow.slice(workflow.indexOf("\njobs:"));
+  const signingScope = "if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')";
+  assert.equal(jobs.split(signingScope).length - 1, 2);
+  assert.match(jobs, /\n  publish:\n    if: github\.ref == 'refs\/heads\/main' && inputs\.publish\n/);
+  assert.equal((workflow.match(/secrets\.BIZHUB_APPLE_APP_PASSWORD/g) || []).length, 2);
 });

@@ -77,6 +77,8 @@ artifact source.
 The advanced R1 production signing workflows remain frozen and are not called
 by U1.
 
-Internal macOS and Windows artifacts are not broad-public publisher authority.
-Formal Apple notarization and stable Windows Authenticode can be added later
-without changing the product flow.
+The internal macOS job runs in the `desktop-internal-signing` environment: it
+signs the Runtime and app with the Developer ID Application certificate,
+notarizes with an Apple ID app-specific password, and publishes the stapled
+ZIP (the in-app update payload) plus a stapled DMG for first installation.
+Windows internal artifacts remain without stable Authenticode.

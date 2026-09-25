@@ -13,6 +13,10 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  notarytoolCredentialArguments,
+  resolveNotaryCredentials,
+} from "./macos-notary-credentials.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -47,9 +51,6 @@ const signingMode = process.env.BIZHUB_MACOS_SIGNING_MODE || "";
 const signingIdentity = process.env.BIZHUB_MACOS_SIGNING_IDENTITY || "";
 const signingKeychain = process.env.BIZHUB_MACOS_KEYCHAIN || "";
 const expectedTeamId = process.env.BIZHUB_MACOS_TEAM_ID || "";
-const appleApiKey = process.env.BIZHUB_APPLE_API_KEY_FILE || "";
-const appleApiKeyId = process.env.BIZHUB_APPLE_API_KEY_ID || "";
-const appleApiIssuer = process.env.BIZHUB_APPLE_API_ISSUER || "";
 if (process.platform !== "darwin" || process.arch !== "arm64") {
   fail("desktop_macos_container_host_invalid");
 }
@@ -59,12 +60,9 @@ if (!new Set(["synthetic-ci", "production"]).has(signingMode)) {
 if (!signingIdentity || /[\r\n\0]/.test(signingIdentity)) {
   fail("desktop_macos_container_signing_identity_invalid");
 }
-if (
-  signingMode === "production"
-  && (!appleApiKey || !appleApiKeyId || !appleApiIssuer)
-) {
-  fail("desktop_macos_container_notary_credentials_missing");
-}
+const notaryCredentials = signingMode === "production"
+  ? resolveNotaryCredentials(process.env, expectedTeamId)
+  : null;
 if (!(await lstat(appPath)).isDirectory() || !appPath.endsWith(".app")) {
   fail("desktop_macos_container_app_invalid");
 }
@@ -119,12 +117,7 @@ if (signingMode === "production") {
     "notarytool",
     "submit",
     dmgPath,
-    "--key",
-    appleApiKey,
-    "--key-id",
-    appleApiKeyId,
-    "--issuer",
-    appleApiIssuer,
+    ...notarytoolCredentialArguments(notaryCredentials),
     "--wait",
   ]);
   run("/usr/bin/xcrun", ["stapler", "staple", dmgPath]);
