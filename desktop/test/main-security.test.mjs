@@ -83,6 +83,34 @@ test("remote content uses the hardened WebContentsView boundary", async () => {
   }
 });
 
+test("only business sessions may capture audio; the shell window denies every permission", async () => {
+  const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
+  const section = (start, end) => {
+    const from = main.indexOf(start);
+    const to = main.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, start);
+    return main.slice(from, to);
+  };
+  const installer = section("function installMediaPermissionHandlers", "function configureRemoteSession");
+  assert.match(installer, /setPermissionCheckHandler\([\s\S]+mediaPermissionAllowed\(/);
+  assert.match(installer, /setPermissionRequestHandler\([\s\S]+mediaPermissionAllowed\(/);
+  assert.match(installer, /ensureMicrophoneAccess\(\)/);
+  assert.match(main, /systemPreferences\.askForMediaAccess\("microphone"\)/);
+  assert.match(
+    section("function configureRemoteSession", "function configureLocalSession"),
+    /installMediaPermissionHandlers\(remoteSession, \(\) => policy\.allowedOrigins\)/,
+  );
+  assert.match(
+    section("function configureLocalSession", "async function refreshLocalState"),
+    /installMediaPermissionHandlers\(runtimeSession, \(\) => \[policy\.localOrigin\]\)/,
+  );
+  assert.match(
+    main,
+    /mainWindow\.webContents\.session\.setPermissionCheckHandler\(\(\) => false\);\s+mainWindow\.webContents\.session\.setPermissionRequestHandler\(\s+\(_webContents, _permission, callback\) => callback\(false\),\s+\);/,
+  );
+  assert.equal((main.match(/mediaPermissionAllowed\(/g) || []).length, 2);
+});
+
 test("closing the window keeps the workspace alive in the background", async () => {
   const main = await readFile(path.join(ROOT, "electron", "main.cjs"), "utf8");
   assert.match(

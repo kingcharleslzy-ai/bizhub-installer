@@ -178,6 +178,17 @@ Each launch:
 - stops the Runtime when local mode or the application is stopped;
 - lets the Python Owner create and validate online SQLite backups.
 
+## 麦克风权限
+
+- 只放行业务页的音频采集（总监助手按住说话）：云端模式限 Connection Profile 的
+  `allowed_origins`，本地模式限本次 Runtime 的 `127.0.0.1` 来源；权限必须是
+  `media` 且类型恰为 `audio`。视频、屏幕共享、定位、通知、剪贴板等其他权限一律拒绝，
+  Shell 主窗口（`bizhub-shell://app`）仍拒绝全部权限。
+- macOS：首次按住说话时由系统弹出麦克风授权（用途说明写在 `Info.plist` 的
+  `NSMicrophoneUsageDescription`）；已拒绝则需在"系统设置 → 隐私与安全性 → 麦克风"
+  里打开。签名主程序的 entitlements 含 `com.apple.security.device.audio-input`。
+- Windows：无额外配置，沿用系统麦克风隐私设置。
+
 ## Maintainer verification
 
 Use Node 22 and Python 3.12 on macOS arm64:

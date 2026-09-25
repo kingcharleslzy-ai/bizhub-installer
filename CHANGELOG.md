@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Allow business workspaces (allowed cloud origins or the local Runtime origin)
+  to capture audio only, for push-to-talk; video and every other permission
+  stay denied and the Shell window still denies all permissions. macOS builds
+  declare `NSMicrophoneUsageDescription` and the `device.audio-input`
+  entitlement and ask for microphone access on first use.
 - Preserve the native application menu on macOS and Linux while continuing to
   remove it on Windows, where update access remains available in the tray.
   Desktop version advances to `0.1.19`; Runtime Pack, Profile, Owner, writer,
