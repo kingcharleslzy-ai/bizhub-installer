@@ -568,6 +568,7 @@ try {
   await stat(path.join(userDataRoot, "guest-demo", "local-instance", "instance.json"));
   {
     const guestWorkspace = await localWorkspaceCdpClient();
+    let lastGuestPage = null;
     const product = await waitFor(async () => {
       const value = await evaluate(guestWorkspace, `({
         text: document.body.innerText,
@@ -577,8 +578,11 @@ try {
           .filter((item) => getComputedStyle(item).display !== "none")
           .map((item) => item.textContent.trim())
       })`);
+      lastGuestPage = { url: await evaluate(guestWorkspace, "location.href"), title: value.title, text: value.text.slice(0, 400) };
       return value.title === "经营概览" && value.text.includes("星河新材料样板间") ? value : null;
-    }, "desktop_account_flow_guest_product_missing");
+    }, "desktop_account_flow_guest_product_missing").catch((error) => {
+      fail(error instanceof Error ? error.message : String(error), JSON.stringify(lastGuestPage));
+    });
     if (
       !product.visibleNav.includes("基础资料")
       || !product.visibleNav.includes("采购")
