@@ -283,9 +283,12 @@ coordinated Pack tamper rejection, and zero residual Runtime processes. The pack
 continues to use only `https://example.com` and never creates a local instance.
 
 See the [D2 verification record](../docs/verification/desktop-d2-local-generic-2026-08-25.md).
-The Windows x64 equivalent runs on `windows-2022` through
-`desktop-d3-windows.yml`; see the
+The Windows x64 equivalent was verified on `windows-2022` by the retired
+`desktop-d3-windows.yml` workflow; see the
 [D3 verification record](../docs/verification/desktop-d3-windows-x64-2026-08-26.md).
+Windows x64 coverage now runs inside
+[`desktop-r1-release.yml`](../.github/workflows/desktop-r1-release.yml)
+(Desktop R1 Synthetic).
 
 ## Release status
 

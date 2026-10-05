@@ -290,6 +290,11 @@ npm --prefix app/frontend run build
 npm --prefix app/frontend audit --audit-level=high
 ```
 
+Before committing any change that adds or modifies tracked files, regenerate
+`install/CHECKSUMS.sha256` with `python scripts/update_checksums.py` and commit
+it together with the change; CI verifies the checksum manifest before the
+expensive desktop builds.
+
 Docker verification must use a clean environment without a customer-private
 repository on `PYTHONPATH`. Release evidence must distinguish implemented,
 locally tested, and clean-Ubuntu-tested facts.
