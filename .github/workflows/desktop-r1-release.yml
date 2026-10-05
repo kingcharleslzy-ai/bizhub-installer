@@ -102,6 +102,53 @@ jobs:
       - name: Verify runner target
         run: |
           test "$(uname -m)" = arm64
+      - name: Resolve old application fixture and cache key
+        id: old_app
+        if: needs.scope.outputs.full == 'true'
+        shell: bash
+        env:
+          KEY_INPUTS: ${{ hashFiles('desktop/**', 'app/runtime/**', 'app/vendor/**', 'app/backend/requirements.in', 'app/backend/requirements.lock', 'app/backend/requirements-dev.in', 'app/backend/requirements-dev.lock') }}
+        run: |
+          current_version="$(node -p 'require("./package.json").version')"
+          old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
+          iso_week="$(python3 -c 'import datetime; d = datetime.datetime.now(datetime.timezone.utc).isocalendar(); print(f"{d[0]}-w{d[1]}")')"
+          # The ISO-week bucket keeps one cached old application bounded in time
+          # even though macOS synthetic signing is ad-hoc and carries no
+          # certificate identity that could expire.
+          cache_key="desktop-macos-old-app-v1-$old_version-${KEY_INPUTS}-$iso_week"
+          echo "old_version=$old_version" >> "$GITHUB_OUTPUT"
+          echo "cache_key=$cache_key" >> "$GITHUB_OUTPUT"
+      - name: Restore cached old application
+        id: old_app_cache
+        if: needs.scope.outputs.full == 'true'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ${{ runner.temp }}/desktop-macos-old-app-cache
+          key: ${{ steps.old_app.outputs.cache_key }}
+      - name: Bind cached old application
+        id: bind_cached_old_app
+        if: needs.scope.outputs.full == 'true' && steps.old_app_cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          cache_root="$RUNNER_TEMP/desktop-macos-old-app-cache"
+          old_app="$cache_root/BizHub Desktop.app"
+          if [[ ! -d "$old_app" ]]; then
+            echo "cached old application incomplete; rebuilding old application"
+            echo "old_app_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cached_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$old_app/Contents/Info.plist")"
+          if [[ "$cached_version" != "${{ steps.old_app.outputs.old_version }}" ]]; then
+            echo "cached old application version mismatch; rebuilding old application"
+            echo "old_app_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! /usr/bin/codesign --verify --strict "$old_app"; then
+            echo "cached old application signature invalid; rebuilding old application"
+            echo "old_app_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "old_app_ready=true" >> "$GITHUB_OUTPUT"
       - name: Verify source, tests, dependency, and public boundary
         if: needs.scope.outputs.full == 'true'
         run: |
@@ -127,17 +174,26 @@ jobs:
         run: |
           current_version="$(node -p 'require("./package.json").version')"
           old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
-          cp package.json "$RUNNER_TEMP/package.json"
-          cp package-lock.json "$RUNNER_TEMP/package-lock.json"
-          node scripts/package-version-fixture.mjs set "$old_version"
-          npm run make:macos-release
-          node scripts/sign-synthetic-macos-app.mjs
-          /usr/bin/ditto "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" "$RUNNER_TEMP/BizHub Desktop-old.app"
-          cp "$RUNNER_TEMP/package.json" package.json
-          cp "$RUNNER_TEMP/package-lock.json" package-lock.json
-          rm -rf "out/BizHub Desktop-darwin-arm64"
-          npm run make:macos-release
-          node scripts/sign-synthetic-macos-app.mjs
+          cache_root="$RUNNER_TEMP/desktop-macos-old-app-cache"
+          if [[ "${{ steps.bind_cached_old_app.outputs.old_app_ready }}" == "true" ]]; then
+            /usr/bin/ditto "$cache_root/BizHub Desktop.app" "$RUNNER_TEMP/BizHub Desktop-old.app"
+            npm run make:macos-release
+            node scripts/sign-synthetic-macos-app.mjs
+          else
+            cp package.json "$RUNNER_TEMP/package.json"
+            cp package-lock.json "$RUNNER_TEMP/package-lock.json"
+            node scripts/package-version-fixture.mjs set "$old_version"
+            npm run make:macos-release
+            node scripts/sign-synthetic-macos-app.mjs
+            /usr/bin/ditto "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" "$RUNNER_TEMP/BizHub Desktop-old.app"
+            cp "$RUNNER_TEMP/package.json" package.json
+            cp "$RUNNER_TEMP/package-lock.json" package-lock.json
+            rm -rf "out/BizHub Desktop-darwin-arm64"
+            npm run make:macos-release
+            node scripts/sign-synthetic-macos-app.mjs
+            mkdir -p "$cache_root"
+            /usr/bin/ditto "$RUNNER_TEMP/BizHub Desktop-old.app" "$cache_root/BizHub Desktop.app"
+          fi
           node scripts/macos-upgrade-rollback-smoke.mjs \
             --old-app "$RUNNER_TEMP/BizHub Desktop-old.app" \
             --new-app "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" \
@@ -145,6 +201,12 @@ jobs:
             --new-version "$current_version" \
             --output out/desktop-r1-macos-upgrade-rollback.json
           git diff --exit-code -- package.json package-lock.json
+      - name: Cache old application
+        if: needs.scope.outputs.full == 'true' && steps.bind_cached_old_app.outputs.old_app_ready != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ${{ runner.temp }}/desktop-macos-old-app-cache
+          key: ${{ steps.old_app.outputs.cache_key }}
       - name: Verify current signed product and containers
         if: needs.scope.outputs.full == 'true'
         shell: bash
