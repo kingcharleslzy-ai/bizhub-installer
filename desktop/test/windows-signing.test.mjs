@@ -101,7 +101,7 @@ test("Windows install smoke checks only the formal BizHub instance boundary", ()
 
 test("Windows evidence requires exactly one full Squirrel package", () => {
   const workflow = readFileSync(
-    new URL("../../.github/workflows/desktop-d3-windows.yml", import.meta.url),
+    new URL("../../.github/workflows/desktop-r1-release.yml", import.meta.url),
     "utf8",
   );
   assert.match(workflow, /\$nupkgs\.Count -ne 1/);

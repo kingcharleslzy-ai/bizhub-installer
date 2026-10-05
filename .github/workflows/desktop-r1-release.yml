@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, codex/desktop-r1-release-20260826]
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,6 +24,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+      - name: Verify repository checksums
+        shell: bash
+        run: |
+          if ! python3 scripts/verify_checksums.py; then
+            echo "::error::install/CHECKSUMS.sha256 does not match the repository. If the file changes are intentional, run 'python3 scripts/update_checksums.py', review the diff, and commit install/CHECKSUMS.sha256 together with the change."
+            exit 1
+          fi
       - id: detect
         name: Detect release-impacting changes
         shell: bash
@@ -38,7 +45,6 @@ jobs:
             echo "full=false" >> "$GITHUB_OUTPUT"
           elif git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
             . \
-            ':(exclude).github/workflows/desktop-d2-macos.yml' \
             ':(exclude).github/workflows/desktop-r1-release.yml' \
             ':(exclude)desktop/scripts/release-plan.mjs' \
             ':(exclude)desktop/test/release-plan.test.mjs' \
@@ -88,13 +94,14 @@ jobs:
         if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.12.10
-      - name: Verify repository integrity
+      - name: Verify runner target
         run: |
           test "$(uname -m)" = arm64
-          python ../scripts/verify_checksums.py
       - name: Verify source, tests, dependency, and public boundary
         if: needs.scope.outputs.full == 'true'
         run: |
@@ -190,15 +197,70 @@ jobs:
         if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.12.10
-      - name: Verify repository integrity
+      - name: Verify runner target
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           if ($env:RUNNER_OS -ne "Windows" -or $env:RUNNER_ARCH -ne "X64") { throw "desktop_r1_windows_target_invalid" }
-          python ../scripts/verify_checksums.py
+      - name: Resolve old installer fixture and cache key
+        id: old_setup
+        if: needs.scope.outputs.full == 'true'
+        shell: pwsh
+        env:
+          KEY_INPUTS: ${{ hashFiles('desktop/**', 'app/runtime/**', 'app/vendor/**', 'app/backend/requirements.in', 'app/backend/requirements.lock', 'app/backend/requirements-dev.in', 'app/backend/requirements-dev.lock') }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $currentVersion = node -p "require('./package.json').version"
+          $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
+          $isoWeekYear = [System.Globalization.ISOWeek]::GetYear([DateTime]::UtcNow)
+          $isoWeek = [System.Globalization.ISOWeek]::GetWeekOfYear([DateTime]::UtcNow)
+          # The ISO-week bucket bounds how long one cached synthetic publisher
+          # certificate can be reused: an entry is only served inside the week
+          # it was created in, and the certificate outlives that window.
+          $cacheKey = "desktop-windows-old-setup-v1-$oldVersion-$($env:KEY_INPUTS)-$isoWeekYear-w$isoWeek"
+          "old_version=$oldVersion" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "cache_key=$cacheKey" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Restore cached old installer and synthetic publisher
+        id: old_setup_cache
+        if: needs.scope.outputs.full == 'true'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ${{ runner.temp }}/desktop-old-setup-cache
+          key: ${{ steps.old_setup.outputs.cache_key }}
+      - name: Bind cached synthetic publisher
+        id: bind_cached_publisher
+        if: needs.scope.outputs.full == 'true' && steps.old_setup_cache.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $cacheRoot = Join-Path $env:RUNNER_TEMP "desktop-old-setup-cache"
+          $meta = Get-Content (Join-Path $cacheRoot "meta.json") -Raw | ConvertFrom-Json
+          $pfxPath = Join-Path $cacheRoot "publisher.pfx"
+          $oldSetup = Join-Path $cacheRoot "BizHub-Desktop-Setup-old.exe"
+          if (-not (Test-Path $oldSetup -PathType Leaf) -or -not (Test-Path $pfxPath -PathType Leaf)) {
+            throw "desktop_windows_old_setup_cache_incomplete"
+          }
+          $password = "$($meta.password)"
+          Write-Output "::add-mask::$password"
+          $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
+          $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxPath, $password)
+          if ([DateTime]::UtcNow -lt $certificate.NotBefore.ToUniversalTime() -or [DateTime]::UtcNow -ge $certificate.NotAfter.ToUniversalTime().AddDays(-1)) {
+            Write-Output "cached synthetic publisher certificate outside its safe validity window; rebuilding old installer"
+            "old_setup_ready=false" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          $identity = ./scripts/create-synthetic-windows-signing-certificate.ps1 -InputPfx $pfxPath -Password $securePassword | ConvertFrom-Json
+          if ($identity.thumbprint -ne "$($meta.thumbprint)") { throw "desktop_windows_old_setup_cache_thumbprint_mismatch" }
+          "BIZHUB_WINDOWS_CERTIFICATE_FILE=$pfxPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$password" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "old_setup_ready=true" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: Verify source, tests, dependency, and public boundary
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
@@ -211,7 +273,7 @@ jobs:
           npm run verify:runtime-archive
           npm run audit:runtime
           npm audit --audit-level=moderate
-      - name: Prepare fixed Runtime and synthetic publisher
+      - name: Prepare fixed Runtime
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
@@ -221,6 +283,11 @@ jobs:
           npm run smoke:local
           npm run smoke:account-flow
           npm run smoke:local-shell
+      - name: Create synthetic Windows publisher certificate
+        if: needs.scope.outputs.full == 'true' && steps.bind_cached_publisher.outputs.old_setup_ready != 'true'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $certificatePath = Join-Path $env:RUNNER_TEMP "bizhub-windows-signing.pfx"
           $certificatePassword = [Guid]::NewGuid().ToString("N")
           Write-Output "::add-mask::$certificatePassword"
@@ -244,18 +311,40 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $currentVersion = node -p "require('./package.json').version"
           $oldVersion = node scripts/package-version-fixture.mjs previous $currentVersion
-          Copy-Item package.json "$env:RUNNER_TEMP/package.json"
-          Copy-Item package-lock.json "$env:RUNNER_TEMP/package-lock.json"
-          node scripts/package-version-fixture.mjs set $oldVersion
-          npm run make:windows-release
-          Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe"
-          Copy-Item "$env:RUNNER_TEMP/package.json" package.json
-          Copy-Item "$env:RUNNER_TEMP/package-lock.json" package-lock.json
-          Remove-Item "out/make" -Recurse -Force
-          Remove-Item "out/BizHub Desktop-win32-x64" -Recurse -Force
-          npm run make:windows-release
-          ./scripts/windows-upgrade-rollback-smoke.ps1 -OldSetup "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe" -NewSetup "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -OldVersion $oldVersion -NewVersion $currentVersion -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -Output out/desktop-r1-windows-upgrade-rollback.json -SigningMode synthetic-ci
+          $cacheRoot = Join-Path $env:RUNNER_TEMP "desktop-old-setup-cache"
+          if ("${{ steps.bind_cached_publisher.outputs.old_setup_ready }}" -eq "true") {
+            $oldSetup = Join-Path $cacheRoot "BizHub-Desktop-Setup-old.exe"
+            npm run make:windows-release
+          } else {
+            Copy-Item package.json "$env:RUNNER_TEMP/package.json"
+            Copy-Item package-lock.json "$env:RUNNER_TEMP/package-lock.json"
+            node scripts/package-version-fixture.mjs set $oldVersion
+            npm run make:windows-release
+            Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe"
+            Copy-Item "$env:RUNNER_TEMP/package.json" package.json
+            Copy-Item "$env:RUNNER_TEMP/package-lock.json" package-lock.json
+            Remove-Item "out/make" -Recurse -Force
+            Remove-Item "out/BizHub Desktop-win32-x64" -Recurse -Force
+            npm run make:windows-release
+            New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
+            Copy-Item "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe" (Join-Path $cacheRoot "BizHub-Desktop-Setup-old.exe") -Force
+            Copy-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE (Join-Path $cacheRoot "publisher.pfx") -Force
+            [ordered]@{
+              old_version = $oldVersion
+              thumbprint = $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT
+              password = $env:BIZHUB_WINDOWS_CERTIFICATE_PASSWORD
+              created_utc = [DateTime]::UtcNow.ToString("o")
+            } | ConvertTo-Json | Out-File (Join-Path $cacheRoot "meta.json") -Encoding utf8
+            $oldSetup = "$env:RUNNER_TEMP/BizHub-Desktop-Setup-old.exe"
+          }
+          ./scripts/windows-upgrade-rollback-smoke.ps1 -OldSetup $oldSetup -NewSetup "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" -OldVersion $oldVersion -NewVersion $currentVersion -ExpectedThumbprint $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT -RuntimePreparationIdentity out/desktop-r1-windows-runtime-preparation.json -Output out/desktop-r1-windows-upgrade-rollback.json -SigningMode synthetic-ci
           git diff --exit-code -- package.json package-lock.json
+      - name: Cache old installer and synthetic publisher
+        if: needs.scope.outputs.full == 'true' && steps.bind_cached_publisher.outputs.old_setup_ready != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ${{ runner.temp }}/desktop-old-setup-cache
+          key: ${{ steps.old_setup.outputs.cache_key }}
       - name: Verify current product, installation, and identities
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
