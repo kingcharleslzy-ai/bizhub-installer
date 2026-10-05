@@ -111,7 +111,7 @@ for (const api of [
 const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
 assert.equal(packageJson.dependencies, undefined);
 assert.equal(packageJson.devDependencies.pyinstaller, undefined);
-assert.equal(packageJson.devDependencies["@electron-forge/maker-squirrel"], "7.11.2");
+assert.equal(packageJson.devDependencies["@electron-forge/maker-squirrel"], "8.0.1");
 assert.equal(packageJson.devDependencies["@electron/windows-sign"], "1.2.2");
 assert.equal(packageJson.devDependencies["extract-zip"], "file:vendor/extract-zip-safe");
 const safeExtractor = await readFile(
