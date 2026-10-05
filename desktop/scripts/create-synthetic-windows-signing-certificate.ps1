@@ -34,8 +34,8 @@ try {
             [System.Security.Cryptography.HashAlgorithmName]::SHA256,
             [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
         )
-        $enhancedKeyUsages = [System.Security.Cryptography.X509Certificates.OidCollection]::new()
-        $enhancedKeyUsages.Add([System.Security.Cryptography.X509Certificates.Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
+        $enhancedKeyUsages = [System.Security.Cryptography.OidCollection]::new()
+        $enhancedKeyUsages.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.3")) | Out-Null
         $request.CertificateExtensions.Add(
             [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new(
                 $enhancedKeyUsages,
@@ -80,7 +80,7 @@ try {
     # can invoke protected-root UI and deadlock an unattended job.
     $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
         [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
-        [System.Security.Cryptography.X509Certificates.X509StoreLocation]::LocalMachine
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
     )
     try {
         $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
