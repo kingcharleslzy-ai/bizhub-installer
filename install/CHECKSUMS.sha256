@@ -3,7 +3,7 @@
 0be52769f7664ee56bae1fe2850bb4c6996e4ceac7f76c71c7a252958a06e58f  .github/workflows/cleanup-ci-artifacts.yml
 28295828d00915702a46e60703d99b771886a5626bcf4749319c806eea77335a  .github/workflows/desktop-internal-update.yml
 acc242876e12308d27278386ad323591122d3f99073a99fe89d7a4e6d0375629  .github/workflows/desktop-r1-publish.yml
-4a89954cf858689e36f2177127925ce0e5837dc1b219c1d76edb123f3aa826c9  .github/workflows/desktop-r1-release.yml
+b24f3cbd8228cce2930fd4b64cae28db16384ccf2970bca61d0d74c019a1aa87  .github/workflows/desktop-r1-release.yml
 28aa5903aa69ff99b4a876771eda92ef74d96dbc14db6c1a4f794a868c7fd708  .github/workflows/desktop-r1-signed-candidate.yml
 c5e836b4eb99123f922499df3f340ef5cdb3d5d788bc5eed5fa621b3c6c11dbe  .github/workflows/release-e2e.yml
 bb375d669aca58d0558b7aa4304adbaadf316920fface3835bf2426ca241033a  .gitignore
