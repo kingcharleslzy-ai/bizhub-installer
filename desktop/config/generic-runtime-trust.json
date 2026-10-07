@@ -8,10 +8,10 @@
   "architecture": "arm64",
   "artifact_id": "bizhub-common",
   "core_artifact_digest": "sha256:623c5c8b3d24b3e5407f91634f715d31fd8df5f71d098323b4f05db8fecd4426",
-  "core_source_commit": "370572f6f2ea6253e14af3b187576dd055f0f30a",
+  "core_source_commit": "8f8ce71ec351f067f05a9ab0d539302ccdddb231",
   "allowlist_tree_digest": "d45c1b6f60d1322d1e0b3f73851d4f38d652eec1b2a0b014811dc3c47dc6b571",
   "runtime_source_tree_digest": "addb20e01c2639a87fc32b02eaa536c9875605c5007437796e58a6b6dec7cf22",
-  "runtime_manifest_sha256": "b64a22b5b323c9ce4f82205514fce5fd721262c33693366369efaf629f1c925f",
-  "runtime_pack_tree_digest": "44f083ae7635075de2163c024638246854dcaf99d235d230afeadec0e4e8f37d",
+  "runtime_manifest_sha256": "c4b4b8051ca038993caeea7f7fc7f9b21a1a09f3e8b6732c917a5dfc6e4f1263",
+  "runtime_pack_tree_digest": "bd0b451f55bd359acbec058e902591d55d6275a4ccb5a4111b44e1f96631c6f4",
   "runtime_pack_file_count": 220
 }

@@ -235,5 +235,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "370572f6f2ea6253e14af3b187576dd055f0f30a"
+  "source_commit": "8f8ce71ec351f067f05a9ab0d539302ccdddb231"
 }
