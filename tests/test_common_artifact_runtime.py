@@ -86,6 +86,8 @@ def test_public_delivery_runs_the_vendored_common_owner(tmp_path: Path) -> None:
         "BIZHUB_SECRET_KEY_FILE": str(config / "secret-key"),
         "BIZHUB_COOKIE_SECURE": "0",
     }
+    for name in ("BIZHUB_GENERIC_AI_BASE_URL", "BIZHUB_GENERIC_AI_MODEL", "OPENAI_API_KEY"):
+        environment.pop(name, None)
     script = r'''
 from fastapi.testclient import TestClient
 from bizhub.main import app
@@ -99,6 +101,7 @@ with TestClient(app) as client:
     assert health.json()["company_profile_id"] == "synthetic-public"
     assert health.json()["core_artifact_digest"].startswith("sha256:")
     assert client.get("/api/system-map").status_code == 401
+    assert client.get("/api/sales/agent/sources").status_code == 401
     login = client.post(
         "/api/auth/login",
         headers={"X-BizHub-Request": "1"},
@@ -119,6 +122,9 @@ with TestClient(app) as client:
     cobuild_blocked = client.get("/api/workspace-cobuild/state")
     assert cobuild_blocked.status_code == 409
     assert cobuild_blocked.json()["detail"]["code"] == "workspace_onboarding_required"
+    agent_blocked = client.get("/api/sales/agent/sources")
+    assert agent_blocked.status_code == 409
+    assert agent_blocked.json()["detail"]["code"] == "workspace_onboarding_required"
     entered = client.post(
         "/api/workspace-onboarding/enter",
         headers={"X-BizHub-Request": "1"},
@@ -205,6 +211,7 @@ with TestClient(app) as client:
     ]
     drafts = [
         {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
+        {"resource_kind": "party", "resource_id": "customer-1", "canonical_name": "Customer One"},
         {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},
         {"resource_kind": "unit", "resource_id": "kg", "canonical_name": "Kilogram"},
         {"resource_kind": "location", "resource_id": "warehouse-1", "canonical_name": "Warehouse One"},
@@ -226,6 +233,107 @@ with TestClient(app) as client:
         json=preview,
     ).json()
     assert replay["disposition"] == "idempotent_noop"
+    agent_headers = {"X-BizHub-Request": "1"}
+    source_text = "客户 Customer One 订 3 kg Product One，从 Warehouse One 发货，外箱要贴标签。"
+    source_extra = {
+        "channel": "synthetic",
+        "attachments": [
+            {"name": "label-preview.png", "meta": {"unfamiliar_field": [1, 2, {"x": None}]}}
+        ],
+    }
+    source_payload = {
+        "source_ref": "synthetic-public-sales-source-0001",
+        "text": source_text,
+        "business_at": "2026-10-07T09:00:00+00:00",
+        "extra": source_extra,
+    }
+    unprepared = client.post("/api/sales/agent/sources", headers=agent_headers, json=source_payload)
+    assert unprepared.status_code == 503, unprepared.text
+    assert unprepared.json()["detail"]["code"] == "sales_agent_ai_unavailable"
+    agent_source_id = unprepared.json()["detail"]["source_id"]
+    assert agent_source_id
+    source_state = client.get(f"/api/sales/agent/sources/{agent_source_id}")
+    assert source_state.status_code == 200, source_state.text
+    assert source_state.json()["source_id"] == agent_source_id
+    assert source_state.json()["status"] == "received"
+    assert source_state.json()["source_ref"] == source_payload["source_ref"]
+    assert source_state.json()["text"] == source_text
+    assert source_state.json()["extra"] == source_extra
+    assert source_state.json()["proposal"] is None
+    sources_listed = client.get("/api/sales/agent/sources")
+    assert sources_listed.status_code == 200
+    assert [item["source_id"] for item in sources_listed.json()["items"]] == [agent_source_id]
+    resent = client.post("/api/sales/agent/sources", headers=agent_headers, json=source_payload)
+    assert resent.status_code == 503, resent.text
+    assert resent.json()["detail"]["source_id"] == agent_source_id
+    assert (
+        client.get(f"/api/sales/agent/sources/{agent_source_id}").json()["status"] == "received"
+    )
+    procurement_command = {
+        "action": "create",
+        "idempotency_key": "public-runtime-procurement-write-0001",
+        "order_id": "po-public-0001",
+        "supplier_party_id": "supplier-1",
+        "ordered_at": "2026-10-07T08:00:00+00:00",
+        "lines": [
+            {
+                "line_id": "po-public-0001-l1",
+                "product_id": "product-1",
+                "unit_id": "kg",
+                "quantity": "5",
+                "receive_location_id": "warehouse-1",
+            }
+        ],
+        "target_line_id": "",
+        "quantity": "",
+        "occurred_at": "",
+        "source_ref": "synthetic-public-manual-procurement",
+        "evidence_refs": ["manual:po-public-0001"],
+        "reason": "",
+    }
+    procurement_preview = client.post(
+        "/api/procurement/preview", headers=agent_headers, json=procurement_command
+    )
+    assert procurement_preview.status_code == 200, procurement_preview.text
+    procurement_applied = client.post(
+        "/api/procurement/apply", headers=agent_headers, json=procurement_preview.json()
+    )
+    assert procurement_applied.status_code == 200, procurement_applied.text
+    procurement_replay = client.post(
+        "/api/procurement/apply", headers=agent_headers, json=procurement_preview.json()
+    )
+    assert procurement_replay.json()["disposition"] == "idempotent_noop"
+    sales_command = {
+        "action": "create",
+        "idempotency_key": "public-runtime-sales-write-0001",
+        "order_id": "so-public-0001",
+        "customer_party_id": "customer-1",
+        "ordered_at": "2026-10-07T08:30:00+00:00",
+        "lines": [
+            {
+                "line_id": "so-public-0001-l1",
+                "product_id": "product-1",
+                "unit_id": "kg",
+                "quantity": "3",
+                "ship_from_location_id": "warehouse-1",
+            }
+        ],
+        "target_line_id": "",
+        "quantity": "",
+        "occurred_at": "",
+        "source_ref": "synthetic-public-manual-sale",
+        "evidence_refs": ["manual:so-public-0001"],
+        "reason": "",
+    }
+    sales_preview = client.post("/api/sales/preview", headers=agent_headers, json=sales_command)
+    assert sales_preview.status_code == 200, sales_preview.text
+    sales_applied = client.post("/api/sales/apply", headers=agent_headers, json=sales_preview.json())
+    assert sales_applied.status_code == 200, sales_applied.text
+    sales_replay = client.post("/api/sales/apply", headers=agent_headers, json=sales_preview.json())
+    assert sales_replay.json()["disposition"] == "idempotent_noop"
+    sales_orders_listed = client.get("/api/sales/orders")
+    assert sales_orders_listed.status_code == 200
+    assert [order["order_id"] for order in sales_orders_listed.json()["items"]] == ["so-public-0001"]
 assert verify()["status"] == "ok"
 '''
     completed = subprocess.run(

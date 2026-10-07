@@ -41,7 +41,7 @@
     "electron": "44.0.0",
     "extract-zip": "file:vendor/extract-zip-safe",
     "vite": "8.2.2",
-    "vue": "3.5.41"
+    "vue": "3.5.42"
   },
   "overrides": {
     "@electron/rebuild": "4.2.0",

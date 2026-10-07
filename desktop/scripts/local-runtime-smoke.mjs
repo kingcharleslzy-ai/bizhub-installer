@@ -52,6 +52,9 @@ const username = "synthetic-admin";
 const password = "synthetic correct horse battery staple";
 let runtime = null;
 let lifecycle = null;
+for (const name of ["BIZHUB_GENERIC_AI_BASE_URL", "BIZHUB_GENERIC_AI_MODEL", "OPENAI_API_KEY"]) {
+  delete process.env[name];
+}
 
 try {
   const release = await verifyRuntimePack(runtimePack, trustPath);
@@ -170,6 +173,20 @@ try {
   assert.equal(entered.response.status, 200);
   assert.equal(entered.body.stage, "enterprise_context_ready");
   assert.equal(entered.body.accepts_business_material, true);
+  const sourceText = "客户改口了，先保留这段原话，等对方确认数量再记。";
+  const unavailableSource = await mutation(runtime, "/api/sales/agent/sources", {
+    source_ref: "synthetic:desktop-smoke-source",
+    text: sourceText,
+    business_at: "2026-10-07T09:00:00+00:00",
+    extra: { unfamiliar_field: { packaging_note: "旧箱唛，规格还没定" } },
+  });
+  assert.equal(unavailableSource.response.status, 503, JSON.stringify(unavailableSource.body));
+  assert.equal(unavailableSource.body.detail.code, "sales_agent_ai_unavailable");
+  const savedSource = await fetchRuntime(runtime, `/api/sales/agent/sources/${unavailableSource.body.detail.source_id}`);
+  assert.equal(savedSource.response.status, 200);
+  assert.equal(savedSource.body.text, sourceText);
+  assert.equal(savedSource.body.status, "received");
+  assert.equal(savedSource.body.proposal, null);
   const emptyDelivery = await fetchRuntime(runtime, "/api/delivery/overview");
   assert.equal(emptyDelivery.response.status, 200);
   assert.equal(emptyDelivery.body.procurement_orders, 0);

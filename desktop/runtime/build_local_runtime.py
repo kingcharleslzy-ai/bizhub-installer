@@ -148,6 +148,13 @@ def build(root: Path, python: Path) -> Path:
         f"{frontend}:generic-ui",
         "--collect-submodules",
         "uvicorn",
+        # The sales_agent SDK imports are function-local (lazy); modulegraph
+        # still resolves them, but the agents package reads its own version
+        # through importlib.metadata at import time, so ship the metadata.
+        "--copy-metadata",
+        "openai-agents",
+        "--collect-data",
+        "agents",
         str(desktop / "runtime" / "bizhub_runtime_entry.py"),
     ]
     completed = subprocess.run(command, cwd=root, check=False)

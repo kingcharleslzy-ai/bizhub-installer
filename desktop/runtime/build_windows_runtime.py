@@ -79,6 +79,12 @@ def build(root: Path, python: Path) -> Path:
         f"{frontend}{data_separator}generic-ui",
         "--collect-submodules",
         "uvicorn",
+        # Same as the macOS build: the agents SDK resolves its version through
+        # importlib.metadata, which PyInstaller only ships via copied metadata.
+        "--copy-metadata",
+        "openai-agents",
+        "--collect-data",
+        "agents",
         str(desktop / "runtime" / "bizhub_runtime_entry_windows.py"),
     ]
     build_environment = os.environ.copy()
