@@ -36,3 +36,27 @@ business directory remains absent.
 The artifact is generated upstream; it must not be hand-edited in this
 repository. Any upstream content change requires a new manifest, digest, public
 release, Ubuntu lifecycle run, and external review.
+
+## Generic sales agent sources (2026-10-07 candidate)
+
+The current candidate artifact extends the allowlist to 45 files. It adds the
+four generic sales-agent source endpoints (`POST /api/sales/agent/sources`,
+list, per-source GET, and digest-bound apply) plus the official
+`openai-agents` SDK adapter inside the vendored common code. The public
+requirements now pin `openai==2.44.0`, `openai-agents==0.17.7`, and the
+SDK-required `pydantic==2.13.3`; the desktop freeze builds copy the
+`openai-agents` package metadata because the SDK resolves its version through
+`importlib.metadata`.
+
+Supported boundary: without model configuration the receive endpoint returns
+503 (`sales_agent_ai_unavailable`) while the verbatim source text, business
+time, and unknown nested `extra` payload stay stored and retrievable by
+`source_id`, and re-sending the same `source_ref` with the same content maps
+to the same `source_id`. Model configuration is supplied only by the external
+environment: the standard SDK credential `OPENAI_API_KEY` plus
+`BIZHUB_GENERIC_AI_BASE_URL` and `BIZHUB_GENERIC_AI_MODEL`. No credentials are
+stored in this repository. Manual catalog, procurement, and sales writes are
+unchanged.
+
+This tree is a source candidate only: it is not a signed public release, and
+the published vendor runtime archives are not refreshed here.
