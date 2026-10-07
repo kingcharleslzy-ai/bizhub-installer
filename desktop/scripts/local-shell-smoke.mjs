@@ -311,7 +311,7 @@ try {
       })`);
       return value.nav.includes("设置")
         && value.nav.includes("基础资料")
-        && value.nav[1] === "处理消息"
+        && value.nav[0] === "处理消息"
         && value.nav.includes("和助手聊聊")
         && value.nav.includes("我们已了解")
         && value.nav.includes("待确认")
@@ -353,14 +353,18 @@ try {
         const posts = window.__salesSourcePosts;
         const retry = [...document.querySelectorAll(".sales-agent button")]
           .find((item) => item.textContent.trim() === "用同一条原文重试");
-        const text = document.body.innerText;
+        const view = document.querySelector(".sales-agent");
+        const text = view?.innerText || "";
+        const heads = [...(view?.querySelectorAll(".agent-head h2") || [])].map((item) => item.textContent.trim());
         return posts.length === ${index + 1}
           && posts.every((item) => item.done)
+          && Boolean(view) && view.offsetParent !== null
           && Boolean(retry) && !retry.disabled
           && text.includes("原文已保存，助手还没整理完")
           && text.includes("sales_agent_ai_unavailable")
-          && !text.includes("已入账")
-          && !text.includes("订单已保存");
+          && !view.querySelector(".agent-tag.saved")
+          && !heads.includes("订单已保存")
+          && !heads.includes("发货已登记");
       })()`), "desktop_local_sales_agent_unavailable_not_saved");
     }
     const salesPosts = await evaluate(workspace, "window.__salesSourcePosts.map((item) => item.body)");

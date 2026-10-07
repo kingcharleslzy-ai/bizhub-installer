@@ -49,8 +49,8 @@ const activeLocations = computed(() => catalog.value.locations.filter((item: Jso
 const navigationItems = computed<Array<[Page, string]>>(() => {
   const items: Array<[Page, string]> = [["start", "开始使用"]];
   if (onboarding.value.stage === "enterprise_context_ready") {
+    items.unshift(["process", "处理消息"]);
     items.push(
-      ["process", "处理消息"],
       ["chat", "和助手聊聊"],
       ["knowledge", "我们已了解"],
       ["confirmations", "待确认"],

@@ -558,7 +558,7 @@ onMounted(loadList);
           </button>
         </li>
       </ul>
-      <p class="agent-quiet">列表只按类型分组；是否已入账以打开后的系统读回为准。</p>
+      <p class="agent-quiet">选择一条消息，查看原文和处理结果。</p>
     </details>
   </section>
 </template>
