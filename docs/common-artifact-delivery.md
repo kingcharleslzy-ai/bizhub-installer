@@ -27,7 +27,7 @@ transition.
 
 ## Public boundary
 
-The common manifest contains 41 allowlisted text files. Its generated scan
+The current common manifest contains 45 allowlisted text files. Its generated scan
 rejects customer names, private module paths, private frontends, source maps,
 credentials, and secret references. Public tests also verify that the container
 copies the generated artifact and delivery adapter and that the retired legacy
@@ -36,6 +36,25 @@ business directory remains absent.
 The artifact is generated upstream; it must not be hand-edited in this
 repository. Any upstream content change requires a new manifest, digest, public
 release, Ubuntu lifecycle run, and external review.
+
+## Repository change boundaries
+
+The private canonical source repository owns both the common core source and
+customer packages. This public repository owns the delivery adapter, generic
+client, desktop shell, installer, and the generated common artifact. Common
+business behavior has one source authority; fixes must not be implemented a
+second time in the public adapter or by editing the tar archive.
+
+| Change | Source and delivery |
+| --- | --- |
+| Customer rules, private pages, or private integrations | Change and release the customer package upstream; no public artifact update unless common inputs change. |
+| Common core or generic business behavior | Review and merge upstream, then export the allowlisted artifact here with its manifest and digest; update the public dependency locks and packaging only if required. |
+| Generic client, desktop shell, installer, or delivery adapter | Change here; an upstream change is needed only when the common contract must change. |
+
+An upstream merge proves neither public delivery nor customer usability. A
+public update must verify the generated boundary and actual public entrypoints.
+Clients already distributed retain their previous core until an immutable
+release updates them. A source candidate is not a published installer.
 
 ## Generic sales agent sources (2026-10-07 candidate)
 
