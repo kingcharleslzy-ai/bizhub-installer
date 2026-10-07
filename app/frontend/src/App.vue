@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { api, type Json } from "./api";
+import SalesAgentView from "./SalesAgentView.vue";
 
-type Json = Record<string, any>;
-type Page = "start" | "chat" | "knowledge" | "confirmations" | "opportunities" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
+type Page = "start" | "process" | "chat" | "knowledge" | "confirmations" | "opportunities" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
 
 const page = ref<Page>("start");
+const salesAgent = ref<InstanceType<typeof SalesAgentView> | null>(null);
 const user = ref("");
 const busy = ref(false);
 const notice = ref("");
@@ -48,6 +50,7 @@ const navigationItems = computed<Array<[Page, string]>>(() => {
   const items: Array<[Page, string]> = [["start", "开始使用"]];
   if (onboarding.value.stage === "enterprise_context_ready") {
     items.push(
+      ["process", "处理消息"],
       ["chat", "和助手聊聊"],
       ["knowledge", "我们已了解"],
       ["confirmations", "待确认"],
@@ -64,6 +67,7 @@ const navigationItems = computed<Array<[Page, string]>>(() => {
 });
 const title = computed(() => ({
   start: "开始使用",
+  process: "处理一份订单或发货消息",
   chat: "和助手聊聊",
   knowledge: "我们已经了解什么",
   confirmations: "还有什么需要确认",
@@ -78,19 +82,6 @@ const title = computed(() => ({
 const activeTradeKind = computed<"procurement" | "sales">(() => (
   page.value === "sales" ? "sales" : "procurement"
 ));
-
-async function api(path: string, options: RequestInit = {}) {
-  const headers = new Headers(options.headers || {});
-  if (options.body) headers.set("Content-Type", "application/json");
-  if (options.method && options.method !== "GET") headers.set("X-BizHub-Request", "1");
-  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = typeof body.detail === "string" ? body.detail : body.detail?.code || body.detail?.message;
-    throw new Error(detail || `request_failed:${response.status}`);
-  }
-  return body;
-}
 
 async function refresh() {
   const [nextProfile, nextHealth, nextOnboarding] = await Promise.all([
@@ -118,6 +109,18 @@ async function refresh() {
   inventory.value = nextInventory;
 }
 
+async function refreshWorkspace() {
+  try {
+    await Promise.all([refresh(), page.value === "process" ? salesAgent.value?.refresh() : undefined]);
+  } catch (caught: any) {
+    error.value = caught.message;
+  }
+}
+
+function refreshRecords() {
+  refresh().catch((caught: any) => { error.value = caught.message; });
+}
+
 async function enterEnterpriseContext() {
   busy.value = true;
   error.value = "";
@@ -132,7 +135,7 @@ async function enterEnterpriseContext() {
     });
     notice.value = "企业空间已准备好。你可以从一件小事开始。";
     await refresh();
-    page.value = "chat";
+    page.value = "process";
   } catch (caught: any) {
     error.value = caught.message;
   } finally {
@@ -366,13 +369,16 @@ onMounted(async () => {
     <aside>
       <div class="identity"><span>{{ profile.brand_mark || 'BH' }}</span><div><strong>{{ profile.display_name || 'BizHub' }}</strong><small>企业空间</small></div></div>
       <nav>
-        <button v-for="item in navigationItems" :key="item[0]" :class="{ active: page === item[0] }" @click="selectPage(item[0])">{{ item[1] }}</button>
+        <template v-for="item in navigationItems" :key="item[0]">
+          <div v-if="item[0] === 'master'" class="nav-label">手工查看与录入</div>
+          <button :class="{ active: page === item[0] }" @click="selectPage(item[0])">{{ item[1] }}</button>
+        </template>
       </nav>
       <div class="account"><strong>{{ user || '本地管理员' }}</strong><small>{{ onboarding.data_authority_mode === 'local' ? '数据保存在这台电脑' : '企业云端空间' }}</small></div>
     </aside>
 
     <main class="workspace">
-      <header><div><p>{{ profile.display_name || 'BIZHUB' }}</p><h1>{{ title }}</h1></div><button class="secondary" :disabled="busy" @click="refresh">刷新</button></header>
+      <header><div><p>{{ profile.display_name || 'BIZHUB' }}</p><h1>{{ title }}</h1></div><button class="secondary" :disabled="busy" @click="refreshWorkspace">刷新</button></header>
       <p v-if="notice" class="notice">{{ notice }}</p><p v-if="error" class="error">{{ error }}</p>
 
       <section v-if="page === 'start'" class="onboarding-workspace">
@@ -405,6 +411,8 @@ onMounted(async () => {
           <p>请先点击右上角“刷新”。如果仍然没有恢复，再把页面上的错误信息发给技术支持。</p>
         </article>
       </section>
+
+      <SalesAgentView v-if="onboarding.stage === 'enterprise_context_ready'" v-show="page === 'process'" ref="salesAgent" :catalog="catalog" @refresh="refreshRecords" />
 
       <section v-if="page === 'chat'" class="cobuild-layout">
         <article class="conversation-panel">

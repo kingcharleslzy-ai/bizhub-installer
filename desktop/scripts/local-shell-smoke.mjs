@@ -181,6 +181,7 @@ async function launchDesktop() {
       ...process.env,
       BIZHUB_DESKTOP_ACCOUNT_FLOW_SMOKE: "1",
       BIZHUB_DESKTOP_USER_DATA_ROOT: userDataRoot,
+      BIZHUB_GENERIC_AI_BASE_URL: "",
       ...(packagedExecutable ? {} : {
         BIZHUB_DESKTOP_ACCOUNT_DIRECTORY_CONFIG: path.join(temporaryRoot, "must-not-be-read.json"),
         BIZHUB_DESKTOP_LOCAL_RUNTIME_DIR: runtimePack,
@@ -310,11 +311,101 @@ try {
       })`);
       return value.nav.includes("设置")
         && value.nav.includes("基础资料")
+        && value.nav[1] === "处理消息"
         && value.nav.includes("和助手聊聊")
         && value.nav.includes("我们已了解")
         && value.nav.includes("待确认")
         && value.nav.includes("改进机会")
-        && value.title === "和助手聊聊"
+        && value.title === "处理一份订单或发货消息"
+        && value.text.includes("交给助手整理") ? value : null;
+    }, "desktop_local_workspace_entry_not_persisted");
+    const salesOrdersBefore = await evaluate(workspace, `fetch("/api/sales/orders?limit=500", { credentials: "same-origin" })
+      .then((response) => response.json()).then((body) => body.items.length)`);
+    const salesSourceFilled = await evaluate(workspace, `(() => {
+      const field = document.querySelector(".sales-agent textarea");
+      if (!field) return false;
+      field.value = "合成冒烟：客户要十只样品杯，今天先记单。";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+    if (!salesSourceFilled) throw new Error("desktop_local_sales_agent_controls_missing");
+    await evaluate(workspace, `(() => {
+      const original = window.fetch;
+      window.__salesSourcePosts = [];
+      window.fetch = (input, init = {}) => {
+        const entry = init.method === "POST" && String(input) === "/api/sales/agent/sources"
+          ? { body: init.body, done: false } : null;
+        if (entry) window.__salesSourcePosts.push(entry);
+        const result = original.call(window, input, init);
+        return entry ? result.finally(() => { entry.done = true; }) : result;
+      };
+      return true;
+    })()`);
+    for (const [index, label] of ["交给助手整理", "用同一条原文重试"].entries()) {
+      await waitFor(async () => evaluate(workspace, `(() => {
+        const button = [...document.querySelectorAll(".sales-agent button")]
+          .find((item) => item.textContent.trim() === ${JSON.stringify(label)});
+        if (!button || button.disabled) return false;
+        button.click();
+        return true;
+      })()`), "desktop_local_sales_agent_submit_missing");
+      await waitFor(async () => evaluate(workspace, `(() => {
+        const posts = window.__salesSourcePosts;
+        const retry = [...document.querySelectorAll(".sales-agent button")]
+          .find((item) => item.textContent.trim() === "用同一条原文重试");
+        const text = document.body.innerText;
+        return posts.length === ${index + 1}
+          && posts.every((item) => item.done)
+          && Boolean(retry) && !retry.disabled
+          && text.includes("原文已保存，助手还没整理完")
+          && text.includes("sales_agent_ai_unavailable")
+          && !text.includes("已入账")
+          && !text.includes("订单已保存");
+      })()`), "desktop_local_sales_agent_unavailable_not_saved");
+    }
+    const salesPosts = await evaluate(workspace, "window.__salesSourcePosts.map((item) => item.body)");
+    const salesPayload = JSON.parse(salesPosts[0]);
+    if (
+      salesPosts.length !== 2
+      || salesPosts[1] !== salesPosts[0]
+      || Object.keys(salesPayload).sort().join(",") !== "business_at,extra,source_ref,text"
+      || !/^ui:[0-9a-f-]{36}$/.test(salesPayload.source_ref)
+      || !/[+-]\d{2}:\d{2}$/.test(salesPayload.business_at)
+    ) {
+      throw new Error(`desktop_local_sales_agent_retry_payload_invalid:${JSON.stringify(salesPosts)}`);
+    }
+    const salesReadback = await evaluate(workspace, `Promise.all([
+      fetch("/api/sales/agent/sources?limit=200", { credentials: "same-origin" }).then((response) => response.json()),
+      fetch("/api/sales/orders?limit=500", { credentials: "same-origin" }).then((response) => response.json()),
+    ]).then(([sources, orders]) => ({
+      sources: sources.items.map((item) => ({ disposition: item.disposition, order_id: item.order_id })),
+      orders: orders.items.length,
+    }))`);
+    if (
+      salesReadback.sources.length !== 1
+      || salesReadback.sources[0].disposition !== null
+      || salesReadback.sources[0].order_id !== null
+      || salesReadback.orders !== salesOrdersBefore
+    ) {
+      throw new Error(`desktop_local_sales_agent_retry_invalid:${JSON.stringify(salesReadback)}`);
+    }
+    await assertWorkspaceViewports(
+      workspace,
+      "原文已保存，助手还没整理完",
+      "desktop_local_sales_agent_responsive_invalid",
+    );
+    await evaluate(workspace, `(() => {
+      const button = [...document.querySelectorAll("nav button")]
+        .find((item) => item.textContent.trim() === "和助手聊聊");
+      button?.click();
+      return Boolean(button);
+    })()`);
+    await waitFor(async () => {
+      const value = await evaluate(workspace, `({
+        title: document.querySelector("h1")?.textContent?.trim() || "",
+        text: document.body.innerText,
+      })`);
+      return value.title === "和助手聊聊"
         && value.text.includes("你现在最希望系统先帮你解决什么？") ? value : null;
     }, "desktop_local_workspace_entry_not_persisted");
     await assertWorkspaceViewports(
@@ -489,7 +580,8 @@ try {
       ? resumedTitle === "和助手聊聊"
       : firstState.status === "connected",
     settings_ready: true,
-    responsive_workspace_states: 6,
+    sales_agent_unavailable_source_retained: true,
+    responsive_workspace_states: 7,
     responsive_workspace_viewports: WORKSPACE_VIEWPORTS.length,
     packaged: Boolean(packagedExecutable),
     user_data_root: userDataRoot,
