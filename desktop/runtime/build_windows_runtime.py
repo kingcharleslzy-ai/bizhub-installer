@@ -135,7 +135,7 @@ def build(root: Path, python: Path) -> Path:
     ]
     source_records = [
         {"path": file_path.relative_to(root).as_posix(), "sha256": sha256(file_path)}
-        for file_path in sorted(source_paths)
+        for file_path in sorted(source_paths, key=lambda path: path.relative_to(root).as_posix())
     ]
     release = {
         "schema_version": RUNTIME_SCHEMA,
