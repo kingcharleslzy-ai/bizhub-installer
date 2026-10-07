@@ -153,6 +153,8 @@ def build(root: Path, python: Path) -> Path:
         # through importlib.metadata at import time, so ship the metadata.
         "--copy-metadata",
         "openai-agents",
+        "--collect-data",
+        "agents",
         str(desktop / "runtime" / "bizhub_runtime_entry.py"),
     ]
     completed = subprocess.run(command, cwd=root, check=False)

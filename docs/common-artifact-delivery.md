@@ -65,7 +65,8 @@ list, per-source GET, and digest-bound apply) plus the official
 requirements now pin `openai==2.44.0`, `openai-agents==0.17.7`, and the
 SDK-required `pydantic==2.13.3`; the desktop freeze builds copy the
 `openai-agents` package metadata because the SDK resolves its version through
-`importlib.metadata`.
+`importlib.metadata`, and collect the `agents` package data used by its
+import-time prompt loaders.
 
 Supported boundary: without model configuration the receive endpoint returns
 503 (`sales_agent_ai_unavailable`) while the verbatim source text, business
@@ -77,5 +78,7 @@ environment: the standard SDK credential `OPENAI_API_KEY` plus
 stored in this repository. Manual catalog, procurement, and sales writes are
 unchanged.
 
-This tree is a source candidate only: it is not a signed public release, and
-the published vendor runtime archives are not refreshed here.
+The two platform vendor Runtime archives and their trust records are generated
+from this candidate through each native builder's `--capture-review-input`.
+They are unsigned review inputs, not signed public installers. Previously
+published installers are not updated by merging this candidate.

@@ -83,6 +83,8 @@ def build(root: Path, python: Path) -> Path:
         # importlib.metadata, which PyInstaller only ships via copied metadata.
         "--copy-metadata",
         "openai-agents",
+        "--collect-data",
+        "agents",
         str(desktop / "runtime" / "bizhub_runtime_entry_windows.py"),
     ]
     build_environment = os.environ.copy()
