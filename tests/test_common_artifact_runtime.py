@@ -86,6 +86,8 @@ def test_public_delivery_runs_the_vendored_common_owner(tmp_path: Path) -> None:
         "BIZHUB_SECRET_KEY_FILE": str(config / "secret-key"),
         "BIZHUB_COOKIE_SECURE": "0",
     }
+    for name in ("BIZHUB_GENERIC_AI_BASE_URL", "BIZHUB_GENERIC_AI_MODEL", "OPENAI_API_KEY"):
+        environment.pop(name, None)
     script = r'''
 from fastapi.testclient import TestClient
 from bizhub.main import app

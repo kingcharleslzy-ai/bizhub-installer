@@ -30,7 +30,7 @@ test("release plan binds exact Actions identities, publisher readback, and inner
   const planPath = path.join(temporaryRoot, "plan.json");
   await Promise.all([mkdir(macRoot), mkdir(windowsRoot)]);
   try {
-    const commonArtifactDigest = JSON.parse(await readFile(path.join(ROOT, "config", "generic-runtime-trust.json"), "utf8")).core_artifact_digest;
+    const commonArtifactDigest = JSON.parse(await readFile(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"), "utf8")).core_artifact_digest;
     await writeFile(path.join(macRoot, "desktop.zip"), "mac-zip");
     await writeFile(path.join(macRoot, "desktop.dmg"), "mac-dmg");
     await writeJson(path.join(macRoot, "desktop-r1-macos-containers.json"), {
