@@ -78,6 +78,11 @@ environment: the standard SDK credential `OPENAI_API_KEY` plus
 stored in this repository. Manual catalog, procurement, and sales writes are
 unchanged.
 
+The formal source endpoint passes the current Profile's enabled module set to
+the Agent tools and their existing Sales Owner calls. Frozen runtimes use this
+selected set for proposal preview and order reads, as the public adapter does
+for confirmation and apply.
+
 The two platform vendor Runtime archives and their trust records are generated
 from this candidate through each native builder's `--capture-review-input`.
 They are unsigned review inputs, not signed public installers. Previously

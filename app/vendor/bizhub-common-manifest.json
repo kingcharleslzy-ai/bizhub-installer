@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "8752d86e6cffd618b1cd7e59580f008509a6e750657c33c8c837e2935ba66d26",
-  "allowlist_tree_digest": "1a9db8495f633fff1ed5df964035ae4ae08fc8932afb2cf08ba1905e49e4b4cc",
+  "allowlist_tree_digest": "8ac3ac2403e7233340b72a1e4618756d924b557b45e1979a31f8d7bbe0d10006",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "0c28ee4b294ef31244fef58b74f836cf1d0d17c31cfda009a237bd558a79df00",
-  "core_artifact_digest": "sha256:0c28ee4b294ef31244fef58b74f836cf1d0d17c31cfda009a237bd558a79df00",
+  "artifact_sha256": "90ffe1fd8585ddbedc4754e5045724f25255b4d058c98dd762adb8b556a9fd69",
+  "core_artifact_digest": "sha256:90ffe1fd8585ddbedc4754e5045724f25255b4d058c98dd762adb8b556a9fd69",
   "deterministic_rebuild_equal": true,
   "file_count": 45,
   "files": [
@@ -29,8 +29,8 @@
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "dc568816e606e1b96988480f0464a1bb0403ffb03cfcda05c9757feb22e27e46",
-      "size": 23006
+      "sha256": "afa6209c7d722cf0d8e0a6ceeb37b087c1d1c94dbc642154a58526c303db1237",
+      "size": 23061
     },
     {
       "path": "backend/generic_kernel/backup.py",
@@ -64,8 +64,8 @@
     },
     {
       "path": "backend/generic_kernel/sales_agent.py",
-      "sha256": "09605a1cc392611783b771298aa4f519c1c8e986bb0c9a6527d7cd7fbac8003c",
-      "size": 22879
+      "sha256": "ffeb73e719b3aadc61654701ca3dfb7a5c1c73d5f1b67afb67baa65786aa1b6c",
+      "size": 23592
     },
     {
       "path": "backend/generic_kernel/sales_sources.py",
@@ -235,5 +235,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "edad076278e2161ddbbcab8aa32c6e7fe81bc81b"
+  "source_commit": "70ded4e67b63d0acbe60f9f50a97e33a3a10cd4e"
 }
