@@ -355,7 +355,6 @@ onMounted(async () => {
   try {
     user.value = (await api("/api/auth/me")).username;
     await refresh();
-    page.value = "start";
   } catch (caught: any) {
     error.value = caught.message || "请从 BizHub Desktop 打开本地工作区。";
   }
