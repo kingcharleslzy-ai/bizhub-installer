@@ -15,13 +15,12 @@ Set-StrictMode -Version Latest
 
 $rsa = $null
 $certificate = $null
-$publicCertificate = $null
 $passwordPointer = [IntPtr]::Zero
 try {
     if ($PSCmdlet.ParameterSetName -eq "Import") {
         # CI caches the signed old installer together with the synthetic
         # publisher PFX so upgrade smoke can keep verifying one consistent
-        # signing identity; this branch re-trusts that cached certificate.
+        # signing identity; this branch rehydrates that cached certificate.
         $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($InputPfx, $Password)
     } else {
         $rsa = [System.Security.Cryptography.RSA]::Create(2048)
@@ -72,22 +71,6 @@ try {
             )
         )
     }
-    $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-        $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-    )
-    # Trust the synthetic leaf only in the dedicated CI user's TrustedPeople.
-    # A self-hosted runner must not change machine-wide certificate trust.
-    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-        [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
-        [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-    )
-    try {
-        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-        $store.Add($publicCertificate)
-    }
-    finally {
-        $store.Close()
-    }
     [ordered]@{
         subject = $certificate.Subject
         thumbprint = $certificate.Thumbprint.Replace(" ", "").ToUpperInvariant()
@@ -96,9 +79,6 @@ try {
 finally {
     if ($passwordPointer -ne [IntPtr]::Zero) {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
-    }
-    if ($publicCertificate) {
-        $publicCertificate.Dispose()
     }
     if ($certificate) {
         $certificate.Dispose()

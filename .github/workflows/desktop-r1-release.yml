@@ -463,4 +463,3 @@ jobs:
         shell: pwsh
         run: |
           if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
-          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) { Remove-Item "Cert:\CurrentUser\TrustedPeople\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT" -Force -ErrorAction SilentlyContinue }
