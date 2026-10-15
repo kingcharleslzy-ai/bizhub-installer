@@ -43,15 +43,6 @@ jobs:
           node-version: 22.22.2
       - name: Verify existing Python 3.12 toolchain
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
-      - name: Test macOS arm64 source
-        shell: bash
-        run: |
-          test "$(uname -m)" = arm64
-          python ../scripts/verify_checksums.py
-          npm ci
-          npm test
-          npm run verify:boundary
-          npm run audit:runtime
       - name: Require existing Developer ID publisher keychain
         shell: bash
         env:
@@ -70,6 +61,15 @@ jobs:
             echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY"
             echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID"
           } >> "$GITHUB_ENV"
+      - name: Test macOS arm64 source
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          python ../scripts/verify_checksums.py
+          npm ci
+          npm test
+          npm run verify:boundary
+          npm run audit:runtime
       - name: Prepare, sign, and rebind Runtime
         shell: bash
         run: |
@@ -120,14 +120,17 @@ jobs:
     defaults:
       run:
         working-directory: desktop
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
     steps:
-      - name: Preserve repository byte identity
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Protect existing Windows user state
+        shell: pwsh
+        run: ../scripts/require-clean-windows-ci-user.ps1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2

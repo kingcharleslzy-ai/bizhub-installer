@@ -241,22 +241,22 @@ jobs:
     runs-on: [self-hosted, installer-windows]
     timeout-minutes: 60
     env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
       BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
       BIZHUB_WINDOWS_SIGNING_MODE: synthetic-ci
     defaults:
       run:
         working-directory: desktop
     steps:
-      - name: Preserve repository byte identity
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Protect existing Windows user state
+        shell: pwsh
+        run: ../scripts/require-clean-windows-ci-user.ps1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         if: needs.scope.outputs.full == 'true'
         with:

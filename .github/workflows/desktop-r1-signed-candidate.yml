@@ -141,6 +141,9 @@ jobs:
       record_digest: ${{ steps.store.outputs['record-digest'] }}
       record_attempt: ${{ steps.store.outputs['record-attempt'] }}
     env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
       BIZHUB_DESKTOP_RELEASE_MODE: production
       BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
       BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
@@ -149,17 +152,14 @@ jobs:
       run:
         working-directory: desktop
     steps:
-      - name: Preserve repository byte identity
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.release_commit }}
+      - name: Protect existing Windows user state
+        shell: pwsh
+        run: ../scripts/require-clean-windows-ci-user.ps1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2

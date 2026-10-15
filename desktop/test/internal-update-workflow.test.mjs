@@ -13,8 +13,8 @@ test("internal updates stay one manual native build with a Developer ID macOS pu
   );
   for (const required of [
     "workflow_dispatch:",
-    "runs-on: macos-14",
-    "runs-on: windows-2022",
+    "runs-on: [self-hosted, installer-macos]",
+    "runs-on: [self-hosted, installer-windows]",
     "make-update-manifest.mjs",
     "gh release create",
     "--prerelease",
@@ -27,7 +27,7 @@ test("internal updates stay one manual native build with a Developer ID macOS pu
     "--mode production",
     "node scripts/make-macos-release-containers.mjs",
     "node scripts/verify-macos-release-containers.mjs",
-    "security delete-keychain",
+    "security find-identity",
     "release-assets/*.dmg",
   ]) assert.ok(workflow.includes(required), required);
   for (const prohibited of [
