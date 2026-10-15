@@ -79,6 +79,9 @@ $syntheticUserData = Join-Path $env:RUNNER_TEMP "bizhub-d3-installed-user-data"
 if (Test-Path -LiteralPath $installRoot) {
     throw "desktop_windows_install_root_contaminated:$installRoot"
 }
+if (Test-Path -LiteralPath $defaultUserData) {
+    throw "desktop_windows_default_user_data_contaminated:$defaultUserData"
+}
 if (Test-Path -LiteralPath $syntheticUserData) {
     throw "desktop_windows_synthetic_data_contaminated:$syntheticUserData"
 }
@@ -86,6 +89,9 @@ if (Test-Path -LiteralPath $syntheticUserData) {
 $setupSignature = Assert-AuthenticodeSignature -Path $setupPath -Expected $ExpectedThumbprint
 $packagedSignature = Assert-AuthenticodeSignature -Path $packagedExecutable -Expected $ExpectedThumbprint
 
+$ownsInstallation = $false
+try {
+$ownsInstallation = $true
 $setupProcess = Start-Process -FilePath $setupPath -ArgumentList "--silent" -PassThru -Wait
 if ($setupProcess.ExitCode -ne 0) {
     throw "desktop_windows_installer_failed:$($setupProcess.ExitCode)"
@@ -102,7 +108,7 @@ if (-not $installedExecutable) {
 }
 
 Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installRoot, [System.StringComparison]::OrdinalIgnoreCase)
+    $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$installRoot\", [System.StringComparison]::OrdinalIgnoreCase)
 } | ForEach-Object {
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
 }
@@ -166,4 +172,29 @@ $result = [ordered]@{
 }
 $result | ConvertTo-Json -Depth 5 -Compress
 
-Remove-Item -LiteralPath $syntheticUserData -Recurse -Force
+} finally {
+    if ($ownsInstallation) {
+        $cleanupErrors = @()
+        try {
+            Get-CimInstance Win32_Process | Where-Object {
+                $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$installRoot\", [System.StringComparison]::OrdinalIgnoreCase)
+            } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            $updateExecutable = Join-Path $installRoot "Update.exe"
+            if ((Test-Path -LiteralPath $updateExecutable) -and -not (Test-Path -LiteralPath (Join-Path $installRoot ".dead"))) {
+                $cleanupUninstall = Start-Process -FilePath $updateExecutable -ArgumentList "--uninstall", "--silent" -PassThru -Wait
+                if ($cleanupUninstall.ExitCode -ne 0) { throw "desktop_windows_cleanup_uninstall_failed:$($cleanupUninstall.ExitCode)" }
+            }
+        } catch {
+            $cleanupErrors += $_.Exception.Message
+        }
+        foreach ($ownedPath in @($installRoot, $defaultUserData, $syntheticUserData)) {
+            try {
+                if (Test-Path -LiteralPath $ownedPath) { Remove-Item -LiteralPath $ownedPath -Recurse -Force }
+                if (Test-Path -LiteralPath $ownedPath) { throw "desktop_windows_owned_path_cleanup_failed:$ownedPath" }
+            } catch {
+                $cleanupErrors += $_.Exception.Message
+            }
+        }
+        if ($cleanupErrors.Count) { throw ($cleanupErrors -join "; ") }
+    }
+}
