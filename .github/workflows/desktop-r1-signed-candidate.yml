@@ -156,15 +156,21 @@ jobs:
         if: always()
         shell: bash
         run: |
+          cleanup_status=0
           if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then
-            security delete-keychain "$BIZHUB_MACOS_KEYCHAIN"
+            if ! security delete-keychain "$BIZHUB_MACOS_KEYCHAIN"; then cleanup_status=1; fi
           fi
-          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; fi
-          if [ -n "${BIZHUB_APPLE_API_KEY_FILE:-}" ]; then rm -f -- "$BIZHUB_APPLE_API_KEY_FILE"; fi
+          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then
+            if ! rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; then cleanup_status=1; fi
+          fi
+          if [ -n "${BIZHUB_APPLE_API_KEY_FILE:-}" ]; then
+            if ! rm -f -- "$BIZHUB_APPLE_API_KEY_FILE"; then cleanup_status=1; fi
+          fi
           if [ -n "${BIZHUB_MACOS_SIGNING_DIR:-}" ]; then
-            rmdir -- "$BIZHUB_MACOS_SIGNING_DIR"
-            test ! -e "$BIZHUB_MACOS_SIGNING_DIR"
+            if ! rmdir -- "$BIZHUB_MACOS_SIGNING_DIR"; then cleanup_status=1; fi
+            if [ -e "$BIZHUB_MACOS_SIGNING_DIR" ]; then cleanup_status=1; fi
           fi
+          exit "$cleanup_status"
 
   windows_x64:
     name: desktop-r1-signed-candidate-windows-x64

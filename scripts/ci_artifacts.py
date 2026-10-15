@@ -10,9 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
-import sys
 import tarfile
 import tempfile
 import time
@@ -68,20 +66,6 @@ def windows_read_request(command: str) -> argparse.Namespace:
                               digest=match[5], repository="kingcharleslzy-ai/bizhub-installer")
 
 
-def serve_windows() -> None:
-    args = windows_read_request(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
-    root = Path("D:/bizhub-installer-ci-records")
-    directory = record_path(root, args.commit, args.run_id, args.attempt, args.name)
-    for part in (*reversed(directory.parents), directory, *directory.iterdir()):
-        if part.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-            raise ValueError("ci_record_reparse_point_refused")
-    data = verify(directory, args)
-    # tarfile only reads the verified flat file set. Never accept a client path.
-    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
-        for name in ["ci-record.json", *(item["name"] for item in data["files"])]:
-            archive.add(directory / name, arcname=name, recursive=False)
-
-
 def receive_windows(args: argparse.Namespace) -> None:
     host = "installer-artifacts-windows"
     request = f"read {args.commit} {args.run_id} {args.attempt} {args.name} {args.digest}"
@@ -134,7 +118,7 @@ def prune(root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("store", "read", "prune", "serve-windows"))
+    parser.add_argument("command", choices=("store", "read", "prune"))
     default_root = "D:/bizhub-installer-ci-records" if os.name == "nt" else str(Path.home() / ".local/share/bizhub-installer/ci-records")
     parser.add_argument("--root", type=Path, default=os.environ.get("BIZHUB_CI_RECORDS_ROOT", default_root))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "kingcharleslzy-ai/bizhub-installer"))
@@ -147,9 +131,6 @@ def main() -> None:
     parser.add_argument("--windows", action="store_true")
     parser.add_argument("files", nargs="*")
     args = parser.parse_args()
-    if args.command == "serve-windows":
-        serve_windows()
-        return
     if args.command == "prune":
         prune(args.root)
         return
@@ -177,6 +158,11 @@ def main() -> None:
             (stage / "ci-record.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
             args.digest = digest(stage / "ci-record.json")
             verify(stage, args)
+            if os.name == "nt" and args.name in ("internal-windows", "signed-windows"):
+                # tempfile's private DACL does not inherit the root's reader ACL.
+                # Grant only the completed publishable record, never a workspace.
+                subprocess.run(["icacls", str(stage), "/grant", "aitrader-ci:(OI)(CI)RX", "/T", "/Q"],
+                               check=True, stdout=subprocess.DEVNULL)
             # A same-attempt rerun never silently replaces an approved record.
             stage.rename(directory)
             emit("record-digest", args.digest)

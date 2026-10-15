@@ -361,6 +361,10 @@ jobs:
           "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$certificatePassword" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint.Replace(' ', '').ToUpperInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Acquire bounded synthetic leaf trust
+        if: needs.scope.outputs.full == 'true'
+        shell: pwsh
+        run: ../scripts/windows-synthetic-trust-client.ps1 -Action acquire
       - name: Sign and rebind Runtime
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
@@ -447,6 +451,13 @@ jobs:
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: python ../scripts/ci_artifacts.py store --name synthetic-windows "out/desktop-r1-windows-*-identity.json" "out/desktop-r1-windows-upgrade-rollback.json"
+      - name: Release and verify synthetic leaf trust
+        if: always() && needs.scope.outputs.full == 'true'
+        shell: pwsh
+        run: |
+          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) {
+            ../scripts/windows-synthetic-trust-client.ps1 -Action release
+          }
       - name: Remove synthetic signing material
         if: always() && needs.scope.outputs.full == 'true'
         shell: pwsh
