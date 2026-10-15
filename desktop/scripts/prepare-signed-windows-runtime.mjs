@@ -35,8 +35,7 @@ const identityOutputPath = path.resolve(
     || path.join(ROOT, "out", "desktop-r1-windows-runtime-preparation.json"),
 );
 const signingMode = process.env.BIZHUB_WINDOWS_SIGNING_MODE || "";
-const certificateFile = process.env.BIZHUB_WINDOWS_CERTIFICATE_FILE || "";
-const certificatePassword = process.env.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD || "";
+const signingOptions = (await import("./windows-sign-options.cjs")).default;
 
 function fail(code) {
   throw new Error(code);
@@ -99,9 +98,7 @@ if (process.platform !== "win32" || process.arch !== "x64") {
 if (!new Set(["synthetic-ci", "production"]).has(signingMode)) {
   fail("desktop_windows_runtime_signing_mode_invalid");
 }
-if (!certificateFile || !certificatePassword) {
-  fail("desktop_windows_runtime_signing_credentials_missing");
-}
+const credentials = signingOptions();
 if (baselineTrustPath === outputTrustPath) {
   fail("desktop_windows_signed_trust_must_not_replace_baseline");
 }
@@ -128,9 +125,7 @@ if (!unsignedPeFiles.includes(baseline.executable)) {
 }
 await sign({
   files: unsignedPeFiles,
-  certificateFile,
-  certificatePassword,
-  hashes: ["sha256"],
+  ...credentials,
 });
 for (const filePath of peFiles) {
   const certificate = certificateTable(await readFile(filePath), filePath);

@@ -24,7 +24,10 @@ jobs:
   macos-arm64:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')
     environment: desktop-internal-signing
-    runs-on: macos-14
+    runs-on: [self-hosted, installer-macos]
+    outputs:
+      record_digest: ${{ steps.store.outputs['record-digest'] }}
+      record_attempt: ${{ steps.store.outputs['record-attempt'] }}
     timeout-minutes: 90
     env:
       BIZHUB_MACOS_SIGNING_MODE: production
@@ -33,12 +36,13 @@ jobs:
         working-directory: desktop
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Test macOS arm64 source
         shell: bash
         run: |
@@ -48,32 +52,24 @@ jobs:
           npm test
           npm run verify:boundary
           npm run audit:runtime
-      - name: Configure Developer ID publisher keychain
+      - name: Require existing Developer ID publisher keychain
         shell: bash
         env:
-          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
           SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
           TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
         run: |
-          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
           test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
-          certificate="$RUNNER_TEMP/bizhub-developer-id.p12"
-          keychain="$RUNNER_TEMP/bizhub-internal-signing.keychain-db"
-          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
-          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-          keychain_password="$(openssl rand -hex 24)"
-          (umask 077 && printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate")
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          rm -f -- "$certificate"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGNING_IDENTITY"
-          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
-          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+          keychain="${BIZHUB_MACOS_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
+          # No P12/private key is materialized from secrets on a persistent host.
+          if ! security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null; then
+            echo '::error::desktop_macos_existing_keychain_identity_missing; signing credentials must be provisioned separately' >&2
+            exit 1
+          fi
+          {
+            echo "BIZHUB_MACOS_KEYCHAIN=$keychain"
+            echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY"
+            echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID"
+          } >> "$GITHUB_ENV"
       - name: Prepare, sign, and rebind Runtime
         shell: bash
         run: |
@@ -109,24 +105,17 @@ jobs:
           mkdir -p out/update
           cp "out/release/BizHub-Desktop-${version}-macOS-arm64.zip" "out/update/BizHub-Desktop-macOS-arm64-${version}.zip"
           cp "out/release/BizHub-Desktop-${version}-macOS-arm64.dmg" "out/update/BizHub-Desktop-macOS-arm64-${version}.dmg"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: desktop-internal-update-macos-${{ github.sha }}
-          path: |
-            desktop/out/update/*.zip
-            desktop/out/update/*.dmg
-          if-no-files-found: error
-          retention-days: 1
-      - name: Remove macOS signing material
-        if: always()
+      - name: Preserve internal macos candidate locally
+        id: store
         shell: bash
-        run: |
-          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then security delete-keychain "$BIZHUB_MACOS_KEYCHAIN" || true; fi
-          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; fi
+        run: python ../scripts/ci_artifacts.py store --name internal-macos "out/update/*"
 
   windows-x64:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')
-    runs-on: windows-2022
+    runs-on: [self-hosted, installer-windows]
+    outputs:
+      record_digest: ${{ steps.store.outputs['record-digest'] }}
+      record_attempt: ${{ steps.store.outputs['record-attempt'] }}
     timeout-minutes: 45
     defaults:
       run:
@@ -137,12 +126,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Test and build Windows x64
         shell: pwsh
         run: |
@@ -157,28 +147,30 @@ jobs:
           $version = node -p "require('./package.json').version"
           New-Item -ItemType Directory -Force out/update | Out-Null
           Copy-Item "out/make/squirrel.windows/x64/BizHub-Desktop-Setup-x64.exe" "out/update/BizHub-Desktop-Setup-Windows-x64-$version.exe"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: desktop-internal-update-windows-${{ github.sha }}
-          path: desktop/out/update/*.exe
-          if-no-files-found: error
-          retention-days: 1
+      - name: Preserve internal windows candidate locally
+        id: store
+        shell: pwsh
+        run: python ../scripts/ci_artifacts.py store --name internal-windows "out/update/*"
 
   publish:
     if: github.ref == 'refs/heads/main' && inputs.publish
     needs: [macos-arm64, windows-x64]
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, installer-control]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
-        with:
-          pattern: desktop-internal-update-*-${{ github.sha }}
-          path: release-assets
-          merge-multiple: true
+      - name: Read exact current-run local candidates
+        shell: bash
+        run: |
+          python scripts/ci_artifacts.py read --name internal-macos --attempt "${{ needs.macos-arm64.outputs.record_attempt }}" --digest "${{ needs.macos-arm64.outputs.record_digest }}" --output candidates/macos
+          python scripts/ci_artifacts.py read --name internal-windows --attempt "${{ needs.windows-x64.outputs.record_attempt }}" --digest "${{ needs.windows-x64.outputs.record_digest }}" --windows --output candidates/windows
+          mkdir release-assets
+          cp candidates/macos/*.zip candidates/macos/*.dmg candidates/windows/*.exe release-assets/
       - name: Create version-bound update manifest
         env:
           RELEASE_NOTES: ${{ inputs.release_notes }}

@@ -75,12 +75,11 @@ try {
     $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
         $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
     )
-    # A hosted Windows runner is an isolated test machine. Explicitly trust the
-    # synthetic leaf only in TrustedPeople; writing a self-signed leaf to Root
-    # can invoke protected-root UI and deadlock an unattended job.
+    # Trust the synthetic leaf only in the dedicated CI user's TrustedPeople.
+    # A self-hosted runner must not change machine-wide certificate trust.
     $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
         [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
-        [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
     )
     try {
         $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)

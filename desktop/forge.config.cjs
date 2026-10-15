@@ -5,10 +5,7 @@ const certificateFile = process.env.BIZHUB_WINDOWS_CERTIFICATE_FILE;
 const certificatePassword = process.env.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD;
 const requireWindowsSigning = process.env.BIZHUB_REQUIRE_WINDOWS_SIGNING === "1";
 const windowsSignHook = path.join(__dirname, "scripts", "windows-sign-hook.cjs");
-
-if (requireWindowsSigning && (!certificateFile || !certificatePassword)) {
-  throw new Error("desktop_windows_signing_credentials_missing");
-}
+const windowsSignOptions = require("./scripts/windows-sign-options.cjs");
 
 // @electron/packager 20 copies extraResource entries with Node fs.cp, which
 // resolves the darwin Runtime Pack's relative symlinks into absolute links
@@ -49,11 +46,9 @@ async function relinkRuntimeSymlinks({ buildPath, platform }) {
 }
 
 
-const windowsSigning = certificateFile && certificatePassword
+const windowsSigning = requireWindowsSigning || (certificateFile && certificatePassword) || process.env.BIZHUB_WINDOWS_CERTIFICATE_SHA1
   ? {
-      certificateFile,
-      certificatePassword,
-      hashes: ["sha256"],
+      ...windowsSignOptions(),
       hookModulePath: windowsSignHook,
     }
   : null;

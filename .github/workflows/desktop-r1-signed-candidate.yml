@@ -24,30 +24,32 @@ jobs:
     name: desktop-r1-signed-candidate-macos-arm64
     if: github.ref == 'refs/heads/main'
     environment: desktop-production-signing
-    runs-on: macos-14
+    runs-on: [self-hosted, installer-macos]
     timeout-minutes: 90
     outputs:
-      artifact_id: ${{ steps.upload.outputs['artifact-id'] }}
-      artifact_digest: ${{ steps.upload.outputs['artifact-digest'] }}
+      record_digest: ${{ steps.store.outputs['record-digest'] }}
+      record_attempt: ${{ steps.store.outputs['record-attempt'] }}
     env:
       BIZHUB_DESKTOP_RELEASE_MODE: production
       BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
       BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
       BIZHUB_MACOS_SIGNING_MODE: production
+      BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
+      BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
     defaults:
       run:
         working-directory: desktop
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.release_commit }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify exact main source and release contract
         shell: bash
         run: |
@@ -62,40 +64,25 @@ jobs:
           npm run verify:runtime-archive
           npm run audit:runtime
           npm audit --audit-level=moderate
-      - name: Configure approved macOS publisher
+      - name: Require existing approved macOS publisher
         shell: bash
         env:
-          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
           SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
           TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
-          API_KEY_P8: ${{ secrets.BIZHUB_APPLE_API_KEY_P8 }}
-          API_KEY_ID: ${{ secrets.BIZHUB_APPLE_API_KEY_ID }}
-          API_ISSUER: ${{ secrets.BIZHUB_APPLE_API_ISSUER }}
         run: |
-          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
           test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
-          test -n "$API_KEY_P8" && test -n "$API_KEY_ID" && test -n "$API_ISSUER"
-          certificate="$RUNNER_TEMP/bizhub-developer-id.p12"
-          api_key="$RUNNER_TEMP/bizhub-notary-api-key.p8"
-          keychain="$RUNNER_TEMP/bizhub-release.keychain-db"
-          keychain_password="$(openssl rand -hex 24)"
-          printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate"
-          printf '%s' "$API_KEY_P8" > "$api_key"
-          chmod 600 "$certificate" "$api_key"
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
-          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGNING_IDENTITY"
-          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
-          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
-          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-          echo "BIZHUB_APPLE_API_KEY_FILE=$api_key" >> "$GITHUB_ENV"
-          echo "BIZHUB_APPLE_API_KEY_ID=$API_KEY_ID" >> "$GITHUB_ENV"
-          echo "BIZHUB_APPLE_API_ISSUER=$API_ISSUER" >> "$GITHUB_ENV"
-          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
+          keychain="${BIZHUB_MACOS_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
+          # No P12/private key is materialized from secrets on a persistent host.
+          if ! security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null; then
+            echo '::error::desktop_macos_existing_keychain_identity_missing; signing credentials must be provisioned separately' >&2
+            exit 1
+          fi
+          {
+            echo "BIZHUB_MACOS_KEYCHAIN=$keychain"
+            echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY"
+            echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID"
+          } >> "$GITHUB_ENV"
+          test -n "$BIZHUB_APPLE_ID" && test -n "$BIZHUB_APPLE_APP_PASSWORD"
       - name: Prepare, sign, and rebind Runtime
         run: |
           npm run prepare:runtime
@@ -139,30 +126,20 @@ jobs:
           cp out/desktop-r1-macos-upgrade-rollback.json out/candidate-macos/
           sleep 2
           ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
-      - name: Upload fixed macOS signed candidate
-        id: upload
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: desktop-r1-macos-arm64-${{ inputs.release_commit }}-production
-          path: desktop/out/candidate-macos/*
-          if-no-files-found: error
-          retention-days: 30
-      - name: Remove macOS signing material
-        if: always()
+      - name: Preserve fixed macOS signed candidate locally
+        id: store
         shell: bash
-        run: |
-          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then security delete-keychain "$BIZHUB_MACOS_KEYCHAIN" || true; fi
-          for sensitive_path in "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" "${BIZHUB_APPLE_API_KEY_FILE:-}"; do if [ -n "$sensitive_path" ]; then rm -f -- "$sensitive_path"; fi; done
+        run: python ../scripts/ci_artifacts.py store --commit "${{ inputs.release_commit }}" --name signed-macos "out/candidate-macos/*"
 
   windows_x64:
     name: desktop-r1-signed-candidate-windows-x64
     if: github.ref == 'refs/heads/main'
     environment: desktop-production-signing
-    runs-on: windows-2022
+    runs-on: [self-hosted, installer-windows]
     timeout-minutes: 90
     outputs:
-      artifact_id: ${{ steps.upload.outputs['artifact-id'] }}
-      artifact_digest: ${{ steps.upload.outputs['artifact-digest'] }}
+      record_digest: ${{ steps.store.outputs['record-digest'] }}
+      record_attempt: ${{ steps.store.outputs['record-attempt'] }}
     env:
       BIZHUB_DESKTOP_RELEASE_MODE: production
       BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
@@ -180,14 +157,14 @@ jobs:
           git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.release_commit }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify exact main source and release contract
         shell: pwsh
         run: |
@@ -201,20 +178,17 @@ jobs:
           npm run verify:runtime-archive
           npm run audit:runtime
           npm audit --audit-level=moderate
-      - name: Configure approved Windows publisher
+      - name: Require existing approved Windows publisher
         shell: pwsh
         env:
-          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_PFX_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD }}
           CERTIFICATE_THUMBPRINT: ${{ secrets.BIZHUB_WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD -or -not $env:CERTIFICATE_THUMBPRINT) { throw "desktop_windows_production_signing_credentials_missing" }
-          $certificatePath = Join-Path $env:RUNNER_TEMP "bizhub-windows-signing.pfx"
-          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          if ($env:CERTIFICATE_THUMBPRINT -notmatch '^[0-9a-fA-F ]{40,59}$') { throw "desktop_windows_production_signing_credentials_missing" }
           $thumbprint = $env:CERTIFICATE_THUMBPRINT.Replace(" ", "").ToUpperInvariant()
-          "BIZHUB_WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$env:CERTIFICATE_PASSWORD" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $certificate = Get-Item "Cert:/CurrentUser/My/$thumbprint" -ErrorAction Stop
+          if (-not $certificate.HasPrivateKey) { throw "desktop_windows_existing_store_identity_missing" }
+          "BIZHUB_WINDOWS_CERTIFICATE_SHA1=$thumbprint" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$thumbprint" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Prepare, sign, and rebind Runtime
@@ -274,25 +248,16 @@ jobs:
           Copy-Item out/desktop-r1-windows-x64-identity.json out/candidate-windows/
           Copy-Item out/desktop-r1-windows-runtime-identity.json out/candidate-windows/
           Copy-Item out/desktop-r1-windows-upgrade-rollback.json out/candidate-windows/
-      - name: Upload fixed Windows signed candidate
-        id: upload
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: desktop-r1-windows-x64-${{ inputs.release_commit }}-production
-          path: desktop/out/candidate-windows/*
-          if-no-files-found: error
-          retention-days: 30
-      - name: Remove Windows signing material
-        if: always()
+      - name: Preserve fixed Windows signed candidate locally
+        id: store
         shell: pwsh
-        run: |
-          if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
+        run: python ../scripts/ci_artifacts.py store --commit "${{ inputs.release_commit }}" --name signed-windows "out/candidate-windows/*"
 
   release-plan:
     name: desktop-r1-signed-candidate-release-plan
     if: github.ref == 'refs/heads/main'
     needs: [macos_arm64, windows_x64]
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, installer-control]
     timeout-minutes: 15
     permissions:
       actions: read
@@ -300,18 +265,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           ref: ${{ inputs.release_commit }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.22.2
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: desktop-r1-macos-arm64-${{ inputs.release_commit }}-production
-          path: candidate/macos
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: desktop-r1-windows-x64-${{ inputs.release_commit }}-production
-          path: candidate/windows
+      - name: Read exact macos signed record
+        shell: bash
+        run: python scripts/ci_artifacts.py read --commit "${{ inputs.release_commit }}" --name signed-macos --attempt "${{ needs.macos_arm64.outputs.record_attempt }}" --digest "${{ needs.macos_arm64.outputs.record_digest }}" --output candidate/macos
+      - name: Read exact windows signed record
+        shell: bash
+        run: python scripts/ci_artifacts.py read --commit "${{ inputs.release_commit }}" --name signed-windows --attempt "${{ needs.windows_x64.outputs.record_attempt }}" --digest "${{ needs.windows_x64.outputs.record_digest }}" --output candidate/windows --windows
       - name: Build deterministic Owner approval plan
         working-directory: desktop
         run: |
@@ -321,23 +285,18 @@ jobs:
             --commit "${{ inputs.release_commit }}" \
             --tag "${{ inputs.release_tag }}" \
             --mac-root ../candidate/macos \
-            --mac-artifact-id "${{ needs.macos_arm64.outputs.artifact_id }}" \
-            --mac-artifact-name "desktop-r1-macos-arm64-${{ inputs.release_commit }}-production" \
-            --mac-artifact-digest "${{ needs.macos_arm64.outputs.artifact_digest }}" \
+            --mac-record-attempt "${{ needs.macos_arm64.outputs.record_attempt }}" \
+            --mac-record-name signed-macos \
+            --mac-record-digest "${{ needs.macos_arm64.outputs.record_digest }}" \
             --windows-root ../candidate/windows \
-            --windows-artifact-id "${{ needs.windows_x64.outputs.artifact_id }}" \
-            --windows-artifact-name "desktop-r1-windows-x64-${{ inputs.release_commit }}-production" \
-            --windows-artifact-digest "${{ needs.windows_x64.outputs.artifact_digest }}" \
+            --windows-record-attempt "${{ needs.windows_x64.outputs.record_attempt }}" \
+            --windows-record-name signed-windows \
+            --windows-record-digest "${{ needs.windows_x64.outputs.record_digest }}" \
             --output ../candidate/desktop-r1-release-plan.json
-          sha256sum ../candidate/desktop-r1-release-plan.json | tee ../candidate/desktop-r1-release-plan.sha256
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: desktop-r1-release-plan-${{ inputs.release_commit }}
-          path: |
-            candidate/desktop-r1-release-plan.json
-            candidate/desktop-r1-release-plan.sha256
-          if-no-files-found: error
-          retention-days: 30
+          shasum -a 256 ../candidate/desktop-r1-release-plan.json | tee ../candidate/desktop-r1-release-plan.sha256
+      - name: Preserve exact Owner approval plan locally
+        shell: bash
+        run: python scripts/ci_artifacts.py store --commit "${{ inputs.release_commit }}" --name release-plan candidate/desktop-r1-release-plan.json candidate/desktop-r1-release-plan.sha256
       - name: Stop for exact Owner approval
         run: |
           echo "::notice title=Desktop R1 Owner approval required::source_run_id=${{ github.run_id }} commit=${{ inputs.release_commit }} tag=${{ inputs.release_tag }} plan_sha256=$(cut -d' ' -f1 candidate/desktop-r1-release-plan.sha256)"

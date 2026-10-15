@@ -1,5 +1,6 @@
 const path = require("node:path");
 const { sign } = require("@electron/windows-sign");
+const windowsSignOptions = require("./windows-sign-options.cjs");
 
 const runtimeResourceSegment = `${path.sep}resources${path.sep}bizhub-runtime${path.sep}`.toLowerCase();
 
@@ -15,16 +16,9 @@ async function signWindowsFile(fileToSign) {
   // be a serializable module shared by Packager and electron-winstaller.
   if (preservesFixedRuntime(fileToSign)) return;
 
-  const certificateFile = process.env.BIZHUB_WINDOWS_CERTIFICATE_FILE;
-  const certificatePassword = process.env.BIZHUB_WINDOWS_CERTIFICATE_PASSWORD;
-  if (!certificateFile || !certificatePassword) {
-    throw new Error("desktop_windows_signing_credentials_missing");
-  }
   await sign({
     files: [fileToSign],
-    certificateFile,
-    certificatePassword,
-    hashes: ["sha256"],
+    ...windowsSignOptions(),
   });
 }
 

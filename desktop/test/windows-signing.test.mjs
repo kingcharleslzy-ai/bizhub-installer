@@ -10,6 +10,8 @@ const signingKeys = [
   "BIZHUB_REQUIRE_WINDOWS_SIGNING",
   "BIZHUB_WINDOWS_CERTIFICATE_FILE",
   "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD",
+  "BIZHUB_WINDOWS_CERTIFICATE_SHA1",
+  "BIZHUB_WINDOWS_SIGNING_MODE",
 ];
 
 function loadForgeConfig(environment = {}) {
@@ -33,6 +35,17 @@ test("Windows signing gate fails closed without both certificate inputs", () => 
     () => loadForgeConfig({ BIZHUB_REQUIRE_WINDOWS_SIGNING: "1" }),
     /desktop_windows_signing_credentials_missing/,
   );
+});
+
+test("production store identity uses exact native SignTool selection without exporting a private key", () => {
+  const options = require("../scripts/windows-sign-options.cjs");
+  const identity = "A".repeat(40);
+  const result = options({ BIZHUB_WINDOWS_SIGNING_MODE: "production", BIZHUB_WINDOWS_CERTIFICATE_SHA1: identity });
+  assert.equal(result.certificateFile, undefined);
+  assert.equal(result.certificatePassword, undefined);
+  assert.equal(result.signWithParams, `/sha1 ${identity} /s My /fd SHA256 /tr http://timestamp.digicert.com /td SHA256`);
+  assert.throws(() => options({ BIZHUB_WINDOWS_SIGNING_MODE: "synthetic-ci", BIZHUB_WINDOWS_CERTIFICATE_SHA1: identity }), /identity_invalid/);
+  assert.throws(() => options({ BIZHUB_WINDOWS_SIGNING_MODE: "production", BIZHUB_WINDOWS_CERTIFICATE_SHA1: "bad /a" }), /identity_invalid/);
 });
 
 test("Windows packaging signs the shell and preserves the already rebound Runtime Pack bytes", async () => {
