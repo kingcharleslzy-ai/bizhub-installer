@@ -89,8 +89,11 @@ if (Test-Path -LiteralPath $syntheticUserData) {
 $setupSignature = Assert-AuthenticodeSignature -Path $setupPath -Expected $ExpectedThumbprint
 $packagedSignature = Assert-AuthenticodeSignature -Path $packagedExecutable -Expected $ExpectedThumbprint
 
+. "$PSScriptRoot/windows-smoke-owned-directory.ps1"
+$defaultProfileOwner = $null
 $ownsInstallation = $false
 try {
+$defaultProfileOwner = New-SmokeOwnedDirectory -Path $defaultUserData
 $ownsInstallation = $true
 $setupProcess = Start-Process -FilePath $setupPath -ArgumentList "--silent" -PassThru -Wait
 if ($setupProcess.ExitCode -ne 0) {
@@ -187,13 +190,16 @@ $result | ConvertTo-Json -Depth 5 -Compress
         } catch {
             $cleanupErrors += $_.Exception.Message
         }
-        foreach ($ownedPath in @($installRoot, $defaultUserData, $syntheticUserData)) {
+        foreach ($ownedPath in @($installRoot, $syntheticUserData)) {
             try {
                 if (Test-Path -LiteralPath $ownedPath) { Remove-Item -LiteralPath $ownedPath -Recurse -Force }
                 if (Test-Path -LiteralPath $ownedPath) { throw "desktop_windows_owned_path_cleanup_failed:$ownedPath" }
             } catch {
                 $cleanupErrors += $_.Exception.Message
             }
+        }
+        if ($defaultProfileOwner) {
+            try { Remove-SmokeOwnedDirectory -Owner $defaultProfileOwner } catch { $cleanupErrors += $_.Exception.Message }
         }
         if ($cleanupErrors.Count) { throw ($cleanupErrors -join "; ") }
     }

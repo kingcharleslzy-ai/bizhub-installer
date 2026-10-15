@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:https";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -20,9 +20,9 @@ function option(name) {
   return path.resolve(value);
 }
 
-const packagedExecutable = option("--packaged-executable");
-const packagedTrustStore = option("--packaged-trust-store");
-const packagedAccountDirectory = option("--packaged-account-directory");
+let packagedExecutable = option("--packaged-executable");
+let packagedTrustStore = option("--packaged-trust-store");
+let packagedAccountDirectory = option("--packaged-account-directory");
 const packagedOptions = [packagedExecutable, packagedTrustStore, packagedAccountDirectory];
 if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
@@ -200,6 +200,35 @@ let cloudLogoutAuthorization = "";
 let syntheticSessionToken = "";
 const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
+let macosFixture = null;
+let desktopStderr = "";
+
+async function treeDigest(root) {
+  const hash = createHash("sha256");
+  async function walk(directory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const target = path.join(directory, entry.name);
+      hash.update(JSON.stringify([path.relative(root, target), entry.isDirectory() ? "directory" : entry.isSymbolicLink() ? "symlink" : "file"]));
+      if (entry.isDirectory()) await walk(target);
+      else if (entry.isSymbolicLink()) hash.update(await readlink(target));
+      else if (entry.isFile()) hash.update(createHash("sha256").update(await readFile(target)).digest());
+      else fail("desktop_account_flow_candidate_entry_invalid");
+    }
+  }
+  await walk(root);
+  return hash.digest("hex");
+}
+
+function verifyMacosFixture() {
+  const args = ["scripts/verify-macos-release.mjs", "--app", macosFixture.app,
+    "--expected-runtime-trust", path.join(ROOT, "runtime-dist", "generic-runtime-trust.json"),
+    "--mode", macosFixture.mode, "--output", path.join(temporaryRoot, "fixture-identity.json")];
+  if (macosFixture.mode === "production") args.push("--team-id", process.env.BIZHUB_MACOS_TEAM_ID);
+  execFileSync(process.execPath, args, { cwd: ROOT, stdio: "inherit" });
+}
+
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
 
@@ -308,8 +337,8 @@ async function launchDesktopProcess() {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  let stderr = "";
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  desktopStderr = "";
+  child.stderr.on("data", (chunk) => { desktopStderr = (desktopStderr + chunk).slice(-8192); });
   const target = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     const targets = await response.json();
@@ -348,15 +377,6 @@ async function workspaceTargetPresent() {
 }
 
 try {
-  if (process.platform === "darwin") {
-    // Keep WindowServer submitting native visibility changes during this GUI
-    // smoke. The assertion is bounded and removed below; no pmset change/unlock.
-    displayActivity = spawn("caffeinate", ["-d", "-u", "-t", "300"], { stdio: "ignore" });
-    await new Promise((resolve, reject) => {
-      displayActivity.once("spawn", resolve);
-      displayActivity.once("error", reject);
-    });
-  }
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes",
     "-keyout", certificateKeyPath,
@@ -400,7 +420,7 @@ try {
       key_id: keyId,
       public_key_pem: publicKey.export({ type: "spki", format: "pem" }),
       valid_from: new Date(now - 60_000).toISOString(),
-      valid_until: new Date(now + 10 * 60_000).toISOString(),
+      valid_until: new Date(now + 24 * 60 * 60_000).toISOString(),
     }],
   };
   await Promise.all([
@@ -429,10 +449,40 @@ try {
     ) {
       fail("desktop_account_flow_packaged_configuration_mismatch");
     }
+    if (process.platform === "darwin") {
+      const mode = process.env.BIZHUB_MACOS_SIGNING_MODE;
+      if (!["production", "synthetic-ci"].includes(mode)) fail("desktop_account_flow_fixture_signing_mode_missing");
+      const candidateApp = path.resolve(packagedExecutable, "..", "..", "..");
+      if (!candidateApp.endsWith(".app")
+        || packagedTrustStore !== path.join(candidateApp, "Contents", "Resources", "trusted-connection-keys.json")
+        || packagedAccountDirectory !== path.join(candidateApp, "Contents", "Resources", "account-directory.json")) {
+        fail("desktop_account_flow_fixture_candidate_paths_invalid");
+      }
+      const candidateRoot = path.dirname(candidateApp);
+      const candidateDigest = await treeDigest(candidateRoot);
+      const app = path.join(temporaryRoot, "BizHub Desktop.app");
+      execFileSync("/usr/bin/ditto", [candidateApp, app]);
+      macosFixture = { app, mode, candidateRoot, candidateDigest, sealedDigest: null };
+      packagedExecutable = path.join(app, "Contents", "MacOS", "BizHub Desktop");
+      packagedTrustStore = path.join(app, "Contents", "Resources", "trusted-connection-keys.json");
+      packagedAccountDirectory = path.join(app, "Contents", "Resources", "account-directory.json");
+    }
     await Promise.all([
       writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`),
       writeFile(packagedAccountDirectory, await readFile(directoryConfigPath)),
     ]);
+    if (macosFixture) {
+      // Freeze all fixture resources before this staging copy's own complete
+      // signing/notarization. Never repair a seal after launching the app.
+      const signer = macosFixture.mode === "production"
+        ? "scripts/sign-production-macos-app.mjs" : "scripts/sign-synthetic-macos-app.mjs";
+      execFileSync(process.execPath, [signer], {
+        cwd: ROOT, stdio: "inherit",
+        env: { ...process.env, BIZHUB_MACOS_PACKAGED_APP: macosFixture.app },
+      });
+      verifyMacosFixture();
+      macosFixture.sealedDigest = await treeDigest(macosFixture.app);
+    }
   }
 
   directoryServer = createServer({
@@ -548,6 +598,15 @@ try {
     directoryServer.once("error", reject);
     directoryServer.listen(directoryPort, "127.0.0.1", resolve);
   });
+  if (process.platform === "darwin") {
+    // Keep WindowServer submitting native visibility changes during this GUI
+    // smoke. The assertion is bounded and removed below; no pmset change/unlock.
+    displayActivity = spawn("caffeinate", ["-d", "-u", "-t", "300"], { stdio: "ignore" });
+    await new Promise((resolve, reject) => {
+      displayActivity.once("spawn", resolve);
+      displayActivity.once("error", reject);
+    });
+  }
   await launchDesktopProcess();
 
   const initial = await waitFor(async () => {
@@ -1235,26 +1294,39 @@ try {
 } catch (error) {
   fail(
     error instanceof Error ? error.message : "desktop_account_flow_smoke_failed",
-    child && !child.killed ? "electron_running" : "",
+    `electron_exit=${child?.exitCode ?? "pending"};signal=${child?.signalCode ?? "none"};stderr=${desktopStderr}`,
   );
 } finally {
-  if (displayActivity?.pid && displayActivity.exitCode === null) {
-    const exited = new Promise((resolve) => displayActivity.once("exit", resolve));
-    displayActivity.kill();
-    await exited;
+  try {
+    if (displayActivity?.pid && displayActivity.exitCode === null) {
+      const exited = new Promise((resolve) => displayActivity.once("exit", resolve));
+      displayActivity.kill();
+      await exited;
+    }
+    await stopDesktopProcess();
+    if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
+    if (!macosFixture && packagedTrustStore && originalPackagedTrustStore) {
+      await writeFile(packagedTrustStore, originalPackagedTrustStore);
+    }
+    if (!macosFixture && packagedAccountDirectory && originalPackagedAccountDirectory) {
+      await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
+    }
+    if (macosFixture) {
+      if (await treeDigest(macosFixture.candidateRoot) !== macosFixture.candidateDigest) {
+        fail("desktop_account_flow_original_candidate_changed");
+      }
+      if (macosFixture.sealedDigest) {
+        if (await treeDigest(macosFixture.app) !== macosFixture.sealedDigest) fail("desktop_account_flow_signed_fixture_changed");
+        verifyMacosFixture();
+        process.stdout.write(`${JSON.stringify({ status: "ok", original_candidate_unchanged: true, signed_fixture_unchanged: true, signing_mode: macosFixture.mode })}\n`);
+      }
+    }
+  } finally {
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === "win32" ? 10 : 0,
+      retryDelay: 200,
+    });
   }
-  await stopDesktopProcess();
-  if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
-  if (packagedTrustStore && originalPackagedTrustStore) {
-    await writeFile(packagedTrustStore, originalPackagedTrustStore);
-  }
-  if (packagedAccountDirectory && originalPackagedAccountDirectory) {
-    await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
-  }
-  await rm(temporaryRoot, {
-    recursive: true,
-    force: true,
-    maxRetries: process.platform === "win32" ? 10 : 0,
-    retryDelay: 200,
-  });
 }

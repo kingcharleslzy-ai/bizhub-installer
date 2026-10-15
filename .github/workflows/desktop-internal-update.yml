@@ -95,6 +95,9 @@ jobs:
           node scripts/sign-production-macos-app.mjs
       - name: Verify signed application
         shell: bash
+        env:
+          BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
+          BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
         run: |
           product="out/BizHub Desktop-darwin-arm64"
           app="$product/BizHub Desktop.app"
