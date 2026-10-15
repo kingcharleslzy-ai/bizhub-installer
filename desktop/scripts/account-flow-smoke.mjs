@@ -7,6 +7,8 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
+
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,9 +22,9 @@ function option(name) {
   return path.resolve(value);
 }
 
-const packagedExecutable = option("--packaged-executable");
-const packagedTrustStore = option("--packaged-trust-store");
-const packagedAccountDirectory = option("--packaged-account-directory");
+let packagedExecutable = option("--packaged-executable");
+let packagedTrustStore = option("--packaged-trust-store");
+let packagedAccountDirectory = option("--packaged-account-directory");
 const packagedOptions = [packagedExecutable, packagedTrustStore, packagedAccountDirectory];
 if (packagedOptions.some(Boolean) && !packagedOptions.every(Boolean)) {
   throw new Error("desktop_account_flow_packaged_options_incomplete");
@@ -58,7 +60,7 @@ async function unusedPort() {
 
 const DEFAULT_WAIT_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 30_000;
 
-async function waitFor(predicate, code, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS) {
+async function waitFor(predicate, code, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS, retryErrors = true) {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
   while (Date.now() < deadline) {
@@ -66,6 +68,7 @@ async function waitFor(predicate, code, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS) {
       const value = await predicate();
       if (value) return value;
     } catch (error) {
+      if (!retryErrors) throw error;
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -188,17 +191,54 @@ const certificatePath = path.join(temporaryRoot, "certificate.pem");
 const certificateKeyPath = path.join(temporaryRoot, "certificate-key.pem");
 let directoryServer = null;
 let child = null;
+let displayActivity = null;
 let cdp = null;
 let debugPort = null;
 const directoryRequests = [];
 const cloudLoginRequests = [];
+const nativeWindowRoundtrips = [];
 let cloudLogoutRequests = 0;
 let cloudLogoutAuthorization = "";
 let syntheticSessionToken = "";
 const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
+let macosFixture = null;
+let desktopStderr = "";
+
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
+
+async function waitForWindowVisibility(visible, code) {
+  if (process.platform !== "darwin") {
+    return waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === (visible ? "visible" : "hidden"), code);
+  }
+  // A locked macOS session can leave Chromium's Page Visibility value stale.
+  // Read only the tested process's native, normal-level WindowServer records.
+  // No screen pixels, window titles, accessibility grant, or app IPC is needed.
+  if (!child || !Number.isInteger(child.pid) || child.exitCode !== null) fail("desktop_account_flow_native_pid_missing");
+  return waitFor(() => {
+    if (!child || child.exitCode !== null) fail("desktop_account_flow_native_process_exited");
+    const script = `ObjC.import("CoreGraphics");
+      var list = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1, 0)));
+      if (!Array.isArray(list)) throw new Error("native_window_query_unavailable");
+      JSON.stringify(list.filter(function(w) {
+        return w.kCGWindowOwnerPID === ${child.pid} && w.kCGWindowLayer === 0;
+      }).map(function(w) { return w.kCGWindowNumber; }));`;
+    const ids = JSON.parse(execFileSync("osascript", ["-l", "JavaScript", "-e", script], {
+      encoding: "utf8", timeout: 5_000,
+    }));
+    if (!Array.isArray(ids) || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+      fail("desktop_account_flow_native_window_query_invalid");
+    }
+    return (ids.length > 0) === visible ? ids : null;
+  }, code, DEFAULT_WAIT_TIMEOUT_MS, false);
+}
+
+function recordNativeWindowRoundtrip(context, before, restored, pageWhenHidden) {
+  if (process.platform !== "darwin") return;
+  if (!restored.some((id) => before.includes(id))) fail("desktop_account_flow_native_window_identity_changed");
+  nativeWindowRoundtrips.push({ context, before, hidden: [], restored, page_when_hidden: pageWhenHidden });
+}
 
 async function assertLocalInstanceMissing(code) {
   try {
@@ -273,8 +313,8 @@ async function launchDesktopProcess() {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  let stderr = "";
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  desktopStderr = "";
+  child.stderr.on("data", (chunk) => { desktopStderr = (desktopStderr + chunk).slice(-8192); });
   const target = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     const targets = await response.json();
@@ -356,7 +396,7 @@ try {
       key_id: keyId,
       public_key_pem: publicKey.export({ type: "spki", format: "pem" }),
       valid_from: new Date(now - 60_000).toISOString(),
-      valid_until: new Date(now + 10 * 60_000).toISOString(),
+      valid_until: new Date(now + 24 * 60 * 60_000).toISOString(),
     }],
   };
   await Promise.all([
@@ -385,10 +425,34 @@ try {
     ) {
       fail("desktop_account_flow_packaged_configuration_mismatch");
     }
+    if (process.platform === "darwin") {
+      macosFixture = await stageMacosSmokeApp({
+        executable: packagedExecutable, resources: path.dirname(packagedTrustStore), temporaryRoot,
+      });
+      if (packagedTrustStore !== path.join(macosFixture.candidateApp, "Contents", "Resources", "trusted-connection-keys.json")
+        || packagedAccountDirectory !== path.join(macosFixture.candidateApp, "Contents", "Resources", "account-directory.json")) {
+        fail("desktop_account_flow_fixture_candidate_paths_invalid");
+      }
+      packagedExecutable = macosFixture.executable;
+      packagedTrustStore = path.join(macosFixture.resources, "trusted-connection-keys.json");
+      packagedAccountDirectory = path.join(macosFixture.resources, "account-directory.json");
+    }
     await Promise.all([
       writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`),
       writeFile(packagedAccountDirectory, await readFile(directoryConfigPath)),
     ]);
+    if (macosFixture) {
+      // Freeze all fixture resources before this staging copy's own complete
+      // signing/notarization. Never repair a seal after launching the app.
+      const signer = macosFixture.mode === "production"
+        ? "scripts/sign-production-macos-app.mjs" : "scripts/sign-synthetic-macos-app.mjs";
+      execFileSync(process.execPath, [signer], {
+        cwd: ROOT, stdio: "inherit",
+        env: { ...process.env, BIZHUB_MACOS_PACKAGED_APP: macosFixture.app },
+      });
+      verifyMacosSmokeApp(macosFixture);
+      macosFixture.sealedDigest = await treeDigest(macosFixture.app);
+    }
   }
 
   directoryServer = createServer({
@@ -504,6 +568,15 @@ try {
     directoryServer.once("error", reject);
     directoryServer.listen(directoryPort, "127.0.0.1", resolve);
   });
+  if (process.platform === "darwin") {
+    // Keep WindowServer submitting native visibility changes during this GUI
+    // smoke. The assertion is bounded and removed below; no pmset change/unlock.
+    displayActivity = spawn("caffeinate", ["-d", "-u", "-t", "300"], { stdio: "ignore" });
+    await new Promise((resolve, reject) => {
+      displayActivity.once("spawn", resolve);
+      displayActivity.once("error", reject);
+    });
+  }
   await launchDesktopProcess();
 
   const initial = await waitFor(async () => {
@@ -618,9 +691,12 @@ try {
     fail("desktop_account_flow_guest_banner_missing");
   }
 
+  const guestWindowBefore = process.platform === "darwin"
+    ? await waitForWindowVisibility(true, "desktop_account_flow_guest_native_window_missing") : null;
   await evaluate(cdp, "window.bizhubDesktop.hideWindowForSmoke()");
-  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "hidden",
+  await waitForWindowVisibility(false,
     "desktop_account_flow_guest_window_not_hidden_in_background");
+  const guestPageWhenHidden = await evaluate(cdp, "document.visibilityState");
   const guestBackgroundState = await evaluate(cdp, "window.bizhubDesktop.getState()");
   await stat(path.join(userDataRoot, "guest-demo", "local-instance", "instance.json"));
   if (
@@ -631,8 +707,9 @@ try {
     fail("desktop_account_flow_guest_background_session_not_retained");
   }
   await evaluate(cdp, "window.bizhubDesktop.restoreWindowForSmoke()");
-  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "visible",
+  const guestWindowRestored = await waitForWindowVisibility(true,
     "desktop_account_flow_guest_window_not_restored");
+  recordNativeWindowRoundtrip("guest", guestWindowBefore, guestWindowRestored, guestPageWhenHidden);
   const guestRestoredState = await evaluate(cdp, "window.bizhubDesktop.getState()");
   if (guestRestoredState.mode !== "guest" || guestRestoredState.status !== "connected") {
     fail("desktop_account_flow_guest_background_restore_invalid");
@@ -754,15 +831,19 @@ try {
 
   const directoryRequestsBeforeBackgroundRestore = directoryRequests.length;
   const cloudLoginRequestsBeforeBackgroundRestore = cloudLoginRequests.length;
+  const cloudWindowBefore = process.platform === "darwin"
+    ? await waitForWindowVisibility(true, "desktop_account_flow_cloud_native_window_missing") : null;
   await evaluate(cdp, "window.bizhubDesktop.hideWindowForSmoke()");
-  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "hidden",
+  await waitForWindowVisibility(false,
     "desktop_account_flow_window_not_hidden_in_background");
+  const cloudPageWhenHidden = await evaluate(cdp, "document.visibilityState");
   if (!await workspaceTargetPresent()) {
     fail("desktop_account_flow_workspace_destroyed_in_background");
   }
   await evaluate(cdp, "window.bizhubDesktop.restoreWindowForSmoke()");
-  await waitFor(async () => (await evaluate(cdp, "document.visibilityState")) === "visible",
+  const cloudWindowRestored = await waitForWindowVisibility(true,
     "desktop_account_flow_background_window_not_restored");
+  recordNativeWindowRoundtrip("cloud", cloudWindowBefore, cloudWindowRestored, cloudPageWhenHidden);
   const backgroundRestoredState = await evaluate(cdp, "window.bizhubDesktop.getState()");
   if (
     backgroundRestoredState.mode !== "cloud"
@@ -1172,6 +1253,7 @@ try {
     workspace_logout_clears_desktop_session: rememberedSessionSmokeSupported,
     close_to_background_session_retained: true,
     same_process_restores_background_window: true,
+    native_window_roundtrips: nativeWindowRoundtrips,
     windows_tray_background_supported: true,
     cross_restart_cookie_storage_cache_cleared: rememberedSessionSmokeSupported,
     remembered_login_test_skipped: !rememberedSessionSmokeSupported,
@@ -1182,21 +1264,30 @@ try {
 } catch (error) {
   fail(
     error instanceof Error ? error.message : "desktop_account_flow_smoke_failed",
-    child && !child.killed ? "electron_running" : "",
+    `electron_exit=${child?.exitCode ?? "pending"};signal=${child?.signalCode ?? "none"};stderr=${desktopStderr}`,
   );
 } finally {
-  await stopDesktopProcess();
-  if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
-  if (packagedTrustStore && originalPackagedTrustStore) {
-    await writeFile(packagedTrustStore, originalPackagedTrustStore);
+  try {
+    if (displayActivity?.pid && displayActivity.exitCode === null) {
+      const exited = new Promise((resolve) => displayActivity.once("exit", resolve));
+      displayActivity.kill();
+      await exited;
+    }
+    await stopDesktopProcess();
+    if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
+    if (process.platform !== "darwin" && packagedTrustStore && originalPackagedTrustStore) {
+      await writeFile(packagedTrustStore, originalPackagedTrustStore);
+    }
+    if (process.platform !== "darwin" && packagedAccountDirectory && originalPackagedAccountDirectory) {
+      await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
+    }
+    if (macosFixture) await assertMacosSmokeUnchanged(macosFixture);
+  } finally {
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === "win32" ? 10 : 0,
+      retryDelay: 200,
+    });
   }
-  if (packagedAccountDirectory && originalPackagedAccountDirectory) {
-    await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
-  }
-  await rm(temporaryRoot, {
-    recursive: true,
-    force: true,
-    maxRetries: process.platform === "win32" ? 10 : 0,
-    retryDelay: 200,
-  });
 }

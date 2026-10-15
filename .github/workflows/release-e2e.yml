@@ -16,12 +16,23 @@ permissions:
 
 jobs:
   ubuntu-release:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, installer-linux]
     timeout-minutes: 30
     steps:
+      - name: Require a disposable install host
+        shell: bash
+        run: |
+          # The existing E2E installs/uninstalls a host-level Docker application
+          # and reads its /proc cgroup limits. Shared NAS/Mac hosts are ineligible.
+          # DinD equivalence has not been validated; never weaken these checks.
+          if [[ "${BIZHUB_E2E_DISPOSABLE_HOST:-}" != "1" ]]; then
+            echo '::error::release_e2e_disposable_ubuntu_host_required; shared runner installation is blocked' >&2
+            exit 1
+          fi
       - name: Check out fixed public release
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
           ref: ${{ inputs.release_tag || github.ref_name }}
           fetch-depth: 0
           path: release
@@ -35,8 +46,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: release/app/frontend/package-lock.json
 
       - name: Verify release provenance and static gates
         run: |

@@ -16,13 +16,17 @@ concurrency:
 
 jobs:
   scope:
+    # Untrusted forks never execute on persistent build hosts. Repository policy
+    # also requires approval for every outside contributor, including YAML changes.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: desktop-r1-scope
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, installer-linux]
     outputs:
       full: ${{ steps.detect.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Verify repository checksums
         shell: bash
@@ -31,6 +35,8 @@ jobs:
             echo "::error::install/CHECKSUMS.sha256 does not match the repository. If the file changes are intentional, run 'python3 scripts/update_checksums.py', review the diff, and commit install/CHECKSUMS.sha256 together with the change."
             exit 1
           fi
+      - name: Verify local candidate safety
+        run: python3 -m unittest discover -s tests -p test_ci_artifacts.py
       - id: detect
         name: Detect release-impacting changes
         shell: bash
@@ -42,16 +48,15 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
           elif [[ "$EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "full=false" >> "$GITHUB_OUTPUT"
+            echo "full=true" >> "$GITHUB_OUTPUT"
           elif git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
             . \
-            ':(exclude).github/workflows/desktop-r1-release.yml' \
-            ':(exclude)desktop/scripts/release-plan.mjs' \
-            ':(exclude)desktop/test/release-plan.test.mjs' \
             ':(exclude)docs/**' \
             ':(exclude)install/CHECKSUMS.sha256'; then
             echo "full=false" >> "$GITHUB_OUTPUT"
           elif [[ "$EVENT_NAME" == "pull_request" ]] && git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            .github/workflows \
+            scripts \
             desktop \
             app/runtime \
             app/vendor \
@@ -77,7 +82,7 @@ jobs:
   macos-arm64:
     name: desktop-r1-synthetic-macos-arm64
     needs: scope
-    runs-on: macos-14
+    runs-on: [self-hosted, installer-macos]
     timeout-minutes: 55
     env:
       BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
@@ -89,16 +94,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify runner target
         run: |
           test "$(uname -m)" = arm64
@@ -121,10 +124,13 @@ jobs:
       - name: Restore cached old application
         id: old_app_cache
         if: needs.scope.outputs.full == 'true'
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
-        with:
-          path: ${{ runner.temp }}/desktop-macos-old-app-cache
-          key: ${{ steps.old_app.outputs.cache_key }}
+        shell: bash
+        run: |
+          source="$HOME/.cache/bizhub-installer/old-app/${{ steps.old_app.outputs.cache_key }}"
+          if [[ -d "$source" ]]; then
+            ditto "$source" "$RUNNER_TEMP/desktop-macos-old-app-cache"
+            echo 'cache-hit=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Bind cached old application
         id: bind_cached_old_app
         if: needs.scope.outputs.full == 'true' && steps.old_app_cache.outputs.cache-hit == 'true'
@@ -203,10 +209,12 @@ jobs:
           git diff --exit-code -- package.json package-lock.json
       - name: Cache old application
         if: needs.scope.outputs.full == 'true' && steps.bind_cached_old_app.outputs.old_app_ready != 'true'
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
-        with:
-          path: ${{ runner.temp }}/desktop-macos-old-app-cache
-          key: ${{ steps.old_app.outputs.cache_key }}
+        shell: bash
+        run: |
+          cache="$HOME/.cache/bizhub-installer/old-app"
+          mkdir -p "$cache"
+          ditto "$RUNNER_TEMP/desktop-macos-old-app-cache" "$cache/${{ steps.old_app.outputs.cache_key }}"
+          find "$cache" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
       - name: Verify current signed product and containers
         if: needs.scope.outputs.full == 'true'
         shell: bash
@@ -222,48 +230,39 @@ jobs:
           node scripts/verify-macos-release-containers.mjs
           sleep 2
           ! pgrep -fl 'bizhub-runtime|BizHub Desktop.app/Contents/MacOS/BizHub Desktop'
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - name: Preserve SHA-bound macos evidence locally
         if: needs.scope.outputs.full == 'true'
-        with:
-          name: desktop-r1-macos-arm64-${{ github.sha }}-synthetic-ci
-          path: |
-            desktop/out/release/desktop-r1-macos-containers.json
-            desktop/out/desktop-r1-macos-release-identity.json
-            desktop/out/desktop-r1-macos-runtime-identity.json
-            desktop/out/desktop-r1-macos-upgrade-rollback.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        run: python ../scripts/ci_artifacts.py store --name synthetic-macos "out/release/desktop-r1-macos-containers.json" "out/desktop-r1-macos-*.json"
 
   windows-x64:
     name: desktop-r1-synthetic-windows-x64
     needs: scope
-    runs-on: windows-2022
+    runs-on: [self-hosted, installer-windows]
     timeout-minutes: 60
     env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
       BIZHUB_DESKTOP_RELEASE_MODE: synthetic-ci
       BIZHUB_WINDOWS_SIGNING_MODE: synthetic-ci
     defaults:
       run:
         working-directory: desktop
     steps:
-      - name: Preserve repository byte identity
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
           fetch-depth: 0
+      - name: Protect existing Windows user state
+        shell: pwsh
+        run: ../scripts/require-clean-windows-ci-user.ps1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: 3.12.10
+      - name: Verify existing Python 3.12 toolchain
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify runner target
         shell: pwsh
         run: |
@@ -290,10 +289,13 @@ jobs:
       - name: Restore cached old installer and synthetic publisher
         id: old_setup_cache
         if: needs.scope.outputs.full == 'true'
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
-        with:
-          path: ${{ runner.temp }}/desktop-old-setup-cache
-          key: ${{ steps.old_setup.outputs.cache_key }}
+        shell: pwsh
+        run: |
+          $cache = Join-Path "D:/bizhub-installer-cache/old-setup" "${{ steps.old_setup.outputs.cache_key }}"
+          if (Test-Path $cache) {
+            Copy-Item $cache "$env:RUNNER_TEMP/desktop-old-setup-cache" -Recurse
+            "cache-hit=true" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
       - name: Bind cached synthetic publisher
         id: bind_cached_publisher
         if: needs.scope.outputs.full == 'true' && steps.old_setup_cache.outputs.cache-hit == 'true'
@@ -359,6 +361,10 @@ jobs:
           "BIZHUB_WINDOWS_CERTIFICATE_PASSWORD=$certificatePassword" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_WINDOWS_EXPECTED_THUMBPRINT=$($identity.thumbprint.Replace(' ', '').ToUpperInvariant())" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BIZHUB_REQUIRE_WINDOWS_SIGNING=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Acquire bounded synthetic leaf trust
+        if: needs.scope.outputs.full == 'true'
+        shell: pwsh
+        run: ../scripts/windows-synthetic-trust-client.ps1 -Action acquire
       - name: Sign and rebind Runtime
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
@@ -403,10 +409,12 @@ jobs:
           git diff --exit-code -- package.json package-lock.json
       - name: Cache old installer and synthetic publisher
         if: needs.scope.outputs.full == 'true' && steps.bind_cached_publisher.outputs.old_setup_ready != 'true'
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
-        with:
-          path: ${{ runner.temp }}/desktop-old-setup-cache
-          key: ${{ steps.old_setup.outputs.cache_key }}
+        shell: pwsh
+        run: |
+          $root = "D:/bizhub-installer-cache/old-setup"
+          New-Item -ItemType Directory -Force $root | Out-Null
+          Copy-Item "$env:RUNNER_TEMP/desktop-old-setup-cache" (Join-Path $root "${{ steps.old_setup.outputs.cache_key }}") -Recurse -Force
+          Get-ChildItem $root -Directory | Where-Object LastWriteTimeUtc -LT ([DateTime]::UtcNow.AddDays(-7)) | Remove-Item -Recurse -Force
       - name: Verify current product, installation, and identities
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
@@ -439,19 +447,19 @@ jobs:
           Start-Sleep -Seconds 2
           $left = Get-CimInstance Win32_Process | Where-Object { $_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe" -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) }
           if ($left) { throw "desktop_residual_process_detected" }
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - name: Preserve SHA-bound windows evidence locally
         if: needs.scope.outputs.full == 'true'
-        with:
-          name: desktop-r1-windows-x64-${{ github.sha }}-synthetic-ci
-          path: |
-            desktop/out/desktop-r1-windows-x64-identity.json
-            desktop/out/desktop-r1-windows-runtime-identity.json
-            desktop/out/desktop-r1-windows-upgrade-rollback.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: pwsh
+        run: python ../scripts/ci_artifacts.py store --name synthetic-windows "out/desktop-r1-windows-*-identity.json" "out/desktop-r1-windows-upgrade-rollback.json"
+      - name: Release and verify synthetic leaf trust
+        if: always() && needs.scope.outputs.full == 'true'
+        shell: pwsh
+        run: |
+          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) {
+            ../scripts/windows-synthetic-trust-client.ps1 -Action release
+          }
       - name: Remove synthetic signing material
         if: always() && needs.scope.outputs.full == 'true'
         shell: pwsh
         run: |
           if ($env:BIZHUB_WINDOWS_CERTIFICATE_FILE) { Remove-Item $env:BIZHUB_WINDOWS_CERTIFICATE_FILE -Force -ErrorAction SilentlyContinue }
-          if ($env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) { Remove-Item "Cert:\LocalMachine\TrustedPeople\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT" -Force -ErrorAction SilentlyContinue }

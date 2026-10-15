@@ -23,7 +23,7 @@ function run(args, expectedStatus = 0) {
   return result;
 }
 
-test("release plan binds exact Actions identities, publisher readback, and inner bytes", async () => {
+test("release plan binds exact local record identities, publisher readback, and inner bytes", async () => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-release-plan-"));
   const macRoot = path.join(temporaryRoot, "mac");
   const windowsRoot = path.join(temporaryRoot, "windows");
@@ -67,17 +67,31 @@ test("release plan binds exact Actions identities, publisher readback, and inner
       status: "ok", schema_version: "bizhub.desktop-upgrade-rollback.v1",
     });
 
+    async function record(root, name) {
+      const files = [];
+      for (const name of await (await import("node:fs/promises")).readdir(root)) {
+        const raw = await readFile(path.join(root, name));
+        files.push({ name, bytes: raw.length, sha256: createHash("sha256").update(raw).digest("hex") });
+      }
+      await writeJson(path.join(root, "ci-record.json"), {
+        schema_version: "bizhub.ci-record.v1", repository: "kingcharleslzy-ai/bizhub-installer",
+        commit: COMMIT, run_id: "123", attempt: "1", name, files,
+      });
+      return createHash("sha256").update(await readFile(path.join(root, "ci-record.json"))).digest("hex");
+    }
+    const macDigest = await record(macRoot, "signed-macos");
+    const windowsDigest = await record(windowsRoot, "signed-windows");
     run([
       "build", "--source-run-id", "123", "--source-run-attempt", "1", "--commit", COMMIT,
-      "--tag", RELEASE_TAG, "--mac-root", macRoot, "--mac-artifact-id", "456",
-      "--mac-artifact-name", "mac-artifact", "--mac-artifact-digest", `sha256:${"7".repeat(64)}`,
-      "--windows-root", windowsRoot, "--windows-artifact-id", "789",
-      "--windows-artifact-name", "windows-artifact", "--windows-artifact-digest", `sha256:${"8".repeat(64)}`,
+      "--tag", RELEASE_TAG, "--mac-root", macRoot, "--mac-record-attempt", "1",
+      "--mac-record-name", "signed-macos", "--mac-record-digest", macDigest,
+      "--windows-root", windowsRoot, "--windows-record-attempt", "1",
+      "--windows-record-name", "signed-windows", "--windows-record-digest", windowsDigest,
       "--output", planPath,
     ]);
     const plan = JSON.parse(await readFile(planPath, "utf8"));
     const commonManifest = JSON.parse(await readFile(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"), "utf8"));
-    assert.equal(plan.schema_version, "bizhub.desktop-release-plan.v2");
+    assert.equal(plan.schema_version, "bizhub.desktop-release-plan.v3");
     assert.deepEqual(plan.common_core, {
       artifact_digest: commonManifest.core_artifact_digest,
       source_commit: commonManifest.source_commit,

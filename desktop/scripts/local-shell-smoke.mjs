@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
 import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
@@ -123,8 +124,8 @@ async function assertWorkspaceViewports(cdp, expectedText, code) {
   }
 }
 
-const packagedExecutable = option("--packaged-executable");
-const packagedResources = option("--packaged-resources");
+let packagedExecutable = option("--packaged-executable");
+let packagedResources = option("--packaged-resources");
 const explicitUserDataRoot = option("--user-data-root");
 const keepUserData = flag("--keep-user-data");
 const rememberedSessionSmokeSupported = !(
@@ -133,10 +134,10 @@ const rememberedSessionSmokeSupported = !(
 if (Boolean(packagedExecutable) !== Boolean(packagedResources)) {
   throw new Error("desktop_local_smoke_packaged_options_incomplete");
 }
-const runtimePack = packagedResources
+let runtimePack = packagedResources
   ? path.join(packagedResources, "bizhub-runtime")
   : path.join(ROOT, "runtime-dist", "bizhub-runtime");
-const trustPath = packagedResources
+let trustPath = packagedResources
   ? path.join(packagedResources, "generic-runtime-trust.json")
   : path.join(ROOT, "config", target.trustName);
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), "bizhub-desktop-local-shell-"));
@@ -146,6 +147,7 @@ const password = "synthetic correct horse battery staple";
 let child = null;
 let shellCdp = null;
 let debugPort = null;
+let macosStaging = null;
 
 async function stopDesktop() {
   if (shellCdp) {
@@ -261,6 +263,15 @@ async function quitDesktop() {
 }
 
 try {
+  if (packagedExecutable && process.platform === "darwin") {
+    macosStaging = await stageMacosSmokeApp({ executable: packagedExecutable, resources: packagedResources, temporaryRoot });
+    packagedExecutable = macosStaging.executable;
+    packagedResources = macosStaging.resources;
+    runtimePack = path.join(packagedResources, "bizhub-runtime");
+    trustPath = path.join(packagedResources, "generic-runtime-trust.json");
+    verifyMacosSmokeApp(macosStaging);
+    macosStaging.sealedDigest = await treeDigest(macosStaging.app);
+  }
   await bootstrapLocalInstance({
     userDataRoot,
     runtimePack,
@@ -592,19 +603,23 @@ try {
     residual_runtime_processes: 0,
   })}\n`);
 } finally {
-  await stopDesktop();
-  await rm(temporaryRoot, {
-    recursive: true,
-    force: true,
-    maxRetries: process.platform === "win32" ? 10 : 0,
-    retryDelay: 200,
-  });
-  if (explicitUserDataRoot && !keepUserData) {
-    await rm(explicitUserDataRoot, {
+  try {
+    await stopDesktop();
+    if (macosStaging) await assertMacosSmokeUnchanged(macosStaging);
+  } finally {
+    await rm(temporaryRoot, {
       recursive: true,
       force: true,
       maxRetries: process.platform === "win32" ? 10 : 0,
       retryDelay: 200,
     });
+    if (explicitUserDataRoot && !keepUserData) {
+      await rm(explicitUserDataRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === "win32" ? 10 : 0,
+        retryDelay: 200,
+      });
+    }
   }
 }

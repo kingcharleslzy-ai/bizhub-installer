@@ -31,6 +31,8 @@ Set-StrictMode -Version Latest
 $installRoot = Join-Path $env:LOCALAPPDATA "bizhub_desktop"
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "bizhub-desktop-upgrade-rollback"
 $userDataRoot = Join-Path $temporaryRoot "user-data"
+$defaultUserData = Join-Path $env:APPDATA "BizHub Desktop"
+. "$PSScriptRoot/windows-smoke-owned-directory.ps1"
 
 function Wait-PathState {
     param([string]$Path, [bool]$Present, [int]$TimeoutSeconds = 45)
@@ -44,7 +46,7 @@ function Wait-PathState {
 
 function Stop-InstalledProcesses {
     Get-CimInstance Win32_Process | Where-Object {
-        $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase)
+        $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$installRoot\", [StringComparison]::OrdinalIgnoreCase)
     } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
@@ -117,9 +119,14 @@ function Uninstall-Application {
 
 if (Test-Path -LiteralPath $installRoot) { throw "desktop_windows_upgrade_install_root_contaminated" }
 if (Test-Path -LiteralPath $temporaryRoot) { throw "desktop_windows_upgrade_temp_root_contaminated" }
-New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+if (Test-Path -LiteralPath $defaultUserData) { throw "desktop_windows_upgrade_default_user_data_contaminated" }
+New-Item -ItemType Directory -Path $temporaryRoot -ErrorAction Stop | Out-Null
+$defaultProfileOwner = $null
+$ownsInstallation = $false
 
 try {
+    $defaultProfileOwner = New-SmokeOwnedDirectory -Path $defaultUserData
+    $ownsInstallation = $true
     Invoke-Setup -Path $OldSetup
     $oldApplication = Get-InstalledApplication -Version $OldVersion
     Assert-RuntimeSignatures -Application $oldApplication -Stage "old"
@@ -166,15 +173,23 @@ try {
     $identity | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $outputPath -Encoding utf8
     $identity | ConvertTo-Json -Depth 5 -Compress
 } finally {
-    if (Test-Path -LiteralPath $installRoot) {
-        Uninstall-Application
-        Stop-InstalledProcesses
-        if (Test-Path -LiteralPath $installRoot) {
-            Remove-Item -LiteralPath $installRoot -Recurse -Force
-        }
-        if (Test-Path -LiteralPath $installRoot) {
-            throw "desktop_windows_upgrade_install_root_cleanup_failed"
-        }
+    $cleanupErrors = @()
+    try {
+        if ($ownsInstallation -and (Test-Path -LiteralPath $installRoot)) { Uninstall-Application }
+    } catch { $cleanupErrors += $_.Exception.Message }
+    if ($ownsInstallation) {
+        try { Stop-InstalledProcesses } catch { $cleanupErrors += $_.Exception.Message }
     }
-    Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $ownedPaths = @($temporaryRoot)
+    if ($ownsInstallation) { $ownedPaths += $installRoot }
+    foreach ($ownedPath in $ownedPaths) {
+        try {
+            if (Test-Path -LiteralPath $ownedPath) { Remove-Item -LiteralPath $ownedPath -Recurse -Force }
+            if (Test-Path -LiteralPath $ownedPath) { throw "desktop_windows_upgrade_owned_path_cleanup_failed:$ownedPath" }
+        } catch { $cleanupErrors += $_.Exception.Message }
+    }
+    if ($defaultProfileOwner) {
+        try { Remove-SmokeOwnedDirectory -Owner $defaultProfileOwner } catch { $cleanupErrors += $_.Exception.Message }
+    }
+    if ($cleanupErrors.Count) { throw ($cleanupErrors -join "; ") }
 }

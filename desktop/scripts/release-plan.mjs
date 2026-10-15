@@ -52,9 +52,27 @@ function digest(value, code) {
   return normalized;
 }
 
-function artifactId(value, code) {
-  if (!/^[1-9]\d*$/.test(value || "")) fail(code);
-  return Number(value);
+async function localRecord(root, options, prefix) {
+  const manifestPath = path.join(root, "ci-record.json");
+  const actual = await fileIdentity(manifestPath);
+  if (actual.sha256 !== digest(options[`${prefix}_record_digest`], "desktop_release_plan_record_digest_invalid")) {
+    fail("desktop_release_plan_record_digest_mismatch");
+  }
+  const record = await readJson(manifestPath);
+  if (record.schema_version !== "bizhub.ci-record.v1"
+    || record.repository !== (process.env.GITHUB_REPOSITORY || "kingcharleslzy-ai/bizhub-installer")
+    || record.commit !== options.commit || record.run_id !== options.source_run_id
+    || record.attempt !== options[`${prefix}_record_attempt`]
+    || record.name !== options[`${prefix}_record_name`]
+    || !/^[1-9]\d*$/.test(record.attempt)) {
+    fail("desktop_release_plan_record_source_mismatch");
+  }
+  for (const expected of record.files) {
+    if (path.basename(expected.name) !== expected.name) fail("desktop_release_plan_record_file_invalid");
+    assert.deepEqual(await fileIdentity(path.join(root, expected.name)), expected,
+      `desktop_release_plan_record_file_mismatch:${expected.name}`);
+  }
+  return { digest: actual.sha256, name: record.name, attempt: Number(record.attempt) };
 }
 
 async function verifyInnerArtifacts(plan, macRoot, windowsRoot) {
@@ -87,8 +105,8 @@ async function verifyInnerArtifacts(plan, macRoot, windowsRoot) {
 async function build(options) {
   for (const key of [
     "source_run_id", "source_run_attempt", "commit", "tag", "mac_root",
-    "mac_artifact_id", "mac_artifact_name", "mac_artifact_digest", "windows_root",
-    "windows_artifact_id", "windows_artifact_name", "windows_artifact_digest", "output",
+    "mac_record_attempt", "mac_record_name", "mac_record_digest", "windows_root",
+    "windows_record_attempt", "windows_record_name", "windows_record_digest", "output",
   ]) if (!options[key]) fail(`desktop_release_plan_argument_missing:${key}`);
   if (!/^[0-9a-f]{40}$/.test(options.commit)) fail("desktop_release_plan_commit_invalid");
 
@@ -127,7 +145,7 @@ async function build(options) {
   }
 
   const plan = {
-    schema_version: "bizhub.desktop-release-plan.v2",
+    schema_version: "bizhub.desktop-release-plan.v3",
     repository: process.env.GITHUB_REPOSITORY || "kingcharleslzy-ai/bizhub-installer",
     source_run: {
       attempt: Number(options.source_run_attempt),
@@ -147,11 +165,7 @@ async function build(options) {
     },
     platforms: {
       macos_arm64: {
-        actions_artifact: {
-          digest: digest(options.mac_artifact_digest, "desktop_release_plan_mac_artifact_digest_invalid"),
-          id: artifactId(options.mac_artifact_id, "desktop_release_plan_mac_artifact_id_invalid"),
-          name: options.mac_artifact_name,
-        },
+        local_record: await localRecord(macRoot, options, "mac"),
         files: {
           dmg: await fileIdentity(path.join(macRoot, containers.dmg.name)),
           zip: await fileIdentity(path.join(macRoot, containers.zip.name)),
@@ -175,11 +189,7 @@ async function build(options) {
         },
       },
       windows_x64: {
-        actions_artifact: {
-          digest: digest(options.windows_artifact_digest, "desktop_release_plan_windows_artifact_digest_invalid"),
-          id: artifactId(options.windows_artifact_id, "desktop_release_plan_windows_artifact_id_invalid"),
-          name: options.windows_artifact_name,
-        },
+        local_record: await localRecord(windowsRoot, options, "windows"),
         files: {
           nupkg: await fileIdentity(path.join(windowsRoot, windowsRelease.nupkg.name)),
           releases: await fileIdentity(path.join(windowsRoot, "RELEASES")),
@@ -232,7 +242,7 @@ async function verify(options) {
     fail("desktop_release_plan_sha_mismatch");
   }
   const plan = await readJson(planPath);
-  if (plan.schema_version !== "bizhub.desktop-release-plan.v2") fail("desktop_release_plan_schema_invalid");
+  if (plan.schema_version !== "bizhub.desktop-release-plan.v3") fail("desktop_release_plan_schema_invalid");
   const commonManifest = await readJson(path.join(ROOT, "..", "app", "vendor", "bizhub-common-manifest.json"));
   if (plan.common_core?.artifact_digest !== commonManifest.core_artifact_digest
     || plan.common_core?.source_commit !== commonManifest.source_commit) {
