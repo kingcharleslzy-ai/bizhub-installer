@@ -1,11 +1,13 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:https";
-import { mkdtemp, readFile, readdir, readlink, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+
+import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
 
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
@@ -202,32 +204,6 @@ const issuedWorkspaceExpiries = [];
 let cacheMarkerRequests = 0;
 let macosFixture = null;
 let desktopStderr = "";
-
-async function treeDigest(root) {
-  const hash = createHash("sha256");
-  async function walk(directory) {
-    const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      const target = path.join(directory, entry.name);
-      hash.update(JSON.stringify([path.relative(root, target), entry.isDirectory() ? "directory" : entry.isSymbolicLink() ? "symlink" : "file"]));
-      if (entry.isDirectory()) await walk(target);
-      else if (entry.isSymbolicLink()) hash.update(await readlink(target));
-      else if (entry.isFile()) hash.update(createHash("sha256").update(await readFile(target)).digest());
-      else fail("desktop_account_flow_candidate_entry_invalid");
-    }
-  }
-  await walk(root);
-  return hash.digest("hex");
-}
-
-function verifyMacosFixture() {
-  const args = ["scripts/verify-macos-release.mjs", "--app", macosFixture.app,
-    "--expected-runtime-trust", path.join(ROOT, "runtime-dist", "generic-runtime-trust.json"),
-    "--mode", macosFixture.mode, "--output", path.join(temporaryRoot, "fixture-identity.json")];
-  if (macosFixture.mode === "production") args.push("--team-id", process.env.BIZHUB_MACOS_TEAM_ID);
-  execFileSync(process.execPath, args, { cwd: ROOT, stdio: "inherit" });
-}
 
 let originalPackagedTrustStore = null;
 let originalPackagedAccountDirectory = null;
@@ -450,22 +426,16 @@ try {
       fail("desktop_account_flow_packaged_configuration_mismatch");
     }
     if (process.platform === "darwin") {
-      const mode = process.env.BIZHUB_MACOS_SIGNING_MODE;
-      if (!["production", "synthetic-ci"].includes(mode)) fail("desktop_account_flow_fixture_signing_mode_missing");
-      const candidateApp = path.resolve(packagedExecutable, "..", "..", "..");
-      if (!candidateApp.endsWith(".app")
-        || packagedTrustStore !== path.join(candidateApp, "Contents", "Resources", "trusted-connection-keys.json")
-        || packagedAccountDirectory !== path.join(candidateApp, "Contents", "Resources", "account-directory.json")) {
+      macosFixture = await stageMacosSmokeApp({
+        executable: packagedExecutable, resources: path.dirname(packagedTrustStore), temporaryRoot,
+      });
+      if (packagedTrustStore !== path.join(macosFixture.candidateApp, "Contents", "Resources", "trusted-connection-keys.json")
+        || packagedAccountDirectory !== path.join(macosFixture.candidateApp, "Contents", "Resources", "account-directory.json")) {
         fail("desktop_account_flow_fixture_candidate_paths_invalid");
       }
-      const candidateRoot = path.dirname(candidateApp);
-      const candidateDigest = await treeDigest(candidateRoot);
-      const app = path.join(temporaryRoot, "BizHub Desktop.app");
-      execFileSync("/usr/bin/ditto", [candidateApp, app]);
-      macosFixture = { app, mode, candidateRoot, candidateDigest, sealedDigest: null };
-      packagedExecutable = path.join(app, "Contents", "MacOS", "BizHub Desktop");
-      packagedTrustStore = path.join(app, "Contents", "Resources", "trusted-connection-keys.json");
-      packagedAccountDirectory = path.join(app, "Contents", "Resources", "account-directory.json");
+      packagedExecutable = macosFixture.executable;
+      packagedTrustStore = path.join(macosFixture.resources, "trusted-connection-keys.json");
+      packagedAccountDirectory = path.join(macosFixture.resources, "account-directory.json");
     }
     await Promise.all([
       writeFile(packagedTrustStore, `${JSON.stringify(trustStore, null, 2)}\n`),
@@ -480,7 +450,7 @@ try {
         cwd: ROOT, stdio: "inherit",
         env: { ...process.env, BIZHUB_MACOS_PACKAGED_APP: macosFixture.app },
       });
-      verifyMacosFixture();
+      verifyMacosSmokeApp(macosFixture);
       macosFixture.sealedDigest = await treeDigest(macosFixture.app);
     }
   }
@@ -1305,22 +1275,13 @@ try {
     }
     await stopDesktopProcess();
     if (directoryServer) await new Promise((resolve) => directoryServer.close(resolve));
-    if (!macosFixture && packagedTrustStore && originalPackagedTrustStore) {
+    if (process.platform !== "darwin" && packagedTrustStore && originalPackagedTrustStore) {
       await writeFile(packagedTrustStore, originalPackagedTrustStore);
     }
-    if (!macosFixture && packagedAccountDirectory && originalPackagedAccountDirectory) {
+    if (process.platform !== "darwin" && packagedAccountDirectory && originalPackagedAccountDirectory) {
       await writeFile(packagedAccountDirectory, originalPackagedAccountDirectory);
     }
-    if (macosFixture) {
-      if (await treeDigest(macosFixture.candidateRoot) !== macosFixture.candidateDigest) {
-        fail("desktop_account_flow_original_candidate_changed");
-      }
-      if (macosFixture.sealedDigest) {
-        if (await treeDigest(macosFixture.app) !== macosFixture.sealedDigest) fail("desktop_account_flow_signed_fixture_changed");
-        verifyMacosFixture();
-        process.stdout.write(`${JSON.stringify({ status: "ok", original_candidate_unchanged: true, signed_fixture_unchanged: true, signing_mode: macosFixture.mode })}\n`);
-      }
-    }
+    if (macosFixture) await assertMacosSmokeUnchanged(macosFixture);
   } finally {
     await rm(temporaryRoot, {
       recursive: true,

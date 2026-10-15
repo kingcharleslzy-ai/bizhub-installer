@@ -294,7 +294,7 @@ test("Windows local-shell cleanup retries locked profiles without skipping proce
   assert.match(smoke, /maxRetries: process\.platform === "win32" \? 10 : 0/);
   assert.match(smoke, /retryDelay: 200/);
   assert.match(smoke, /residual_runtime_processes: 0/);
-  assert.match(smoke, /await stopDesktop\(\);\s+await rm\(temporaryRoot/);
+  assert.match(smoke, /await stopDesktop\(\);[\s\S]+await rm\(temporaryRoot/);
   assert.match(smoke, /await evaluate\(shellCdp, "window\.bizhubDesktop\.quitAppForSmoke\(\)"\)/);
   assert.match(smoke, /packagedExecutable && process\.platform === "darwin"/);
   assert.match(smoke, /return preEntryWorkspaceReady\(value\) \? value : null/);
