@@ -52,6 +52,17 @@ class LocalCandidateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "manifest_digest_mismatch"):
                 records.verify(root, argparse.Namespace(digest=hashlib.sha256(b"different").hexdigest()))
 
+    def test_forced_command_only_accepts_exact_windows_candidates(self):
+        request = f"read {'a' * 40} 123 2 signed-windows {'b' * 64}"
+        self.assertEqual(records.windows_read_request(request).run_id, "123")
+        for invalid in ("", "whoami", "sftp", "scp -t D:/", request + " & whoami",
+                        request.replace("signed-windows", "../ai-trader"),
+                        request.replace("signed-windows", "synthetic-windows"),
+                        request.replace("a" * 40, "D:/ci-candidates/ai-trader"),
+                        request.replace("read ", "write ")):
+            with self.subTest(command=invalid), self.assertRaisesRegex(ValueError, "read_request_invalid"):
+                records.windows_read_request(invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

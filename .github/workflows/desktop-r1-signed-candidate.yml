@@ -34,8 +34,6 @@ jobs:
       BIZHUB_DESKTOP_RELEASE_COMMIT: ${{ inputs.release_commit }}
       BIZHUB_DESKTOP_RELEASE_TAG: ${{ inputs.release_tag }}
       BIZHUB_MACOS_SIGNING_MODE: production
-      BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
-      BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
     defaults:
       run:
         working-directory: desktop
@@ -64,25 +62,49 @@ jobs:
           npm run verify:runtime-archive
           npm run audit:runtime
           npm audit --audit-level=moderate
-      - name: Require existing approved macOS publisher
+      - name: Configure approved macOS publisher
         shell: bash
         env:
+          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
           SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
           TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
+          API_KEY_P8: ${{ secrets.BIZHUB_APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.BIZHUB_APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.BIZHUB_APPLE_API_ISSUER }}
         run: |
+          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
           test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
-          keychain="${BIZHUB_MACOS_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
-          # No P12/private key is materialized from secrets on a persistent host.
-          if ! security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null; then
-            echo '::error::desktop_macos_existing_keychain_identity_missing; signing credentials must be provisioned separately' >&2
-            exit 1
-          fi
+          test -n "$API_KEY_P8" && test -n "$API_KEY_ID" && test -n "$API_ISSUER"
+          umask 077
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/bizhub-signing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXX")"
+          certificate="$signing_dir/developer-id.p12"
+          api_key="$signing_dir/notary-api-key.p8"
+          keychain="$signing_dir/signing.keychain-db"
           {
+            echo "BIZHUB_MACOS_SIGNING_DIR=$signing_dir"
+            echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate"
             echo "BIZHUB_MACOS_KEYCHAIN=$keychain"
-            echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY"
-            echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID"
+            echo "BIZHUB_APPLE_API_KEY_FILE=$api_key"
           } >> "$GITHUB_ENV"
-          test -n "$BIZHUB_APPLE_ID" && test -n "$BIZHUB_APPLE_APP_PASSWORD"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate"
+          printf '%s' "$API_KEY_P8" > "$api_key"
+          chmod 600 "$certificate" "$api_key"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f -- "$certificate"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null
+          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_KEY_FILE=$api_key" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_KEY_ID=$API_KEY_ID" >> "$GITHUB_ENV"
+          echo "BIZHUB_APPLE_API_ISSUER=$API_ISSUER" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
       - name: Prepare, sign, and rebind Runtime
         run: |
           npm run prepare:runtime
@@ -130,6 +152,19 @@ jobs:
         id: store
         shell: bash
         run: python ../scripts/ci_artifacts.py store --commit "${{ inputs.release_commit }}" --name signed-macos "out/candidate-macos/*"
+      - name: Remove macOS signing material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then
+            security delete-keychain "$BIZHUB_MACOS_KEYCHAIN"
+          fi
+          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; fi
+          if [ -n "${BIZHUB_APPLE_API_KEY_FILE:-}" ]; then rm -f -- "$BIZHUB_APPLE_API_KEY_FILE"; fi
+          if [ -n "${BIZHUB_MACOS_SIGNING_DIR:-}" ]; then
+            rmdir -- "$BIZHUB_MACOS_SIGNING_DIR"
+            test ! -e "$BIZHUB_MACOS_SIGNING_DIR"
+          fi
 
   windows_x64:
     name: desktop-r1-signed-candidate-windows-x64

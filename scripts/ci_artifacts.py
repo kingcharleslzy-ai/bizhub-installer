@@ -10,7 +10,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
+import sys
+import tarfile
 import tempfile
 import time
 
@@ -32,6 +35,8 @@ def record_path(root: Path, commit: str, run_id: str, attempt: str, name: str) -
 
 def verify(directory: Path, args: argparse.Namespace) -> dict:
     manifest = directory / "ci-record.json"
+    if manifest.is_symlink() or not manifest.is_file():
+        raise ValueError("ci_record_manifest_invalid")
     if digest(manifest) != args.digest:
         raise ValueError("ci_record_manifest_digest_mismatch")
     data = json.loads(manifest.read_text())
@@ -43,7 +48,7 @@ def verify(directory: Path, args: argparse.Namespace) -> dict:
     expected = {"ci-record.json"}
     for item in data["files"]:
         name = item["name"]
-        if Path(name).name != name or name in expected or name in (".", ".."):
+        if Path(name).name != name or any(c in name for c in "\\/:\0") or name in expected or name in (".", ".."):
             raise ValueError("ci_record_file_name_invalid")
         expected.add(name)
         target = directory / name
@@ -52,6 +57,57 @@ def verify(directory: Path, args: argparse.Namespace) -> dict:
     if not data["files"] or {p.name for p in directory.iterdir()} != expected:
         raise ValueError("ci_record_file_set_mismatch")
     return data
+
+
+def windows_read_request(command: str) -> argparse.Namespace:
+    # OpenSSH forced-command entry: no shell, paths, writes, or other repos.
+    match = re.fullmatch(r"read ([0-9a-f]{40}) ([1-9][0-9]*) ([1-9][0-9]*) (internal-windows|signed-windows) ([0-9a-f]{64})", command)
+    if not match:
+        raise ValueError("ci_record_read_request_invalid")
+    return argparse.Namespace(commit=match[1], run_id=match[2], attempt=match[3], name=match[4],
+                              digest=match[5], repository="kingcharleslzy-ai/bizhub-installer")
+
+
+def serve_windows() -> None:
+    args = windows_read_request(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
+    root = Path("D:/bizhub-installer-ci-records")
+    directory = record_path(root, args.commit, args.run_id, args.attempt, args.name)
+    for part in (*reversed(directory.parents), directory, *directory.iterdir()):
+        if part.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError("ci_record_reparse_point_refused")
+    data = verify(directory, args)
+    # tarfile only reads the verified flat file set. Never accept a client path.
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for name in ["ci-record.json", *(item["name"] for item in data["files"])]:
+            archive.add(directory / name, arcname=name, recursive=False)
+
+
+def receive_windows(args: argparse.Namespace) -> None:
+    host = "installer-artifacts-windows"
+    request = f"read {args.commit} {args.run_id} {args.attempt} {args.name} {args.digest}"
+    windows_read_request(request)
+    stage = Path(tempfile.mkdtemp(prefix=".ci-read-", dir=args.output.parent))
+    try:
+        with subprocess.Popen(["ssh", "-F", str(Path.home() / ".ssh/bizhub-installer-artifacts.conf"),
+                               "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", host, request],
+                              stdout=subprocess.PIPE) as process:
+            try:
+                with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                    for item in archive:
+                        if not item.isfile() or Path(item.name).name != item.name or any(c in item.name for c in "\\/:\0") or item.name in (".", "..") or (stage / item.name).exists():
+                            raise ValueError("ci_record_archive_member_invalid")
+                        with archive.extractfile(item) as source, (stage / item.name).open("xb") as target:
+                            shutil.copyfileobj(source, target)
+                if process.wait() != 0:
+                    raise ValueError("ci_record_transport_failed")
+            except BaseException:
+                process.kill()
+                raise
+        verify(stage, args)
+        stage.rename(args.output)
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
 
 
 def emit(name: str, value: str) -> None:
@@ -78,7 +134,7 @@ def prune(root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("store", "read", "prune"))
+    parser.add_argument("command", choices=("store", "read", "prune", "serve-windows"))
     default_root = "D:/bizhub-installer-ci-records" if os.name == "nt" else str(Path.home() / ".local/share/bizhub-installer/ci-records")
     parser.add_argument("--root", type=Path, default=os.environ.get("BIZHUB_CI_RECORDS_ROOT", default_root))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "kingcharleslzy-ai/bizhub-installer"))
@@ -91,6 +147,9 @@ def main() -> None:
     parser.add_argument("--windows", action="store_true")
     parser.add_argument("files", nargs="*")
     args = parser.parse_args()
+    if args.command == "serve-windows":
+        serve_windows()
+        return
     if args.command == "prune":
         prune(args.root)
         return
@@ -136,9 +195,7 @@ def main() -> None:
             raise ValueError("ci_record_output_exists")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         if args.windows:
-            host = os.environ["BIZHUB_WINDOWS_ARTIFACT_HOST"]
-            remote = f"D:/bizhub-installer-ci-records/{args.commit}/{args.run_id}-{args.attempt}/{args.name}"
-            subprocess.run(["scp", "-B", "-o", "StrictHostKeyChecking=yes", "-r", f"{host}:{remote}", str(args.output)], check=True)
+            receive_windows(args)
         else:
             verify(directory, args)
             shutil.copytree(directory, args.output)

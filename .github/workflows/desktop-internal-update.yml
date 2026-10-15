@@ -43,24 +43,6 @@ jobs:
           node-version: 22.22.2
       - name: Verify existing Python 3.12 toolchain
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
-      - name: Require existing Developer ID publisher keychain
-        shell: bash
-        env:
-          SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
-          TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
-        run: |
-          test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
-          keychain="${BIZHUB_MACOS_KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
-          # No P12/private key is materialized from secrets on a persistent host.
-          if ! security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null; then
-            echo '::error::desktop_macos_existing_keychain_identity_missing; signing credentials must be provisioned separately' >&2
-            exit 1
-          fi
-          {
-            echo "BIZHUB_MACOS_KEYCHAIN=$keychain"
-            echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY"
-            echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID"
-          } >> "$GITHUB_ENV"
       - name: Test macOS arm64 source
         shell: bash
         run: |
@@ -70,6 +52,34 @@ jobs:
           npm test
           npm run verify:boundary
           npm run audit:runtime
+      - name: Configure Developer ID publisher keychain
+        shell: bash
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.BIZHUB_MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.BIZHUB_MACOS_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.BIZHUB_MACOS_TEAM_ID }}
+        run: |
+          test -n "$CERTIFICATE_BASE64" && test -n "$CERTIFICATE_PASSWORD"
+          test -n "$SIGNING_IDENTITY" && test -n "$TEAM_ID"
+          umask 077
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/bizhub-signing-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXX")"
+          certificate="$signing_dir/developer-id.p12"
+          keychain="$signing_dir/signing.keychain-db"
+          echo "BIZHUB_MACOS_SIGNING_DIR=$signing_dir" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          keychain_password="$(openssl rand -hex 24)"
+          (umask 077 && printf '%s' "$CERTIFICATE_BASE64" | openssl base64 -d -A > "$certificate")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f -- "$certificate"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security find-identity -v -p codesigning "$keychain" | grep -F -- "$SIGNING_IDENTITY" >/dev/null
+          echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
       - name: Prepare, sign, and rebind Runtime
         shell: bash
         run: |
@@ -109,6 +119,18 @@ jobs:
         id: store
         shell: bash
         run: python ../scripts/ci_artifacts.py store --name internal-macos "out/update/*"
+      - name: Remove macOS signing material
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${BIZHUB_MACOS_KEYCHAIN:-}" ] && [ -e "$BIZHUB_MACOS_KEYCHAIN" ]; then
+            security delete-keychain "$BIZHUB_MACOS_KEYCHAIN"
+          fi
+          if [ -n "${BIZHUB_MACOS_TEMP_CERTIFICATE:-}" ]; then rm -f -- "$BIZHUB_MACOS_TEMP_CERTIFICATE"; fi
+          if [ -n "${BIZHUB_MACOS_SIGNING_DIR:-}" ]; then
+            rmdir -- "$BIZHUB_MACOS_SIGNING_DIR"
+            test ! -e "$BIZHUB_MACOS_SIGNING_DIR"
+          fi
 
   windows-x64:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/desktop-signing/')
