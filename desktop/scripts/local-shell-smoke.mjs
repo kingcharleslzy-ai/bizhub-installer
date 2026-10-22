@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
+import { assertMacosSmokeUnchanged, smokeKeychainArguments, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
 import { runtimeTarget } from "./runtime-target.mjs";
 
 const require = createRequire(import.meta.url);
@@ -175,8 +175,8 @@ async function launchDesktop() {
   const executable = packagedExecutable || require("electron");
   const electronUserData = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
   const arguments_ = packagedExecutable
-    ? [electronUserData, `--remote-debugging-port=${debugPort}`]
-    : [electronUserData, `--remote-debugging-port=${debugPort}`, ROOT];
+    ? [...smokeKeychainArguments(), electronUserData, `--remote-debugging-port=${debugPort}`]
+    : [...smokeKeychainArguments(), electronUserData, `--remote-debugging-port=${debugPort}`, ROOT];
   child = spawn(executable, arguments_, {
     cwd: ROOT,
     env: {

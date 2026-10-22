@@ -6,6 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+// 冒烟只验加密记住登录等流程，不碰登录钥匙串：换了 Electron 版本后真钥匙串会弹密码框，
+// 本机打断使用者，CI 上没人点就一直卡住。
+export function smokeKeychainArguments() {
+  return process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+}
+
 export async function treeDigest(root) {
   const hash = createHash("sha256");
   async function walk(directory) {
