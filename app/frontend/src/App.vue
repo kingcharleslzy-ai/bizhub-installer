@@ -34,7 +34,8 @@ const sales = ref<Json[]>([]);
 const inventory = ref<Json>({ balances: [], movements: [] });
 const settings = ref<Json>({});
 
-const masterForm = reactive({ resource_kind: "party", resource_id: "", canonical_name: "", attributes: "{}" });
+// 业务主体、产品、单位的编号由系统分配；只有地点要填地点编号。单位要在附加属性里给代码，如 {"code":"kg","dimension":"mass"}。
+const masterForm = reactive({ resource_kind: "party", location_id: "", canonical_name: "", attributes: "{}" });
 const orderForm = reactive({ order_id: "", party_id: "", line_id: "", product_id: "", unit_id: "", quantity: "1", location_id: "", ordered_at: new Date().toISOString().slice(0, 10), evidence_ref: "" });
 const receiveForm = reactive({ order_id: "", line_id: "", quantity: "1", occurred_at: new Date().toISOString().slice(0, 16), evidence_ref: "" });
 const movementForm = reactive({ action: "inbound", product_id: "", unit_id: "", quantity: "1", location_id: "", occurred_at: new Date().toISOString().slice(0, 16), reason: "手工业务调整" });
@@ -235,9 +236,9 @@ async function createMasterData() {
   try {
     const draft = {
       resource_kind: masterForm.resource_kind,
-      resource_id: masterForm.resource_id.trim(),
+      location_id: masterForm.resource_kind === "location" ? masterForm.location_id.trim() : "",
       canonical_name: masterForm.canonical_name.trim(),
-      source_id: "desktop-ui",
+      source_id: "",
       external_id: "",
       alias: "",
       attributes: JSON.parse(masterForm.attributes || "{}"),
@@ -246,7 +247,7 @@ async function createMasterData() {
     if (!window.confirm(`确认保存这条基础资料？\n\n${JSON.stringify(preview, null, 2)}`)) return;
     await api("/api/master-data/catalog/apply", { method: "POST", body: JSON.stringify(preview) });
     notice.value = "基础资料已保存并核对。";
-    masterForm.resource_id = "";
+    masterForm.location_id = "";
     masterForm.canonical_name = "";
     await refresh();
   } catch (caught: any) {
@@ -530,9 +531,9 @@ onMounted(async () => {
       <section v-if="page === 'master'" class="two-column">
         <article class="panel"><h2>新增基础资料</h2><form @submit.prevent="createMasterData">
           <label>类型<select v-model="masterForm.resource_kind"><option value="party">业务主体</option><option value="product">产品</option><option value="unit">单位</option><option value="location">地点</option></select></label>
-          <label>唯一 ID<input v-model="masterForm.resource_id" placeholder="例如 customer-demo" required></label>
+          <label v-if="masterForm.resource_kind === 'location'">地点编号<input v-model="masterForm.location_id" placeholder="例如 warehouse-1" required></label>
           <label>名称<input v-model="masterForm.canonical_name" required></label>
-          <label>附加属性 JSON<textarea v-model="masterForm.attributes" rows="4"></textarea></label>
+          <label>附加属性 JSON<textarea v-model="masterForm.attributes" rows="4" :placeholder="masterForm.resource_kind === 'unit' ? '{&quot;code&quot;: &quot;kg&quot;, &quot;dimension&quot;: &quot;mass&quot;}' : ''"></textarea></label>
           <button :disabled="busy">预览并写入</button>
         </form></article>
         <article class="panel"><h2>当前目录</h2><div v-for="group in ['parties','products','units','locations']" :key="group" class="catalog-group"><b>{{ group }}</b><span v-for="item in catalog[group]" :key="item.id">{{ item.canonical_name }} <small>{{ item.id }}</small></span></div></article>

@@ -116,10 +116,11 @@ try {
     assert.equal(entered.body.stage, "enterprise_context_ready");
     onboardingStage = entered.body.stage;
     const drafts = [
-      { resource_kind: "party", resource_id: "upgrade-supplier", canonical_name: "Synthetic Upgrade Supplier" },
-      { resource_kind: "product", resource_id: "upgrade-product", canonical_name: "Synthetic Upgrade Product" },
-      { resource_kind: "unit", resource_id: "upgrade-unit", canonical_name: "Synthetic Upgrade Unit" },
-      { resource_kind: "location", resource_id: "upgrade-location", canonical_name: "Synthetic Upgrade Location" },
+      // 往来方、产品、单位的编号由库分配；只有地点自带编号。
+      { resource_kind: "party", canonical_name: "Synthetic Upgrade Supplier" },
+      { resource_kind: "product", canonical_name: "Synthetic Upgrade Product" },
+      { resource_kind: "unit", canonical_name: "Synthetic Upgrade Unit", attributes: { code: "upgrade-unit", dimension: "count" } },
+      { resource_kind: "location", location_id: "upgrade-location", canonical_name: "Synthetic Upgrade Location" },
     ];
     const preview = await mutation(runtime, "/api/master-data/catalog/preview", { drafts });
     assert.equal(preview.response.status, 200);

@@ -16,29 +16,53 @@ def _connect(path: Path) -> sqlite3.Connection:
     return connection
 
 
-def _catalog_rows(connection: sqlite3.Connection, table: str, id_column: str) -> list[dict[str, Any]]:
-    rows = connection.execute(
-        f"SELECT {id_column}, canonical_name, status, attributes_json "
-        f"FROM {table} ORDER BY canonical_name, {id_column}"
-    ).fetchall()
+def _catalog_rows(connection: sqlite3.Connection, sql: str, attributes: tuple[str, ...]) -> list[dict[str, Any]]:
+    rows = connection.execute(sql).fetchall()
     return [
         {
-            "id": str(row[id_column]),
+            "id": row["id"],
             "canonical_name": str(row["canonical_name"]),
             "status": str(row["status"]),
-            "attributes": json.loads(str(row["attributes_json"])),
+            "attributes": {key: row[key] for key in attributes if row[key] not in (None, "")},
         }
         for row in rows
     ]
 
 
 def catalog(path: Path) -> dict[str, list[dict[str, Any]]]:
+    """往来方、产品、单位用库分配的数字编号；库位用文字编号。"""
+
     with _connect(path) as connection:
+        locations = [
+            {
+                "id": str(row["location_id"]),
+                "canonical_name": str(row["canonical_name"]),
+                "status": str(row["status"]),
+                "attributes": json.loads(str(row["attributes_json"])),
+            }
+            for row in connection.execute(
+                "SELECT location_id, canonical_name, status, attributes_json FROM location_catalog "
+                "ORDER BY canonical_name, location_id"
+            )
+        ]
         return {
-            "parties": _catalog_rows(connection, "master_data_parties", "party_id"),
-            "products": _catalog_rows(connection, "master_data_products", "product_id"),
-            "units": _catalog_rows(connection, "master_data_units", "unit_id"),
-            "locations": _catalog_rows(connection, "location_catalog", "location_id"),
+            "parties": _catalog_rows(
+                connection,
+                "SELECT id, canonical_name, legal_name, status FROM business_parties ORDER BY canonical_name, id",
+                ("legal_name",),
+            ),
+            "products": _catalog_rows(
+                connection,
+                "SELECT id, canonical_name, product_family, status FROM products ORDER BY canonical_name, id",
+                ("product_family",),
+            ),
+            "units": _catalog_rows(
+                connection,
+                "SELECT id, display_name AS canonical_name, canonical_code AS code, dimension, factor_to_base, status "
+                "FROM measurement_units ORDER BY display_name, id",
+                ("code", "dimension", "factor_to_base"),
+            ),
+            "locations": locations,
         }
 
 
@@ -62,7 +86,7 @@ def orders(path: Path, kind: str, *, limit: int = 100) -> list[dict[str, Any]]:
         order_rows = connection.execute(
             f"SELECT orders.*, parties.canonical_name AS party_name "
             f"FROM {order_table} AS orders "
-            f"JOIN master_data_parties AS parties ON parties.party_id=orders.{party_column} "
+            f"JOIN business_parties AS parties ON parties.id=orders.{party_column} "
             "ORDER BY orders.ordered_at DESC, orders.order_id DESC LIMIT ?",
             (bounded_limit,),
         ).fetchall()
@@ -72,10 +96,10 @@ def orders(path: Path, kind: str, *, limit: int = 100) -> list[dict[str, Any]]:
             placeholders = ",".join("?" for _ in order_ids)
             line_rows = connection.execute(
                 f"SELECT lines.*, products.canonical_name AS product_name, "
-                f"units.canonical_name AS unit_name, locations.canonical_name AS location_name "
+                f"units.display_name AS unit_name, locations.canonical_name AS location_name "
                 f"FROM {line_table} AS lines "
-                "JOIN master_data_products AS products ON products.product_id=lines.product_id "
-                "JOIN master_data_units AS units ON units.unit_id=lines.unit_id "
+                "JOIN products ON products.id=lines.product_id "
+                "JOIN measurement_units AS units ON units.id=lines.unit_id "
                 f"JOIN location_catalog AS locations ON locations.location_id=lines.{location_column} "
                 f"WHERE lines.order_id IN ({placeholders}) ORDER BY lines.order_id, lines.line_id",
                 tuple(order_ids),
@@ -98,12 +122,12 @@ def inventory(path: Path, *, limit: int = 100) -> dict[str, list[dict[str, Any]]
     bounded_limit = max(1, min(int(limit), 500))
     with _connect(path) as connection:
         products = {
-            str(row["product_id"]): str(row["canonical_name"])
-            for row in connection.execute("SELECT product_id, canonical_name FROM master_data_products")
+            str(row["id"]): str(row["canonical_name"])
+            for row in connection.execute("SELECT id, canonical_name FROM products")
         }
         units = {
-            str(row["unit_id"]): str(row["canonical_name"])
-            for row in connection.execute("SELECT unit_id, canonical_name FROM master_data_units")
+            str(row["id"]): str(row["display_name"])
+            for row in connection.execute("SELECT id, display_name FROM measurement_units")
         }
         locations = {
             str(row["location_id"]): str(row["canonical_name"])
@@ -134,9 +158,9 @@ def inventory(path: Path, *, limit: int = 100) -> dict[str, list[dict[str, Any]]
             movements.append(item)
         balance_items = [
             {
-                "product_id": product_id,
+                "product_id": int(product_id),
                 "product_name": products.get(product_id, product_id),
-                "unit_id": unit_id,
+                "unit_id": int(unit_id),
                 "unit_name": units.get(unit_id, unit_id),
                 "location_id": location_id,
                 "location_name": locations.get(location_id, location_id),
@@ -150,8 +174,8 @@ def inventory(path: Path, *, limit: int = 100) -> dict[str, list[dict[str, Any]]
 def overview(path: Path) -> dict[str, int]:
     with _connect(path) as connection:
         tables = {
-            "parties": "master_data_parties",
-            "products": "master_data_products",
+            "parties": "business_parties",
+            "products": "products",
             "locations": "location_catalog",
             "procurement_orders": "procurement_orders",
             "sales_orders": "sales_orders",

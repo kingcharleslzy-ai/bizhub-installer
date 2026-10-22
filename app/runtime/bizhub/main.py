@@ -55,9 +55,10 @@ class PasswordChangeRequest(StrictModel):
 
 
 class CatalogDraftRequest(StrictModel):
+    # 往来方、产品、单位的编号由库分配（数字）；只有库位由调用方给文字编号 location_id。
     resource_kind: str
-    resource_id: str
     canonical_name: str
+    location_id: str = ""
     source_id: str = ""
     external_id: str = ""
     alias: str = ""
@@ -69,7 +70,7 @@ class CatalogPreviewRequest(StrictModel):
 
 
 class CatalogApplyRequest(StrictModel):
-    schema_version: Literal["bizhub.master-data-catalog-preview.v1"]
+    schema_version: Literal["bizhub.master-data-catalog-preview.v2"]
     state_generation: str
     drafts: list[CatalogDraftRequest]
     preview_digest: str

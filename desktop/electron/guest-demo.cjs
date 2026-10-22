@@ -8,42 +8,60 @@ function isoAt(daysAgo, hour) {
   return value.toISOString();
 }
 
+// 演示资料的固定键：往来方、产品、单位的编号由库分配（数字），地点用这里的键做地点编号。
+const DEMO_CATALOG = [
+  ["party", "demo-supplier-a", "华北原料供应商（演示）", {}],
+  ["party", "demo-supplier-b", "海湾包装供应商（演示）", {}],
+  ["party", "demo-customer-a", "远航设备客户（演示）", {}],
+  ["party", "demo-customer-b", "新辰科技客户（演示）", {}],
+  ["product", "demo-product-crystal", "标准晶体组件（演示）", { product_family: "组件" }],
+  ["product", "demo-product-holder", "精密安装座（演示）", { product_family: "组件" }],
+  ["product", "demo-product-powder", "光学原料粉（演示）", { product_family: "原料" }],
+  ["unit", "demo-unit-piece", "件", { code: "PCS", dimension: "count" }],
+  ["unit", "demo-unit-kilogram", "千克", { code: "KG", dimension: "mass" }],
+  ["location", "demo-location-main", "样板总仓", { kind: "warehouse" }],
+  ["location", "demo-location-production", "生产备料区", { kind: "workshop" }],
+];
+
 function demoCatalogDrafts() {
-  return [
-    ["party", "demo-supplier-a", "华北原料供应商（演示）", { roles: ["supplier"] }],
-    ["party", "demo-supplier-b", "海湾包装供应商（演示）", { roles: ["supplier"] }],
-    ["party", "demo-customer-a", "远航设备客户（演示）", { roles: ["customer"] }],
-    ["party", "demo-customer-b", "新辰科技客户（演示）", { roles: ["customer"] }],
-    ["product", "demo-product-crystal", "标准晶体组件（演示）", { sku: "DEMO-CRYSTAL" }],
-    ["product", "demo-product-holder", "精密安装座（演示）", { sku: "DEMO-HOLDER" }],
-    ["product", "demo-product-powder", "光学原料粉（演示）", { sku: "DEMO-POWDER" }],
-    ["unit", "demo-unit-piece", "件", { code: "PCS" }],
-    ["unit", "demo-unit-kilogram", "千克", { code: "KG" }],
-    ["location", "demo-location-main", "样板总仓", { kind: "warehouse" }],
-    ["location", "demo-location-production", "生产备料区", { kind: "workshop" }],
-  ].map(([resource_kind, resource_id, canonical_name, attributes]) => ({
+  return DEMO_CATALOG.map(([resource_kind, key, canonical_name, attributes]) => ({
     resource_kind,
-    resource_id,
     canonical_name,
+    location_id: resource_kind === "location" ? key : "",
     source_id: "demo-fixture",
-    external_id: resource_id,
+    external_id: key,
     alias: "",
     attributes,
   }));
 }
 
-function demoOwnerCommands() {
+// 把演示键换成库里的编号：catalog 是 /api/delivery/catalog 的读回（按名称找）。
+function demoIdResolver(catalog) {
+  const groups = { party: "parties", product: "products", unit: "units", location: "locations" };
+  const ids = new Map();
+  for (const [kind, key, name] of DEMO_CATALOG) {
+    const found = (catalog?.[groups[kind]] || []).find((item) => item.canonical_name === name);
+    if (found === undefined) throw new Error(`desktop_guest_demo_catalog_missing:${key}`);
+    ids.set(key, found.id);
+  }
+  return (key) => {
+    if (!ids.has(key)) throw new Error(`desktop_guest_demo_key_unknown:${key}`);
+    return ids.get(key);
+  };
+}
+
+function demoOwnerCommands(ref = (key) => key) {
   return [
     ["/api/procurement", {
       action: "create",
       idempotency_key: "demo:procurement:create:001",
       order_id: "DEMO-PO-001",
-      supplier_party_id: "demo-supplier-a",
+      supplier_party_id: ref("demo-supplier-a"),
       ordered_at: isoAt(4, 2),
       lines: [{
         line_id: "DEMO-PO-001-L1",
-        product_id: "demo-product-crystal",
-        unit_id: "demo-unit-piece",
+        product_id: ref("demo-product-crystal"),
+        unit_id: ref("demo-unit-piece"),
         quantity: "120",
         receive_location_id: "demo-location-main",
       }],
@@ -65,12 +83,12 @@ function demoOwnerCommands() {
       action: "create",
       idempotency_key: "demo:procurement:create:002",
       order_id: "DEMO-PO-002",
-      supplier_party_id: "demo-supplier-b",
+      supplier_party_id: ref("demo-supplier-b"),
       ordered_at: isoAt(1, 2),
       lines: [{
         line_id: "DEMO-PO-002-L1",
-        product_id: "demo-product-powder",
-        unit_id: "demo-unit-kilogram",
+        product_id: ref("demo-product-powder"),
+        unit_id: ref("demo-unit-kilogram"),
         quantity: "500",
         receive_location_id: "demo-location-production",
       }],
@@ -81,12 +99,12 @@ function demoOwnerCommands() {
       action: "create",
       idempotency_key: "demo:sales:create:001",
       order_id: "DEMO-SO-001",
-      customer_party_id: "demo-customer-a",
+      customer_party_id: ref("demo-customer-a"),
       ordered_at: isoAt(2, 5),
       lines: [{
         line_id: "DEMO-SO-001-L1",
-        product_id: "demo-product-crystal",
-        unit_id: "demo-unit-piece",
+        product_id: ref("demo-product-crystal"),
+        unit_id: ref("demo-unit-piece"),
         quantity: "50",
         ship_from_location_id: "demo-location-main",
       }],
@@ -108,12 +126,12 @@ function demoOwnerCommands() {
       action: "create",
       idempotency_key: "demo:sales:create:002",
       order_id: "DEMO-SO-002",
-      customer_party_id: "demo-customer-b",
+      customer_party_id: ref("demo-customer-b"),
       ordered_at: isoAt(0, 2),
       lines: [{
         line_id: "DEMO-SO-002-L1",
-        product_id: "demo-product-holder",
-        unit_id: "demo-unit-piece",
+        product_id: ref("demo-product-holder"),
+        unit_id: ref("demo-unit-piece"),
         quantity: "20",
         ship_from_location_id: "demo-location-production",
       }],
@@ -123,8 +141,8 @@ function demoOwnerCommands() {
     ["/api/inventory", {
       action: "inbound",
       idempotency_key: "demo:inventory:inbound:001",
-      product_id: "demo-product-holder",
-      unit_id: "demo-unit-piece",
+      product_id: ref("demo-product-holder"),
+      unit_id: ref("demo-unit-piece"),
       quantity: "25",
       from_location_id: null,
       to_location_id: "demo-location-production",
@@ -206,8 +224,9 @@ async function seedGuestDemo(runtime, fetchRuntime) {
       body: JSON.stringify(catalogPreview),
     },
   );
+  const ref = demoIdResolver(await requestJson(fetchRuntime, runtime, "/api/delivery/catalog"));
   const owners = [];
-  for (const [basePath, command] of demoOwnerCommands()) {
+  for (const [basePath, command] of demoOwnerCommands(ref)) {
     owners.push(await applyOwner(fetchRuntime, runtime, basePath, command));
   }
   const [overview, inventory] = await Promise.all([
@@ -237,6 +256,7 @@ module.exports = {
   DEMO_COMPANY_NAME,
   DEMO_USERNAME,
   demoCatalogDrafts,
+  demoIdResolver,
   demoOwnerCommands,
   seedGuestDemo,
 };

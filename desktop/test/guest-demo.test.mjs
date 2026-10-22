@@ -20,6 +20,8 @@ test("guest fixture is customer-neutral and exercises every Generic Owner", () =
     ["location", "party", "product", "unit"],
   );
   assert.equal(catalog.length, 11);
+  // 只有地点自带编号；其余由库分配。
+  assert.deepEqual(catalog.filter((item) => item.location_id).map((item) => item.resource_kind), ["location", "location"]);
   const commands = demoOwnerCommands();
   assert.deepEqual(
     [...new Set(commands.map(([basePath]) => basePath))].sort(),
@@ -51,6 +53,19 @@ test("guest seed uses preview apply and validates readback", async () => {
         inventory_movements: 3,
       } };
     }
+    if (pathname === "/api/delivery/catalog") {
+      // 库分配的数字编号；地点用演示键。
+      const groups = { party: "parties", product: "products", unit: "units", location: "locations" };
+      const body = { parties: [], products: [], units: [], locations: [] };
+      demoCatalogDrafts().forEach((draft, index) => {
+        body[groups[draft.resource_kind]].push({
+          id: draft.resource_kind === "location" ? draft.location_id : index + 1,
+          canonical_name: draft.canonical_name,
+          status: "active",
+        });
+      });
+      return { response, body };
+    }
     if (pathname === "/api/delivery/inventory") {
       return { response, body: { balances: [{ quantity: "48" }, { quantity: "25" }], movements: [] } };
     }
@@ -68,6 +83,12 @@ test("guest seed uses preview apply and validates readback", async () => {
     };
   };
   const result = await seedGuestDemo({ origin: "http://127.0.0.1:1" }, fetchRuntime);
+  // 单据用库分配的数字编号引用往来方、产品、单位，地点仍是地点编号。
+  const created = requests.find((item) => item.pathname === "/api/procurement/preview");
+  const command = JSON.parse(created.options.body);
+  assert.equal(command.supplier_party_id, 1);
+  assert.equal(typeof command.lines[0].product_id, "number");
+  assert.equal(command.lines[0].receive_location_id, "demo-location-main");
   assert.equal(result.schema_version, "bizhub.desktop-guest-demo-readback.v1");
   assert.equal(result.overview.inventory_movements, 3);
   assert.equal(result.inventory_balances.length, 2);

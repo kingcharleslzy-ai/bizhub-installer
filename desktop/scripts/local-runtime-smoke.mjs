@@ -193,14 +193,15 @@ try {
   assert.equal(emptyDelivery.body.sales_orders, 0);
 
   const drafts = [
-    { resource_kind: "party", resource_id: "supplier-1", canonical_name: "Synthetic Supplier" },
-    { resource_kind: "product", resource_id: "product-1", canonical_name: "Synthetic Product" },
-    { resource_kind: "unit", resource_id: "kg", canonical_name: "Kilogram" },
-    { resource_kind: "location", resource_id: "warehouse-1", canonical_name: "Synthetic Warehouse" },
+    // 往来方、产品、单位的编号由库分配（数字）；只有地点自带编号。
+    { resource_kind: "party", canonical_name: "Synthetic Supplier" },
+    { resource_kind: "product", canonical_name: "Synthetic Product" },
+    { resource_kind: "unit", canonical_name: "Kilogram", attributes: { code: "kg", dimension: "mass" } },
+    { resource_kind: "location", location_id: "warehouse-1", canonical_name: "Synthetic Warehouse" },
   ];
   const preview = await mutation(runtime, "/api/master-data/catalog/preview", { drafts });
   assert.equal(preview.response.status, 200);
-  assert.equal(preview.body.schema_version, "bizhub.master-data-catalog-preview.v1");
+  assert.equal(preview.body.schema_version, "bizhub.master-data-catalog-preview.v2");
   const applied = await mutation(runtime, "/api/master-data/catalog/apply", preview.body);
   assert.equal(applied.response.status, 200);
   assert.equal(applied.body.owner_ref, "master_data:catalog-owner");
@@ -224,12 +225,16 @@ try {
   const deliveryCatalog = await fetchRuntime(runtime, "/api/delivery/catalog");
   assert.equal(deliveryCatalog.response.status, 200);
   assert.equal(deliveryCatalog.body.locations[0].id, "warehouse-1");
+  const supplierId = deliveryCatalog.body.parties[0].id;
+  const productId = deliveryCatalog.body.products[0].id;
+  const unitId = deliveryCatalog.body.units[0].id;
+  assert.ok([supplierId, productId, unitId].every(Number.isInteger));
 
   const inventoryPreview = await mutation(runtime, "/api/inventory/preview", {
     action: "inbound",
     idempotency_key: "desktop-smoke:inventory-opening",
-    product_id: "product-1",
-    unit_id: "kg",
+    product_id: productId,
+    unit_id: unitId,
     quantity: "10",
     from_location_id: null,
     to_location_id: "warehouse-1",
@@ -249,12 +254,12 @@ try {
     action: "create",
     idempotency_key: "desktop-smoke:procurement-create",
     order_id: "PO-DESKTOP-1",
-    supplier_party_id: "supplier-1",
+    supplier_party_id: supplierId,
     ordered_at: "2026-08-28T02:00:00.000Z",
     lines: [{
       line_id: "PO-DESKTOP-1-L1",
-      product_id: "product-1",
-      unit_id: "kg",
+      product_id: productId,
+      unit_id: unitId,
       quantity: "4",
       receive_location_id: "warehouse-1",
     }],
@@ -293,12 +298,12 @@ try {
     action: "create",
     idempotency_key: "desktop-smoke:sales-create",
     order_id: "SO-DESKTOP-1",
-    customer_party_id: "supplier-1",
+    customer_party_id: supplierId,
     ordered_at: "2026-08-28T04:00:00.000Z",
     lines: [{
       line_id: "SO-DESKTOP-1-L1",
-      product_id: "product-1",
-      unit_id: "kg",
+      product_id: productId,
+      unit_id: unitId,
       quantity: "3",
       ship_from_location_id: "warehouse-1",
     }],
