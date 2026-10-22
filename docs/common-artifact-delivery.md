@@ -58,9 +58,10 @@ release updates them. A source candidate is not a published installer.
 
 ## Standard master-data tables (2026-10-22 candidate)
 
-The artifact now comes from upstream source commit `06a9e6c5e82decc33522449955492a9b18172cc2`
-(74 files; includes the upstream fix that computes the profile source digest under the
-registry root, so the packaged Desktop Runtime no longer fails with 500 on agent sources). Master data uses one set of standard tables shared with the private profile:
+The artifact now comes from upstream source commit `b1365d38dee299e320546713f988aa93faaae638`
+(74 files; includes the upstream fixes that compute the profile source digest under the
+registry root, so the packaged Desktop Runtime no longer fails with 500 on agent sources, and
+that make the first-initialization lock work on Windows instead of importing `fcntl`). Master data uses one set of standard tables shared with the private profile:
 `business_parties`, `products` and `measurement_units` with storage-assigned integer ids;
 `location_catalog` keeps caller-supplied text `location_id`. Consequences for this repository:
 
