@@ -7,7 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
+import { assertMacosSmokeUnchanged, smokeKeychainArguments, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
 
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
@@ -291,9 +291,7 @@ async function launchDesktopProcess() {
   debugPort = await unusedPort();
   const executable = packagedExecutable || require("electron");
   const electronUserDataArgument = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
-  // 冒烟只验加密记住登录的流程，不碰登录钥匙串：换了 Electron 版本后真钥匙串会弹密码框，
-  // 本机打断使用者，CI 上没人点就一直卡住。
-  const keychainArguments = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+  const keychainArguments = smokeKeychainArguments();
   const executableArguments = packagedExecutable
     ? ["--ignore-certificate-errors", ...keychainArguments, electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
     : [

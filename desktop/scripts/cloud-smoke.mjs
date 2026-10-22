@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { smokeKeychainArguments } from "./macos-smoke-app.mjs";
 
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
@@ -88,7 +89,7 @@ try {
 
   const developmentExecutable = require("electron");
   const executable = packagedExecutable || developmentExecutable;
-  const child = spawn(executable, packagedExecutable ? [] : [ROOT], {
+  const child = spawn(executable, [...smokeKeychainArguments(), ...(packagedExecutable ? [] : [ROOT])], {
     cwd: ROOT,
     env: {
       ...process.env,
