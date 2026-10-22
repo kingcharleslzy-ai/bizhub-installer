@@ -4,3 +4,4 @@ openai==2.44.0
 openai-agents==0.17.7
 pydantic==2.13.3
 uvicorn==0.35.0
+tzdata==2026.5
