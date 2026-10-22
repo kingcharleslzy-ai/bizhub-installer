@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "c3128f26b83f2580828515c5f71e341d98e277904c69907cb4a77d4771f97bbf",
-  "allowlist_tree_digest": "6291e3a83f2732d181d940998a141e6bd0ce02fca3dfb58b36b49e6ea6e939bb",
+  "allowlist_tree_digest": "469fc8e5f700c7166cf3dd86b4d88120c666315b2cca824fc5030722c8e8d092",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "05442955e618dc3197e6958d94b7ab79cb735983e2e150920d5f2b6939ea70c2",
-  "core_artifact_digest": "sha256:05442955e618dc3197e6958d94b7ab79cb735983e2e150920d5f2b6939ea70c2",
+  "artifact_sha256": "a5e760d3ea77d191fc81f2a4db7be6b5d650a588f9f6222efbbc380ea2ec04d5",
+  "core_artifact_digest": "sha256:a5e760d3ea77d191fc81f2a4db7be6b5d650a588f9f6222efbbc380ea2ec04d5",
   "deterministic_rebuild_equal": true,
   "file_count": 74,
   "files": [
@@ -24,13 +24,13 @@
     },
     {
       "path": "backend/generic_kernel/agent_common.py",
-      "sha256": "75b73d295d70ec08223a02ae81763606115fa18499a05292c81d4c0fff86a32a",
-      "size": 78712
+      "sha256": "a6cc27c5ec6176472749d2bf05348430606e8230ee6b08a7b67fa1a0b5336ff4",
+      "size": 78856
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "4afbf36b3f23ae96bb10f1be738709146b674dbe2dd2ff2133e4c9ff8557f96d",
-      "size": 50278
+      "sha256": "4c62dd6ced29558a08b9bfeb37a2725b03a67681299ef9b23ce978f616f24438",
+      "size": 50350
     },
     {
       "path": "backend/generic_kernel/backup.py",
@@ -380,5 +380,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "1db82d3257ff374a79ecb997ac65616e05f8429c"
+  "source_commit": "06a9e6c5e82decc33522449955492a9b18172cc2"
 }

@@ -7,11 +7,11 @@
   "platform": "win32",
   "architecture": "x64",
   "artifact_id": "bizhub-common",
-  "core_artifact_digest": "sha256:623c5c8b3d24b3e5407f91634f715d31fd8df5f71d098323b4f05db8fecd4426",
-  "core_source_commit": "8f8ce71ec351f067f05a9ab0d539302ccdddb231",
-  "allowlist_tree_digest": "d45c1b6f60d1322d1e0b3f73851d4f38d652eec1b2a0b014811dc3c47dc6b571",
-  "runtime_source_tree_digest": "e3d23033ad1c04f4fca0bc322448ff3abb1322da84ef3dd62a8be01c525ba0d0",
-  "runtime_manifest_sha256": "8fc0184f9444be1866cd27723617fb1f7e463e7bef84027b57c92f046bc20f5f",
-  "runtime_pack_tree_digest": "f74bc9e287d0dba5c9187df55d5ab7986aea0d21b03e155aedd9dd96570c1f8c",
-  "runtime_pack_file_count": 187
+  "core_artifact_digest": "sha256:a5e760d3ea77d191fc81f2a4db7be6b5d650a588f9f6222efbbc380ea2ec04d5",
+  "core_source_commit": "06a9e6c5e82decc33522449955492a9b18172cc2",
+  "allowlist_tree_digest": "469fc8e5f700c7166cf3dd86b4d88120c666315b2cca824fc5030722c8e8d092",
+  "runtime_source_tree_digest": "540a19cc4d9d6f8c94134005292dda2fdfbd1fd0d9a4a0968ab050c5e7d2879e",
+  "runtime_manifest_sha256": "f809accc8a3cbe600f6a8be711175856b78726ea71b72869bb339b3719d7bab1",
+  "runtime_pack_tree_digest": "7353ef44116b346f19d3e9708b5ca5c81f2152be46a0fcb0e4c2a2e571dcbb47",
+  "runtime_pack_file_count": 216
 }
