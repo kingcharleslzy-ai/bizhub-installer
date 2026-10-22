@@ -291,10 +291,14 @@ async function launchDesktopProcess() {
   debugPort = await unusedPort();
   const executable = packagedExecutable || require("electron");
   const electronUserDataArgument = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
+  // 冒烟只验加密记住登录的流程，不碰登录钥匙串：换了 Electron 版本后真钥匙串会弹密码框，
+  // 本机打断使用者，CI 上没人点就一直卡住。
+  const keychainArguments = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
   const executableArguments = packagedExecutable
-    ? ["--ignore-certificate-errors", electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
+    ? ["--ignore-certificate-errors", ...keychainArguments, electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
     : [
       "--ignore-certificate-errors",
+      ...keychainArguments,
       electronUserDataArgument,
       `--remote-debugging-port=${debugPort}`,
       ROOT,
