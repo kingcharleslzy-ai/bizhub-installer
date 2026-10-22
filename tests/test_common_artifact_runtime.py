@@ -209,12 +209,13 @@ with TestClient(app) as client:
     assert handoff.json()["successor_must_revalidate"] == [
         "workspace", "profile", "release", "permissions", "evidence_refs"
     ]
+    # 往来方、产品、单位的编号由库分配（数字）；只有库位由调用方给文字编号。
     drafts = [
-        {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
-        {"resource_kind": "party", "resource_id": "customer-1", "canonical_name": "Customer One"},
-        {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},
-        {"resource_kind": "unit", "resource_id": "kg", "canonical_name": "Kilogram"},
-        {"resource_kind": "location", "resource_id": "warehouse-1", "canonical_name": "Warehouse One"},
+        {"resource_kind": "party", "canonical_name": "Supplier One"},
+        {"resource_kind": "party", "canonical_name": "Customer One"},
+        {"resource_kind": "product", "canonical_name": "Product One"},
+        {"resource_kind": "unit", "canonical_name": "Kilogram", "attributes": {"code": "kg", "dimension": "mass"}},
+        {"resource_kind": "location", "location_id": "warehouse-1", "canonical_name": "Warehouse One"},
     ]
     preview = client.post(
         "/api/master-data/catalog/preview",
@@ -233,6 +234,17 @@ with TestClient(app) as client:
         json=preview,
     ).json()
     assert replay["disposition"] == "idempotent_noop"
+    delivered = client.get("/api/delivery/catalog").json()
+    ids = {
+        (kind, item["canonical_name"]): item["id"]
+        for kind in ("parties", "products", "units", "locations")
+        for item in delivered[kind]
+    }
+    supplier_id, customer_id = ids[("parties", "Supplier One")], ids[("parties", "Customer One")]
+    product_id, unit_id = ids[("products", "Product One")], ids[("units", "Kilogram")]
+    assert all(isinstance(value, int) for value in (supplier_id, customer_id, product_id, unit_id))
+    assert ids[("locations", "Warehouse One")] == "warehouse-1"
+    assert delivered["units"][0]["attributes"]["code"] == "kg"
     agent_headers = {"X-BizHub-Request": "1"}
     source_text = "客户 Customer One 订 3 kg Product One，从 Warehouse One 发货，外箱要贴标签。"
     source_extra = {
@@ -273,13 +285,13 @@ with TestClient(app) as client:
         "action": "create",
         "idempotency_key": "public-runtime-procurement-write-0001",
         "order_id": "po-public-0001",
-        "supplier_party_id": "supplier-1",
+        "supplier_party_id": supplier_id,
         "ordered_at": "2026-10-07T08:00:00+00:00",
         "lines": [
             {
                 "line_id": "po-public-0001-l1",
-                "product_id": "product-1",
-                "unit_id": "kg",
+                "product_id": product_id,
+                "unit_id": unit_id,
                 "quantity": "5",
                 "receive_location_id": "warehouse-1",
             }
@@ -307,13 +319,13 @@ with TestClient(app) as client:
         "action": "create",
         "idempotency_key": "public-runtime-sales-write-0001",
         "order_id": "so-public-0001",
-        "customer_party_id": "customer-1",
+        "customer_party_id": customer_id,
         "ordered_at": "2026-10-07T08:30:00+00:00",
         "lines": [
             {
                 "line_id": "so-public-0001-l1",
-                "product_id": "product-1",
-                "unit_id": "kg",
+                "product_id": product_id,
+                "unit_id": unit_id,
                 "quantity": "3",
                 "ship_from_location_id": "warehouse-1",
             }
@@ -334,6 +346,14 @@ with TestClient(app) as client:
     sales_orders_listed = client.get("/api/sales/orders")
     assert sales_orders_listed.status_code == 200
     assert [order["order_id"] for order in sales_orders_listed.json()["items"]] == ["so-public-0001"]
+    # 桌面端读模型按新标准表与数字编号读出名称。
+    [delivered_sale] = client.get("/api/delivery/sales/orders").json()["items"]
+    assert delivered_sale["party_name"] == "Customer One"
+    assert [(line["product_name"], line["unit_name"], line["location_name"]) for line in delivered_sale["lines"]] == [
+        ("Product One", "Kilogram", "Warehouse One")
+    ]
+    assert client.get("/api/delivery/overview").json()["parties"] == 2
+    assert client.get("/api/delivery/inventory").json() == {"balances": [], "movements": []}
 assert verify()["status"] == "ok"
 '''
     completed = subprocess.run(

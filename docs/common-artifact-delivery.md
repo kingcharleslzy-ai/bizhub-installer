@@ -27,7 +27,7 @@ transition.
 
 ## Public boundary
 
-The current common manifest contains 45 allowlisted text files. Its generated scan
+The current common manifest contains 74 allowlisted text files. Its generated scan
 rejects customer names, private module paths, private frontends, source maps,
 credentials, and secret references. Public tests also verify that the container
 copies the generated artifact and delivery adapter and that the retired legacy
@@ -55,6 +55,23 @@ An upstream merge proves neither public delivery nor customer usability. A
 public update must verify the generated boundary and actual public entrypoints.
 Clients already distributed retain their previous core until an immutable
 release updates them. A source candidate is not a published installer.
+
+## Standard master-data tables (2026-10-22 candidate)
+
+The artifact now comes from upstream source commit `1db82d3257ff374a79ecb997ac65616e05f8429c`
+(74 files). Master data uses one set of standard tables shared with the private profile:
+`business_parties`, `products` and `measurement_units` with storage-assigned integer ids;
+`location_catalog` keeps caller-supplied text `location_id`. Consequences for this repository:
+
+- `/api/master-data/catalog/preview` drafts no longer carry `resource_id`; only locations send
+  `location_id`, and a unit needs `attributes.code` (optionally `dimension`, `factor_to_base`).
+  The preview schema is `bizhub.master-data-catalog-preview.v2`.
+- Procurement, sales and inventory commands reference parties, products and units by those
+  integer ids; read them from `/api/delivery/catalog` after creating the catalog.
+- The generic lineage restarted from a new baseline. A database created by 0.1.22 or earlier is
+  refused (`generic_migration_content_drift`) and left untouched; such test installs are reset
+  rather than upgraded. The cross-version upgrade/rollback smoke for the next release must be
+  decided with that boundary in mind.
 
 ## Generic sales agent sources (2026-10-07 candidate)
 

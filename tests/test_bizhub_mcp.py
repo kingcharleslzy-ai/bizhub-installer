@@ -134,7 +134,7 @@ class BizHubMcpTests(unittest.TestCase):
                 locations = session.tool(2, "bizhub_resource_query", {"resource": "locations"})["structuredContent"]
                 system_map = session.tool(3, "bizhub_resource_query", {"resource": "system_map"})["structuredContent"]
                 movements = session.tool(4, "bizhub_resource_query", {"resource": "inventory", "limit": 10})["structuredContent"]
-                data = {"drafts": [{"resource_kind": "unit", "resource_id": "pcs", "canonical_name": "Pieces"}]}
+                data = {"drafts": [{"resource_kind": "unit", "canonical_name": "Pieces", "attributes": {"code": "pcs", "dimension": "count"}}]}
                 preview = session.tool(5, "bizhub_action_preview", {"action": "master_data", "data": data})["structuredContent"]
                 applied = session.tool(6, "bizhub_action_apply", {"action": "master_data", "preview": preview})["structuredContent"]
         server.shutdown(); server.server_close(); thread.join(timeout=2)

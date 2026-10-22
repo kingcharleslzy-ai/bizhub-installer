@@ -77,18 +77,38 @@ class Api:
         return self.call("/api/actions/apply", {"action": action, "data": data, "preview_token": preview["preview_token"], "review_note": "confirmed synthetic E2E action"})
 
 
+def catalog_ids(api: Api) -> dict[str, int | str]:
+    """往来方、产品、单位的编号由库分配（数字）；地点用自己的地点编号。"""
+
+    catalog = api.call("/api/delivery/catalog")
+    named = {
+        (group, item["canonical_name"]): item["id"]
+        for group in ("parties", "products", "units", "locations")
+        for item in catalog[group]
+    }
+    return {
+        "supplier": named[("parties", "Supplier One")],
+        "customer": named[("parties", "Customer One")],
+        "product": named[("products", "Product One")],
+        "unit": named[("units", "Kilogram")],
+        "location": named[("locations", "Warehouse One")],
+    }
+
+
 def inventory_quantity(api: Api) -> str:
+    ids = catalog_ids(api)
     return api.call(
-        "/api/inventory/balance?product_id=product-1&unit_id=kg&location_id=warehouse-1"
+        f"/api/inventory/balance?product_id={ids['product']}&unit_id={ids['unit']}&location_id={ids['location']}"
     )["quantity"]
 
 
 def apply_inventory_inbound(api: Api, key: str, quantity: str) -> dict:
+    ids = catalog_ids(api)
     command = {
         "action": "inbound",
         "idempotency_key": key,
-        "product_id": "product-1",
-        "unit_id": "kg",
+        "product_id": ids["product"],
+        "unit_id": ids["unit"],
         "quantity": quantity,
         "from_location_id": None,
         "to_location_id": "warehouse-1",
@@ -125,16 +145,17 @@ def assert_effective_cgroup_limits(plan: Path) -> None:
 
 def exercise_business_flow(api: Api) -> None:
     drafts = [
-        {"resource_kind": "party", "resource_id": "supplier-1", "canonical_name": "Supplier One"},
-        {"resource_kind": "party", "resource_id": "customer-1", "canonical_name": "Customer One"},
-        {"resource_kind": "product", "resource_id": "product-1", "canonical_name": "Product One"},
-        {"resource_kind": "unit", "resource_id": "kg", "canonical_name": "Kilogram"},
-        {"resource_kind": "location", "resource_id": "warehouse-1", "canonical_name": "Warehouse One"},
+        {"resource_kind": "party", "canonical_name": "Supplier One"},
+        {"resource_kind": "party", "canonical_name": "Customer One"},
+        {"resource_kind": "product", "canonical_name": "Product One"},
+        {"resource_kind": "unit", "canonical_name": "Kilogram", "attributes": {"code": "kg", "dimension": "mass"}},
+        {"resource_kind": "location", "location_id": "warehouse-1", "canonical_name": "Warehouse One"},
     ]
     catalog_preview = api.call("/api/master-data/catalog/preview", {"drafts": drafts})
     catalog = api.call("/api/master-data/catalog/apply", catalog_preview)
     assert catalog["owner_ref"] == "master_data:catalog-owner"
     assert api.call("/api/master-data/catalog/apply", catalog_preview)["disposition"] == "idempotent_noop"
+    ids = catalog_ids(api)
 
     def apply_typed(path: str, command: dict) -> tuple[dict, dict]:
         preview = api.call(f"{path}/preview", command)
@@ -142,8 +163,8 @@ def exercise_business_flow(api: Api) -> None:
 
     _, purchase = apply_typed("/api/procurement", {
         "action": "create", "idempotency_key": "po-create", "order_id": "po-1",
-        "supplier_party_id": "supplier-1", "ordered_at": "2026-08-23T08:00:00+00:00",
-        "lines": [{"line_id": "po-line-1", "product_id": "product-1", "unit_id": "kg", "quantity": "10", "receive_location_id": "warehouse-1"}],
+        "supplier_party_id": ids["supplier"], "ordered_at": "2026-08-23T08:00:00+00:00",
+        "lines": [{"line_id": "po-line-1", "product_id": ids["product"], "unit_id": ids["unit"], "quantity": "10", "receive_location_id": "warehouse-1"}],
         "source_ref": "synthetic:procurement", "evidence_refs": ["evidence:po-1"],
     })
     assert purchase["owner_ref"] == "procurement:order-owner"
@@ -156,8 +177,8 @@ def exercise_business_flow(api: Api) -> None:
 
     _, sale = apply_typed("/api/sales", {
         "action": "create", "idempotency_key": "so-create", "order_id": "so-1",
-        "customer_party_id": "customer-1", "ordered_at": "2026-08-23T10:00:00+00:00",
-        "lines": [{"line_id": "so-line-1", "product_id": "product-1", "unit_id": "kg", "quantity": "10", "ship_from_location_id": "warehouse-1"}],
+        "customer_party_id": ids["customer"], "ordered_at": "2026-08-23T10:00:00+00:00",
+        "lines": [{"line_id": "so-line-1", "product_id": ids["product"], "unit_id": ids["unit"], "quantity": "10", "ship_from_location_id": "warehouse-1"}],
         "source_ref": "synthetic:sales", "evidence_refs": ["evidence:so-1"],
     })
     assert sale["owner_ref"] == "sales:order-owner"
