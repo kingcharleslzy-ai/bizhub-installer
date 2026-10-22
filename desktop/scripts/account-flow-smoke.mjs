@@ -7,7 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-import { assertMacosSmokeUnchanged, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
+import { assertMacosSmokeUnchanged, smokeKeychainArguments, stageMacosSmokeApp, treeDigest, verifyMacosSmokeApp } from "./macos-smoke-app.mjs";
 
 const require = createRequire(import.meta.url);
 const { signatureInput } = require("../electron/connection-profile.cjs");
@@ -291,10 +291,12 @@ async function launchDesktopProcess() {
   debugPort = await unusedPort();
   const executable = packagedExecutable || require("electron");
   const electronUserDataArgument = `--user-data-dir=${path.join(userDataRoot, "electron-profile")}`;
+  const keychainArguments = smokeKeychainArguments();
   const executableArguments = packagedExecutable
-    ? ["--ignore-certificate-errors", electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
+    ? ["--ignore-certificate-errors", ...keychainArguments, electronUserDataArgument, `--remote-debugging-port=${debugPort}`]
     : [
       "--ignore-certificate-errors",
+      ...keychainArguments,
       electronUserDataArgument,
       `--remote-debugging-port=${debugPort}`,
       ROOT,
