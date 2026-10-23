@@ -82,7 +82,9 @@ common owners resolve business time with `ZoneInfo("Asia/Shanghai")`. Master dat
 0.1.22 及以前的测试安装需要重装，不补旧基线桥接。
 
 发现待执行迁移时，正式初始化入口先在实例的 `backups` 目录创建并校验升级前备份；
-Docker 默认使用数据卷内的 `backups`，可通过 `BIZHUB_BACKUP_DIR` 指定实例备份目录。
+托管 Docker 由 `bizhubctl` 统一设置 `BIZHUB_BACKUP_DIR=/backups`，与手动备份和
+`bizhubctl restore` 共用持久化备份挂载（宿主默认 `/var/backups/bizhub`）。
+其他运行方式可通过 `BIZHUB_BACKUP_DIR` 指定实例备份目录。
 备份文件名为 `pre-upgrade-<UTC>-v<old>-to-v<new>.sqlite`，同时保存校验 manifest，
 仅轮换此类备份并保留最近 5 份。备份或升级失败时原库不动；重复启动不新增备份。
 

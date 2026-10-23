@@ -556,6 +556,7 @@ def docker_mounts(plan: dict[str, Any]) -> list[str]:
         "-v", f"{ETC}:/config:ro",
         "-v", f"{APP_DATA}:/data",
         "-v", f"{BACKUPS}:/backups",
+        "-e", "BIZHUB_BACKUP_DIR=/backups",
         "-e", f"BIZHUB_COOKIE_SECURE={'1' if plan['instance']['cookie_secure'] else '0'}",
     ]
 
