@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "29f03309f6da91de664d79992e02bdac8d216e4ad736611dee7ac52b1ea9a823",
-  "allowlist_tree_digest": "393d71dc5034d2182d873accedc1601978378d616856cf711bd40b600a3f35b2",
+  "allowlist_tree_digest": "713f31142e4daaea3b7b34e26eff772ae73e6c37eafe7e73e65244200ab6e589",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "ecdf4827011979ae7a72d9ff695fb57e0c9091edc2e22097c2833f963659b3e1",
-  "core_artifact_digest": "sha256:ecdf4827011979ae7a72d9ff695fb57e0c9091edc2e22097c2833f963659b3e1",
+  "artifact_sha256": "8e9fa6968a4ca64aded01552e6459034e6097dc879fd13b1e5dbedf59831e987",
+  "core_artifact_digest": "sha256:8e9fa6968a4ca64aded01552e6459034e6097dc879fd13b1e5dbedf59831e987",
   "deterministic_rebuild_equal": true,
   "file_count": 77,
   "files": [
@@ -224,8 +224,8 @@
     },
     {
       "path": "backend/modules/master_data/schema.py",
-      "sha256": "9aa78d8a51bc4ee852702aad398334dcb600134eb60802145777c8d9b5bb7f0d",
-      "size": 25631
+      "sha256": "bd7a25459c705791dee897ea148f50d0fca419d18fbf8d9cc218309362f12dfd",
+      "size": 26094
     },
     {
       "path": "backend/modules/master_data/writes.py",
@@ -309,8 +309,8 @@
     },
     {
       "path": "backend/modules/procurement/owner.py",
-      "sha256": "748e0987a1dc1e7ac756dda90282d52bd6ebd2ab8d6926aedf7ca140cef12874",
-      "size": 115763
+      "sha256": "516c321779774f6065df2c4b4d64c453912e1fa9d03fe51f9ffca21721966f63",
+      "size": 115917
     },
     {
       "path": "backend/modules/procurement/public.py",
@@ -395,5 +395,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "c296ba514b36011f55698ccebcc3f5a6bbd509c4"
+  "source_commit": "7f198b1dc8fd25b637eaf9b3a6ce1bd93ebc2818"
 }
