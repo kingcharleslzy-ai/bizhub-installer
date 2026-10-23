@@ -58,7 +58,7 @@ release updates them. A source candidate is not a published installer.
 
 ## Standard master-data tables (2026-10-22 candidate)
 
-The artifact now comes from upstream source commit `b1365d38dee299e320546713f988aa93faaae638`
+The artifact now comes from upstream source commit `72a90dcefa2bf0e11d2e263c57caf4e8fcc95ddc`
 (74 files; includes the upstream fixes that compute the profile source digest under the
 registry root, so the packaged Desktop Runtime no longer fails with 500 on agent sources, and
 that make the first-initialization lock work on Windows instead of importing `fcntl`).
@@ -73,9 +73,21 @@ common owners resolve business time with `ZoneInfo("Asia/Shanghai")`. Master dat
 - Procurement, sales and inventory commands reference parties, products and units by those
   integer ids; read them from `/api/delivery/catalog` after creating the catalog.
 - The generic lineage restarted from a new baseline. A database created by 0.1.22 or earlier is
-  refused (`generic_migration_content_drift`) and left untouched; such test installs are reset
-  rather than upgraded. The cross-version upgrade/rollback smoke for the next release must be
-  decided with that boundary in mind.
+  refused (`generic_migration_content_drift`) and left untouched; such test installs require
+  reinstallation rather than an upgrade.
+
+## 向前升级（0.1.23 起）
+
+0.1.23 是首个保证自动升级的安装基线。已发布的迁移内容冻结，后续版本只能新增迁移；
+0.1.22 及以前的测试安装需要重装，不补旧基线桥接。
+
+发现待执行迁移时，正式初始化入口先在实例的 `backups` 目录创建并校验升级前备份；
+Docker 默认使用数据卷内的 `backups`，可通过 `BIZHUB_BACKUP_DIR` 指定实例备份目录。
+备份文件名为 `pre-upgrade-<UTC>-v<old>-to-v<new>.sqlite`，同时保存校验 manifest，
+仅轮换此类备份并保留最近 5 份。备份或升级失败时原库不动；重复启动不新增备份。
+
+升级后的库装回旧程序时会报 `generic_database_newer_than_program`，旧程序不会降级改库。
+需要回退时，应使用对应的升级前备份及 manifest 经正式恢复入口还原，再运行旧程序。
 
 ## Generic sales agent sources (2026-10-07 candidate)
 

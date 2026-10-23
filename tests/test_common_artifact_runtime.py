@@ -373,3 +373,78 @@ def test_container_activates_delivery_adapter_without_legacy_core() -> None:
     assert "COPY runtime/bizhub ./bizhub" in dockerfile
     assert "COPY backend/bizhub" not in dockerfile
     assert not (ROOT / "app/backend/bizhub").exists()
+
+
+def test_runtime_upgrades_existing_database_with_one_valid_backup(tmp_path: Path) -> None:
+    common = tmp_path / "common"
+    common.mkdir()
+    with tarfile.open(ROOT / "app/vendor/bizhub-common.tar.gz", "r:gz") as archive:
+        archive.extractall(common, filter="data")
+    manifest_path = ROOT / "app/vendor/bizhub-common-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    company = tmp_path / "company.json"
+    company.write_text(json.dumps({
+        "data_identity": "deployment:synthetic-upgrade",
+        "display_name": "Synthetic Upgrade",
+        "data_authority_mode": "local",
+    }), encoding="utf-8")
+    backup_dir = tmp_path / "instance-backups"
+    environment = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(ROOT / "app/runtime"), str(common)]),
+        "BIZHUB_COMMON_ROOT": str(common),
+        "BIZHUB_COMMON_MANIFEST": str(manifest_path),
+        "BIZHUB_CORE_ARTIFACT_DIGEST": manifest["core_artifact_digest"],
+        "BIZHUB_GENERIC_DATABASE_PATH": str(tmp_path / "data" / "bizhub.db"),
+        "BIZHUB_BACKUP_DIR": str(backup_dir),
+        "BIZHUB_COMPANY_CONFIG": str(company),
+    }
+    script = r'''
+import hashlib
+import os
+import subprocess
+import sys
+from pathlib import Path
+from backend.generic_kernel.migrations import MIGRATIONS, ensure_generic_database, readback_database
+from bizhub.config import backup_dir, database_path
+from bizhub.core import initialize_database
+
+ensure_generic_database(database_path(), migrations=MIGRATIONS[:14])
+assert readback_database(database_path(), migrations=MIGRATIONS[:14])["schema_version"] == 14
+assert backup_dir() == Path(os.environ["BIZHUB_BACKUP_DIR"])
+initialize_database()
+assert readback_database(database_path())["schema_version"] == 15
+[backup] = list(backup_dir().glob("pre-upgrade-*-v14-to-v15.sqlite"))
+manifest = backup.with_suffix(".sqlite.manifest.json")
+assert manifest.is_file()
+assert sorted(item.name for item in backup_dir().iterdir()) == sorted([backup.name, manifest.name])
+assert readback_database(backup, migrations=MIGRATIONS[:14])["schema_version"] == 14
+validated = subprocess.run(
+    [sys.executable, "-m", "bizhub.manage", "validate-backup", "--backup", str(backup), "--manifest", str(manifest)],
+    capture_output=True, text=True,
+)
+assert validated.returncode == 0, validated.stderr or validated.stdout
+import json
+assert json.loads(validated.stdout)["status"] == "valid"
+current_digest = hashlib.sha256(database_path().read_bytes()).hexdigest()
+bad_manifest = database_path().parent / "bad-manifest.json"
+payload = json.loads(manifest.read_text())
+payload["database_sha256"] = "0" * 64
+bad_manifest.write_text(json.dumps(payload))
+rejected = subprocess.run(
+    [sys.executable, "-m", "bizhub.manage", "validate-backup", "--backup", str(backup), "--manifest", str(bad_manifest)],
+    capture_output=True, text=True,
+)
+assert rejected.returncode != 0
+assert "generic_backup_content_drift" in rejected.stderr
+assert hashlib.sha256(database_path().read_bytes()).hexdigest() == current_digest
+before = {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in backup_dir().iterdir()}
+initialize_database()
+assert {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in backup_dir().iterdir()} == before
+assert readback_database(database_path())["schema_version"] == 15
+'''
+    completed = subprocess.run(
+        [sys.executable, "-c", script], cwd=tmp_path, env=environment,
+        capture_output=True, text=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout

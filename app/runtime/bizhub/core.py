@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from backend.generic_kernel.migrations import (
     ensure_generic_database,
     migrations_for_modules,
@@ -27,8 +29,13 @@ def active_migrations():
     return migrations_for_modules(module_ids())
 
 
-def database_migrations():
-    return retained_migrations_for_database(database_path(), active_migrations())
+def database_migrations(path: Path | None = None):
+    # An explicit path is an existing snapshot: validate its recorded schema,
+    # without adding the running program's pending migrations.
+    return retained_migrations_for_database(
+        path if path is not None else database_path(),
+        () if path is not None else active_migrations(),
+    )
 
 
 def initialize_database() -> None:
