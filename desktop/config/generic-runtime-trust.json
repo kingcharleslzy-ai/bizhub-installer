@@ -7,11 +7,11 @@
   "platform": "darwin",
   "architecture": "arm64",
   "artifact_id": "bizhub-common",
-  "core_artifact_digest": "sha256:51e407f265a5ae30623f0c4405200e54d7289fe255fbce43782110fd8d0c3554",
-  "core_source_commit": "699a5fd9c1bb4f89bb8c6cef450eb5cd00307ef7",
-  "allowlist_tree_digest": "a26458102f68e7fa7030a6a027fe5b71f714de6eb28759572482239fe835216d",
+  "core_artifact_digest": "sha256:271fb2771305188c66860793ca7b0d6dec9088a87ab571a8e120beb6e513b44e",
+  "core_source_commit": "f1ae413b3e2c0e4fc956bc7bc936c6c13498427f",
+  "allowlist_tree_digest": "e9ed269a223d416c9fde25fff7b5c81f7b828d5ee77528a62bfd3e0ef3b96525",
   "runtime_source_tree_digest": "889f5dffaddd9feda2a73cfb5ab3a20c58e9caf3d4154f018aa98715ffb8c750",
-  "runtime_manifest_sha256": "73f52377d295a7fce960b5d85c2d7924dc56a8501087730f318cd7d4184a89a0",
-  "runtime_pack_tree_digest": "a8a2e5c1f14f33750e5b62298efea21c7d61b004a3de4b5a77b18caf6da97159",
+  "runtime_manifest_sha256": "6f03d30284ebe2747debe63449bdc1838086eb02b3a1103804803b927671df24",
+  "runtime_pack_tree_digest": "b0a237d030f6fa1eea4c45ac6e505dba48c67637302efa21f8ada8bc19619f52",
   "runtime_pack_file_count": 253
 }
