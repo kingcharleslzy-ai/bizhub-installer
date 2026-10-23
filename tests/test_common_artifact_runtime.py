@@ -413,8 +413,8 @@ ensure_generic_database(database_path(), migrations=MIGRATIONS[:14])
 assert readback_database(database_path(), migrations=MIGRATIONS[:14])["schema_version"] == 14
 assert backup_dir() == Path(os.environ["BIZHUB_BACKUP_DIR"])
 initialize_database()
-assert readback_database(database_path())["schema_version"] == 15
-[backup] = list(backup_dir().glob("pre-upgrade-*-v14-to-v15.sqlite"))
+assert readback_database(database_path())["schema_version"] == 17
+[backup] = list(backup_dir().glob("pre-upgrade-*-v14-to-v17.sqlite"))
 manifest = backup.with_suffix(".sqlite.manifest.json")
 assert manifest.is_file()
 assert sorted(item.name for item in backup_dir().iterdir()) == sorted([backup.name, manifest.name])
@@ -441,7 +441,7 @@ assert hashlib.sha256(database_path().read_bytes()).hexdigest() == current_diges
 before = {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in backup_dir().iterdir()}
 initialize_database()
 assert {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in backup_dir().iterdir()} == before
-assert readback_database(database_path())["schema_version"] == 15
+assert readback_database(database_path())["schema_version"] == 17
 '''
     completed = subprocess.run(
         [sys.executable, "-c", script], cwd=tmp_path, env=environment,
