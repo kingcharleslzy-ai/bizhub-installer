@@ -134,9 +134,9 @@ are not implemented by W1.
 
 The fixed review inputs are
 `runtime/vendor/bizhub-runtime-darwin-arm64-0.1.0-d2.zip` (SHA-256
-`5f1a817ac8c4e292d60ee771888330da1e68f3fc17dadfa9e3912222bd78e1b2`) and
+`0262597b80c43d996cc5dbf65a5c11ce5e726ac38dce0b7a58fb18c2f5777a79`) and
 `runtime/vendor/bizhub-runtime-win32-x64-0.1.0-d3.zip` (SHA-256
-`f9e97e700781cbb8e73513f69eef6c431e1264c80d50d4f2ea8d34d9fe4d1a5e`).
+`2e606a9d631fe8e55b602cdbdd2aefb761e8cd911a34c949a2720e0c21385f78`).
 `make` verifies and extracts that exact archive before packaging; it never
 regenerates trust from the Runtime it is about to ship.
 
