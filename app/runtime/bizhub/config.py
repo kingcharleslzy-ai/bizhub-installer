@@ -15,6 +15,12 @@ def database_path() -> Path:
     return Path(os.getenv("BIZHUB_GENERIC_DATABASE_PATH", "/data/bizhub.db")).resolve()
 
 
+def backup_dir() -> Path:
+    # 升级前自动备份和手动备份放同一处：桌面端传实例的 backups 目录，Docker 默认在数据卷里。
+    override = os.getenv("BIZHUB_BACKUP_DIR", "").strip()
+    return Path(override).resolve() if override else database_path().parent / "backups"
+
+
 def admin_path() -> Path:
     return Path(os.getenv("BIZHUB_ADMIN_CONFIG", "/data/admin.json")).resolve()
 

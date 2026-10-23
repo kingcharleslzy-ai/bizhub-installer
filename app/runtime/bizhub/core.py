@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from backend.generic_kernel.migrations import (
     ensure_generic_database,
     migrations_for_modules,
@@ -9,7 +11,7 @@ from backend.generic_kernel.migrations import (
 from backend.generic_kernel.onboarding import initialize_workspace_onboarding
 from backend.generic_kernel.profile import get_generic_registry
 
-from .config import common_root, company_profile, database_path
+from .config import backup_dir, common_root, company_profile, database_path
 
 
 def registry():
@@ -27,12 +29,17 @@ def active_migrations():
     return migrations_for_modules(module_ids())
 
 
-def database_migrations():
-    return retained_migrations_for_database(database_path(), active_migrations())
+def database_migrations(path: Path | None = None):
+    # An explicit path is an existing snapshot: validate its recorded schema,
+    # without adding the running program's pending migrations.
+    return retained_migrations_for_database(
+        path if path is not None else database_path(),
+        () if path is not None else active_migrations(),
+    )
 
 
 def initialize_database() -> None:
-    ensure_generic_database(database_path(), migrations=database_migrations())
+    ensure_generic_database(database_path(), migrations=database_migrations(), backup_dir=backup_dir())
     profile = company_profile()
     initialize_workspace_onboarding(
         database_path(),

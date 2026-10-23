@@ -100,6 +100,7 @@ def _require_exact_instance_paths() -> Path:
         "BIZHUB_ADMIN_CONFIG": root / "data" / "admin.json",
         "BIZHUB_COMPANY_CONFIG": root / "config" / "company.json",
         "BIZHUB_SECRET_KEY_FILE": root / "config" / "secret-key",
+        "BIZHUB_BACKUP_DIR": root / "backups",
     }
     for name, path in expected.items():
         actual = Path(os.getenv(name, "")).resolve()

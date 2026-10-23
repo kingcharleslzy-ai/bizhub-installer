@@ -283,6 +283,7 @@ function runtimeEnvironment(instanceRoot) {
   return {
     BIZHUB_DESKTOP_INSTANCE_ROOT: paths.root,
     BIZHUB_GENERIC_DATABASE_PATH: paths.database,
+    BIZHUB_BACKUP_DIR: paths.backups,
     BIZHUB_ADMIN_CONFIG: paths.admin,
     BIZHUB_COMPANY_CONFIG: paths.company,
     BIZHUB_SECRET_KEY_FILE: paths.secret,

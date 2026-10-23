@@ -134,6 +134,47 @@ def test_start_container_applies_the_exact_planned_resource_limits(monkeypatch):
     assert command[command.index("--cpus") + 1] == "0.5"
     assert command[command.index("--pids-limit") + 1] == "128"
     assert command[command.index("-p") + 1] == "127.0.0.1:18481:8080"
+    assert f"{cli.BACKUPS}:/backups" in command
+    assert "BIZHUB_BACKUP_DIR=/backups" in command
+
+
+def test_restore_accepts_upgrade_snapshot_from_managed_backup_mount(monkeypatch, tmp_path):
+    cli = load_cli()
+    backups = tmp_path / "backups"
+    data = tmp_path / "data"
+    backups.mkdir()
+    data.mkdir()
+    source = backups / "pre-upgrade-20261023T000000Z-v14-to-v15.sqlite"
+    source.write_bytes(b"validated upgrade snapshot")
+    manifest = source.with_suffix(".sqlite.manifest.json")
+    manifest.write_text("{}", encoding="utf-8")
+    destination = data / "bizhub.db"
+    destination.write_bytes(b"current database")
+    commands = []
+    monkeypatch.setattr(cli, "BACKUPS", backups)
+    monkeypatch.setattr(cli, "APP_DATA", data)
+    monkeypatch.setattr(cli, "current_state", lambda: {"instance": {}})
+    monkeypatch.setattr(cli, "backup_instance", lambda _label: {"host_path": "safety.sqlite"})
+    monkeypatch.setattr(cli, "wait_healthy", lambda _plan: {"status": "ok"})
+    monkeypatch.setattr(cli.os, "chown", lambda *_args: None)
+    monkeypatch.setattr(cli, "run", lambda command, **_: commands.append(command))
+
+    result = cli.restore_instance(source)
+
+    assert result["status"] == "restored"
+    assert destination.read_bytes() == source.read_bytes()
+    assert commands[0] == [
+        "docker", "exec", cli.CONTAINER, "python", "-m", "bizhub.manage", "validate-backup",
+        "--backup", f"/backups/{source.name}", "--manifest", f"/backups/{manifest.name}",
+    ]
+
+    destination.write_bytes(b"current database")
+    commands.clear()
+    manifest.unlink()
+    with pytest.raises(ValueError, match="manifest is missing"):
+        cli.restore_instance(source)
+    assert destination.read_bytes() == b"current database"
+    assert commands == []
 
 
 def test_container_resource_readback_detects_drift(monkeypatch):

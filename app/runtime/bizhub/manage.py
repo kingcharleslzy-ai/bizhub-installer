@@ -10,7 +10,7 @@ from backend.generic_kernel.backup import create_backup, restore_backup
 from backend.generic_kernel.migrations import readback_database
 
 from .config import admin_path, common_identity, database_path
-from .core import database_state, initialize_database
+from .core import database_migrations, database_state, initialize_database
 from .security import load_admin, password_hash
 
 
@@ -61,7 +61,7 @@ def backup(output: Path) -> dict[str, object]:
     output = output.resolve()
     if output.exists():
         raise ValueError("backup output already exists")
-    manifest = create_backup(database_path(), output)
+    manifest = create_backup(database_path(), output, migrations=database_migrations())
     return {
         "status": "created",
         "path": str(output),
@@ -74,7 +74,7 @@ def validate_backup(backup_path: Path, manifest_path: Path) -> dict[str, object]
     temporary = backup_path.with_name(backup_path.name + ".validation.sqlite")
     temporary.unlink(missing_ok=True)
     try:
-        state = restore_backup(backup_path, manifest_path, temporary)
+        state = restore_backup(backup_path, manifest_path, temporary, migrations=database_migrations(backup_path))
         return {"status": "valid", "state": state}
     finally:
         temporary.unlink(missing_ok=True)
