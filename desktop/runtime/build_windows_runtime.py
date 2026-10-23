@@ -19,6 +19,7 @@ from build_local_runtime import (
     build_frontend,
     normalize_zip_member_order,
     sha256,
+    source_collection_arguments,
     verify_common,
 )
 
@@ -77,6 +78,7 @@ def build(root: Path, python: Path) -> Path:
         f"{common / 'backend' / 'generic_kernel' / 'ui'}{data_separator}backend/generic_kernel/ui",
         "--add-data",
         f"{frontend}{data_separator}generic-ui",
+        *source_collection_arguments(build_root),
         "--collect-submodules",
         "uvicorn",
         # Same as the macOS build: the agents SDK resolves its version through

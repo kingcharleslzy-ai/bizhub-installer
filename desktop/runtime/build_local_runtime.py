@@ -100,6 +100,17 @@ def normalize_zip_member_order(archive_path: Path) -> None:
     temporary.replace(archive_path)
 
 
+def source_collection_arguments(build_root: Path) -> list[str]:
+    # Migration identity uses inspect.getsource. PyInstaller's supported source
+    # collection keeps that module beside its frozen import path on both OSes.
+    hooks = build_root / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    (hooks / "hook-backend.generic_kernel.migrations.py").write_text(
+        'module_collection_mode = "pyz+py"\n', encoding="utf-8"
+    )
+    return ["--additional-hooks-dir", str(hooks)]
+
+
 def build(root: Path, python: Path) -> Path:
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         raise RuntimeError("desktop_d2_requires_macos_arm64")
@@ -146,6 +157,7 @@ def build(root: Path, python: Path) -> Path:
         f"{common / 'backend' / 'generic_kernel' / 'ui'}:backend/generic_kernel/ui",
         "--add-data",
         f"{frontend}:generic-ui",
+        *source_collection_arguments(build_root),
         "--collect-submodules",
         "uvicorn",
         # The sales_agent SDK imports are function-local (lazy); modulegraph
