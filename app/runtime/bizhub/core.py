@@ -9,7 +9,7 @@ from backend.generic_kernel.migrations import (
 from backend.generic_kernel.onboarding import initialize_workspace_onboarding
 from backend.generic_kernel.profile import get_generic_registry
 
-from .config import common_root, company_profile, database_path
+from .config import backup_dir, common_root, company_profile, database_path
 
 
 def registry():
@@ -32,7 +32,7 @@ def database_migrations():
 
 
 def initialize_database() -> None:
-    ensure_generic_database(database_path(), migrations=database_migrations())
+    ensure_generic_database(database_path(), migrations=database_migrations(), backup_dir=backup_dir())
     profile = company_profile()
     initialize_workspace_onboarding(
         database_path(),
