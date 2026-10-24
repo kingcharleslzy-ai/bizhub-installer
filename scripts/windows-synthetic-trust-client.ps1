@@ -25,8 +25,12 @@ try {
     Start-ScheduledTask -TaskName 'BizHub Installer Synthetic Trust'
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
-        if (Test-Path -LiteralPath "$root\response.json") {
-            $response = Get-Content -LiteralPath "$root\response.json" -Raw | ConvertFrom-Json
+        $json = $null
+        try { $json = Get-Content -LiteralPath "$root\response.json" -Raw }
+        # Move-Item -Force can briefly remove the old response before replacing it.
+        catch [System.Management.Automation.ItemNotFoundException] {}
+        if ($null -ne $json) {
+            $response = $json | ConvertFrom-Json
             if ($response.id -ceq $id) {
                 if ($response.status -eq 'rejected') { throw "synthetic_trust_rejected:$($response.error)" }
                 if ($Action -eq 'release') {
