@@ -161,7 +161,7 @@ jobs:
         run: |
           npm ci
           node scripts/release-preflight.mjs
-          npm test
+          npm test -- --ci-slot-child
           npm run verify:boundary
           npm run verify:runtime-archive
           npm run audit:runtime

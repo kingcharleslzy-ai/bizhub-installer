@@ -49,7 +49,7 @@ jobs:
           test "$(uname -m)" = arm64
           python ../scripts/verify_checksums.py
           npm ci
-          npm test
+          npm test -- --ci-slot-child
           npm run verify:boundary
           npm run audit:runtime
       - name: Configure Developer ID publisher keychain
