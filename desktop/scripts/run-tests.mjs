@@ -2,10 +2,18 @@
 import { homedir } from "node:os";
 import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+const inheritedStdio = ["inherit", "inherit", "inherit"];
+for (const value of (process.env.CI_SLOT_LEASE_FDS || "").split(",").filter(Boolean)) {
+  const fd = Number(value);
+  if (!Number.isSafeInteger(fd) || fd < 3 || fd > 1024) throw new Error("Invalid CI_SLOT_LEASE_FDS");
+  while (inheritedStdio.length <= fd) inheritedStdio.push("ignore");
+  inheritedStdio[fd] = fd;
+}
+
 const inside = process.argv[2] === "--ci-slot-child";
 const extraArgs = process.argv.slice(inside ? 3 : 2);
 if (process.platform === "darwin" && homedir() === "/Users/cc" && !inside) {
-  const result = spawnSync("/Users/cc/.local/bin/ci-slot", ["--test-workers", "4", "--test-min-workers", "1", "--", process.execPath, process.argv[1], "--ci-slot-child", ...extraArgs], { stdio: "inherit" });
+  const result = spawnSync("/Users/cc/.local/bin/ci-slot", ["--test-workers", "4", "--test-min-workers", "1", "--", process.execPath, process.argv[1], "--ci-slot-child", ...extraArgs], { stdio: inheritedStdio });
   if (result.error) throw result.error;
   if (result.signal) process.kill(process.pid, result.signal);
   else process.exit(result.status ?? 1);
