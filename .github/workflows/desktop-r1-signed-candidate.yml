@@ -49,7 +49,7 @@ jobs:
       - name: Verify existing Python 3.12 toolchain
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify exact main source and release contract
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           test "$(uname -m)" = arm64
           test "$(git rev-parse HEAD)" = "${{ inputs.release_commit }}"
@@ -57,7 +57,7 @@ jobs:
           python ../scripts/verify_checksums.py
           npm ci
           node scripts/release-preflight.mjs
-          npm test
+          npm test -- --ci-slot-child
           npm run verify:boundary
           npm run verify:runtime-archive
           npm run audit:runtime
@@ -106,11 +106,12 @@ jobs:
           echo "BIZHUB_APPLE_API_ISSUER=$API_ISSUER" >> "$GITHUB_ENV"
           echo "BIZHUB_MACOS_TEMP_CERTIFICATE=$certificate" >> "$GITHUB_ENV"
       - name: Prepare, sign, and rebind Runtime
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           npm run prepare:runtime
           node scripts/prepare-signed-macos-runtime.mjs
       - name: Build notarized old and current products
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           current_version="$(node -p 'require("./package.json").version')"
           old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
@@ -128,7 +129,7 @@ jobs:
           node scripts/macos-upgrade-rollback-smoke.mjs --old-app "$RUNNER_TEMP/BizHub Desktop-old.app" --new-app "out/BizHub Desktop-darwin-arm64/BizHub Desktop.app" --old-version "$old_version" --new-version "$current_version" --output out/desktop-r1-macos-upgrade-rollback.json
           git diff --exit-code -- package.json package-lock.json
       - name: Verify notarized current product and containers
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           product="out/BizHub Desktop-darwin-arm64"
           app="$product/BizHub Desktop.app"

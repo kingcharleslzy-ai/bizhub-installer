@@ -55,11 +55,12 @@ try {
                 $true
             )
         )
+        $now = [DateTimeOffset]::UtcNow
         $certificate = $request.CreateSelfSigned(
-            [DateTimeOffset]::UtcNow.AddMinutes(-5),
+            $now.AddMinutes(-5),
             # Long enough to cover the ISO-week cache window in which CI may
             # reuse this certificate together with the cached old installer.
-            [DateTimeOffset]::UtcNow.AddDays(14)
+            $now.AddDays(14)
         )
         $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
         $plainTextPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)

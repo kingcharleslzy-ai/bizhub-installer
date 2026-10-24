@@ -44,12 +44,12 @@ jobs:
       - name: Verify existing Python 3.12 toolchain
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Test macOS arm64 source
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           test "$(uname -m)" = arm64
           python ../scripts/verify_checksums.py
           npm ci
-          npm test
+          npm test -- --ci-slot-child
           npm run verify:boundary
           npm run audit:runtime
       - name: Configure Developer ID publisher keychain
@@ -81,12 +81,12 @@ jobs:
           echo "BIZHUB_MACOS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
           echo "BIZHUB_MACOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
       - name: Prepare, sign, and rebind Runtime
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           npm run prepare:runtime
           node scripts/prepare-signed-macos-runtime.mjs
       - name: Build, sign, and notarize application
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         env:
           BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
           BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}
@@ -94,7 +94,7 @@ jobs:
           npm run make:macos-release
           node scripts/sign-production-macos-app.mjs
       - name: Verify signed application
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         env:
           BIZHUB_APPLE_ID: ${{ secrets.BIZHUB_APPLE_ID }}
           BIZHUB_APPLE_APP_PASSWORD: ${{ secrets.BIZHUB_APPLE_APP_PASSWORD }}

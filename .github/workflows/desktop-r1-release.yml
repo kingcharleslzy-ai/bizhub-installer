@@ -157,16 +157,18 @@ jobs:
           echo "old_app_ready=true" >> "$GITHUB_OUTPUT"
       - name: Verify source, tests, dependency, and public boundary
         if: needs.scope.outputs.full == 'true'
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           npm ci
           node scripts/release-preflight.mjs
-          npm test
+          npm test -- --ci-slot-child
           npm run verify:boundary
           npm run verify:runtime-archive
           npm run audit:runtime
           npm audit --audit-level=moderate
       - name: Prepare and bind synthetic Runtime
         if: needs.scope.outputs.full == 'true'
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           npm run prepare:runtime
           npm run smoke:runtime-tamper
@@ -176,7 +178,7 @@ jobs:
           node scripts/prepare-signed-macos-runtime.mjs
       - name: Build old and current signed applications
         if: needs.scope.outputs.full == 'true'
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           current_version="$(node -p 'require("./package.json").version')"
           old_version="$(node scripts/package-version-fixture.mjs previous "$current_version")"
@@ -217,7 +219,7 @@ jobs:
           find "$cache" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
       - name: Verify current signed product and containers
         if: needs.scope.outputs.full == 'true'
-        shell: bash
+        shell: /Users/cc/.local/bin/ci-slot --test-workers 4 --test-min-workers 1 -- bash --noprofile --norc -eo pipefail {0}
         run: |
           product="out/BizHub Desktop-darwin-arm64"
           app="$product/BizHub Desktop.app"
