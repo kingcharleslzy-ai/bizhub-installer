@@ -24,7 +24,7 @@
     "smoke:runtime-tamper": "node scripts/runtime-pack-tamper-smoke.mjs",
     "smoke:packaged": "node scripts/cloud-smoke.mjs",
     "start": "npm run build && electron-forge start",
-    "test": "node scripts/run-tests.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "verify:artifact": "node scripts/verify-packaged-artifact.mjs",
     "verify:boundary": "node scripts/verify-d2-boundary.mjs",
     "verify:runtime-archive": "node scripts/verify-fixed-runtime-archive.mjs"
