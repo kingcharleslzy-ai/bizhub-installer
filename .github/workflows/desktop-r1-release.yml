@@ -332,6 +332,7 @@ jobs:
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
+          ../tests/test_windows_synthetic_trust_client.ps1
           npm ci
           node scripts/release-preflight.mjs
           npm test
