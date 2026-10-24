@@ -3,6 +3,10 @@ Set-StrictMode -Version Latest
 $source = Get-Content "$PSScriptRoot/../scripts/windows-synthetic-trust-client.ps1" -Raw
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory "$fixture/requests" | Out-Null
+$savedEnvironment = @{}
+foreach ($name in @('GITHUB_REPOSITORY','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','BIZHUB_WINDOWS_EXPECTED_THUMBPRINT')) {
+    $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+}
 $env:GITHUB_REPOSITORY = 'kingcharleslzy-ai/bizhub-installer'
 $env:GITHUB_RUN_ID = '123'
 $env:GITHUB_RUN_ATTEMPT = '1'
@@ -47,4 +51,7 @@ try {
         Write-Output "$scenario passed"
     }
 }
-finally { Remove-Item $fixture -Recurse -Force }
+finally {
+    Remove-Item $fixture -Recurse -Force
+    foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+}
