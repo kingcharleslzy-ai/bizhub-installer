@@ -14,6 +14,12 @@ $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT = ''
 function Get-CimInstance { [pscustomobject]@{ExecutablePath='D:\actions-runner-bizhub-installer\bin\Runner.Worker.exe'; ProcessId=42; CreationDate=[DateTime]::UtcNow} }
 function Start-ScheduledTask {}
 function Start-Sleep { $script:polls++ }
+function Test-Path {
+    param($LiteralPath, $Path)
+    if ($LiteralPath -like '*response.json') { return $true }
+    if ($LiteralPath) { return Microsoft.PowerShell.Management\Test-Path -LiteralPath $LiteralPath }
+    Microsoft.PowerShell.Management\Test-Path -Path $Path
+}
 function Get-Content {
     param($LiteralPath, [switch]$Raw)
     $script:reads++
