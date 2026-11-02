@@ -58,7 +58,7 @@ const errorLabel = computed(() => {
   const known = {
     desktop_account_id_invalid: "账号格式无效，请检查后重试。",
     desktop_account_not_found: "没有找到这个云端账号；本机已有另一个本地账号，不能再创建第二个本地实例。",
-    desktop_account_not_found_can_create_local: "没有找到这个云端账号。你可以用当前账号创建本地 BizHub。",
+    desktop_account_not_found_can_create_local: "没有找到这个云端账号。你可以用当前账号创建本地 BizHub BOS。",
     desktop_account_no_workspace: "这个账号已登记，但当前没有可登录的企业工作区。",
     desktop_account_directory_not_configured: "当前客户端没有配置账号目录，暂时无法登录云端。",
     desktop_account_directory_timeout: "账号查询超时，请稍后重试。",
@@ -66,7 +66,7 @@ const errorLabel = computed(() => {
     desktop_cloud_login_invalid: "账号或密码不正确。",
     desktop_cloud_login_rate_limited: "登录尝试过多，请稍后再试。",
     desktop_cloud_login_unavailable: "云端登录暂时不可用。",
-    desktop_local_instance_already_exists: "这台电脑已经有一个本地 BizHub。",
+    desktop_local_instance_already_exists: "这台电脑已经有一个本地 BizHub BOS。",
     desktop_local_creation_cloud_account_exists: "这个账号已有企业云端工作区，不能创建同名本地账号。",
     desktop_local_creation_account_registered: "这个账号已在企业目录登记，不能创建同名本地账号。",
     desktop_local_login_failed: "本地账号或密码不正确。",
@@ -86,11 +86,11 @@ const statusLabel = computed(() => {
   if (state.value.guestDemoStatus === "initializing") return "正在准备游客样板间";
   if (state.value.autoLoginStatus === "authenticating") return "正在自动登录";
   if (state.value.accountLookupStatus === "resolving") return "正在识别账号";
-  if (state.value.localStatus === "initializing") return "正在创建本地 BizHub";
-  if (state.value.localStatus === "starting") return "正在启动本地 BizHub";
+  if (state.value.localStatus === "initializing") return "正在创建本地 BizHub BOS";
+  if (state.value.localStatus === "starting") return "正在启动本地 BizHub BOS";
   if (working.value) return "正在登录";
   if (errorLabel.value) return "操作未完成";
-  return "登录后自动进入云端或本地 BizHub";
+  return "登录后自动进入云端或本地 BizHub BOS";
 });
 const updateWorking = computed(() => ["checking", "downloading", "installing"].includes(state.value.updateStatus));
 const updateLabel = computed(() => {
@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
 
       <div class="workspace-backdrop" aria-hidden="true">
         <aside class="preview-sidebar">
-          <div class="preview-brand"><span>BH</span><b>BizHub</b></div>
+          <div class="preview-brand"><span>BH</span><b>BizHub BOS</b></div>
           <div class="preview-nav-label">业务</div>
           <div class="preview-nav active"><i></i><span>经营概览</span></div>
           <div class="preview-nav"><i></i><span>采购</span></div>
@@ -263,8 +263,8 @@ onBeforeUnmount(() => {
 
       <section class="login-panel" aria-labelledby="login-title">
         <div class="card-heading">
-          <h1 id="login-title">进入你的 BizHub</h1>
-          <p>已有企业直接登录；第一次使用也可以在这台电脑上创建。</p>
+          <h1 id="login-title">进入你的 BizHub BOS</h1>
+          <p>面向中小企业的数字化与 AI 平台。已有企业直接登录；第一次使用也可以在这台电脑上创建。</p>
         </div>
 
         <form class="unified-form" @submit.prevent="login">
