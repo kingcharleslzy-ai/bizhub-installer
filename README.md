@@ -1,7 +1,8 @@
-# BizHub
+# BizHub BOS
 
-BizHub is an Agent-installed, single-company business system for private
-deployment. Each customer gets one independent application container, one
+BizHub BOS (Business Operating System) is a digitalization and AI platform for
+small and medium-sized businesses. This repository installs it as an
+Agent-installed, single-company system for private deployment. Each customer gets one independent application container, one
 administrator account, and one SQLite database.
 
 The system covers master data, sales, purchasing, inventory, controlled data
