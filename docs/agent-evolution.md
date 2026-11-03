@@ -5,6 +5,10 @@ turning production into a self-modifying system. The Agent may evolve reviewed
 source code and configuration in the customer's private repository; it may not
 rewrite a running instance ad hoc.
 
+The plugin's [shared Agent contract](../plugins/bizhub-core/skills/bizhub-bootstrap/references/agent-contract.md)
+owns common authority, customer isolation and completion rules. The sections
+below describe extension design and the capabilities of this release.
+
 ## Start with the smallest extension
 
 For each request, choose the first level that can fully solve it:
@@ -121,10 +125,7 @@ Keep at most one active customer workflow Skill until a second one is proven
 necessary. It should contain discovery and mapping instructions, not business
 authority. The Skill may call the existing MCP, but it cannot:
 
-- override authentication, approval, audit, owner or readback rules;
-- add arbitrary shell, arbitrary URL or direct database tools;
-- contain credentials, customer exports or mutable production facts;
-- register another BizHub MCP or another generic bootstrap Skill;
+- violate the shared Agent contract or expand the documented MCP permissions;
 - approve its own installation or changes.
 
 Merge or delete overlapping instructions before adding another Skill.

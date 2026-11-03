@@ -5,6 +5,10 @@ description: Install or connect one private BizHub single-company instance from 
 
 # BizHub Bootstrap
 
+Read the [shared Agent contract](references/agent-contract.md) once before
+acting. The workflow below adds this public release's installation and
+business-action requirements; it does not apply a customer's private policy.
+
 Use the repository's `bizhubctl` as the deployment authority and the single
 `bizhub-mcp` as the bounded business interface.
 
@@ -50,9 +54,6 @@ Use the repository's `bizhubctl` as the deployment authority and the single
 - One company, one administrator, one SQLite database, one application
   container. Do not claim multi-tenancy, RBAC, accounting, manufacturing, or a
   general connector framework.
-- Never use direct SQL or an arbitrary shell/URL through MCP.
-- Every formal business write is `preview -> explicit confirmation -> apply ->
-  readback`. A stale or changed preview must be generated again.
 - `uninstall` retains config, data, and backups. This release provides no purge
   operation.
 - `rollback` is allowed only when `status` exposes a verified rollback point
