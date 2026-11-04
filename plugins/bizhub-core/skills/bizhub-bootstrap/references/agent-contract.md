@@ -52,3 +52,26 @@ current contracts and advertised tools before acting.
   Claim an outcome only after its formal readback; state what was not checked.
   Clean up only task-owned, inactive temporary artifacts, preserving shared
   dependencies, user changes and business evidence.
+
+## Plugin and Skill delivery
+
+An authorized shared-rule or customer-Skill edit includes delivery to the
+task's configured consuming hosts, whether Claude, Codex or another Agent
+does the work. Follow the existing repository release contract through merge
+and checks, update the affected private consumer's immutable reference when
+shared guidance changes, and finish the host-native plugin update, reload and
+version/content readback in the same task without another reminder.
+
+Use the repository's existing version policy and native host commands. Verify
+the installed package against the published source, the loaded Skill paths,
+and any pinned shared reference. A reference-only consumer updates its private
+plugin; it does not install another bootstrap or MCP. Do not update unrelated
+customers or invent a separate updater, hook, test or gate for this workflow.
+
+A commit, successful CI, installed version or fresh discovery process alone
+does not prove that a running conversation has read new instructions. Reload
+through the host's supported mechanism and explicitly reread changed Skills
+and references in the current conversation. Reconnect changed tool definitions
+before using them. Report an unavailable reload or failed readback as unfinished
+delivery, rather than claiming automatic hot reload or asking the user to
+remember to finish it later.
