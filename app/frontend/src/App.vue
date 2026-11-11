@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { api, type Json } from "./api";
+import { api, ApiError, type Json } from "./api";
 import SalesAgentView from "./SalesAgentView.vue";
 
 type Page = "start" | "process" | "chat" | "knowledge" | "confirmations" | "opportunities" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
@@ -213,17 +213,26 @@ async function recordMaterial() {
   }
 }
 
+let lastSubmission: { path: string; body: string; preview: Json } | undefined;
+
 async function runOwner(path: string, command: Json, success: string) {
+  if (busy.value) return;
   busy.value = true;
   error.value = "";
   notice.value = "";
   try {
-    const preview = await api(`${path}/preview`, { method: "POST", body: JSON.stringify(command) });
+    const body = JSON.stringify(command);
+    // Retry the confirmed preview even if its first response was lost or stock has since moved.
+    const preview = lastSubmission?.path === path && lastSubmission.body === body
+      ? lastSubmission.preview
+      : await api(`${path}/preview`, { method: "POST", body });
     if (!window.confirm(`确认执行？\n\n${JSON.stringify(preview, null, 2)}`)) return;
-    await api(`${path}/apply`, { method: "POST", body: JSON.stringify(preview) });
-    notice.value = success;
+    lastSubmission = { path, body, preview };
+    const receipt = await api(`${path}/apply`, { method: "POST", body: JSON.stringify(preview) });
+    notice.value = receipt.disposition === "idempotent_noop" ? "该笔业务已经确认，没有重复入账。" : success;
     await refresh();
   } catch (caught: any) {
+    if (caught instanceof ApiError && caught.status < 500) lastSubmission = undefined;
     error.value = caught.message;
   } finally {
     busy.value = false;
@@ -258,10 +267,11 @@ async function createMasterData() {
 }
 
 function createOrder(kind: "procurement" | "sales") {
+  const orderId = orderForm.order_id.trim();
   const command: Json = {
     action: "create",
-    idempotency_key: `desktop:${crypto.randomUUID()}`,
-    order_id: orderForm.order_id.trim(),
+    idempotency_key: `desktop:${JSON.stringify([kind, "create", orderId])}`,
+    order_id: orderId,
     ordered_at: new Date(`${orderForm.ordered_at}T00:00:00`).toISOString(),
     lines: [{
       line_id: orderForm.line_id.trim(),
@@ -278,15 +288,19 @@ function createOrder(kind: "procurement" | "sales") {
 }
 
 function fulfillOrder(kind: "procurement" | "sales") {
+  const action = kind === "sales" ? "fulfill" : "receive";
+  const orderId = receiveForm.order_id.trim();
+  const lineId = receiveForm.line_id.trim();
+  const evidence = receiveForm.evidence_ref.trim();
   runOwner(`/api/${kind}`, {
-    action: kind === "sales" ? "fulfill" : "receive",
-    idempotency_key: `desktop:${crypto.randomUUID()}`,
-    order_id: receiveForm.order_id.trim(),
-    target_line_id: receiveForm.line_id.trim(),
+    action,
+    idempotency_key: `desktop:${JSON.stringify([kind, action, orderId, lineId, evidence])}`,
+    order_id: orderId,
+    target_line_id: lineId,
     quantity: receiveForm.quantity,
     occurred_at: new Date(receiveForm.occurred_at).toISOString(),
     source_ref: "desktop-ui",
-    evidence_refs: [receiveForm.evidence_ref.trim()],
+    evidence_refs: [evidence],
   }, kind === "sales" ? "销售发货已保存并核对。" : "采购收货已保存并核对。");
 }
 
@@ -546,14 +560,14 @@ onMounted(async () => {
           <label>产品<select v-model="orderForm.product_id" required><option value="">请选择</option><option v-for="item in activeProducts" :value="item.id">{{ item.canonical_name }}</option></select></label>
           <label>单位<select v-model="orderForm.unit_id" required><option value="">请选择</option><option v-for="item in activeUnits" :value="item.id">{{ item.canonical_name }}</option></select></label>
           <label>地点<select v-model="orderForm.location_id" required><option value="">请选择</option><option v-for="item in activeLocations" :value="item.id">{{ item.canonical_name }}</option></select></label>
-          <label>数量<input v-model="orderForm.quantity" type="number" min="0.000001" step="any" required></label><label>日期<input v-model="orderForm.ordered_at" type="date" required></label>
+          <label>数量<input :value="orderForm.quantity" @input="orderForm.quantity = ($event.target as HTMLInputElement).value" type="number" min="0.000001" step="any" required></label><label>日期<input v-model="orderForm.ordered_at" type="date" required></label>
           <label>来源凭证<input v-model="orderForm.evidence_ref" placeholder="合同、邮件或单据编号" required></label>
           <button :disabled="busy">预览并创建</button>
         </form></article>
         <article class="panel"><h2>{{ page === 'sales' ? '确认发货' : '确认收货' }}</h2><form @submit.prevent="fulfillOrder(activeTradeKind)">
           <label>订单 ID<input v-model="receiveForm.order_id" required></label><label>行 ID<input v-model="receiveForm.line_id" required></label>
-          <label>数量<input v-model="receiveForm.quantity" type="number" min="0.000001" step="any" required></label><label>发生时间<input v-model="receiveForm.occurred_at" type="datetime-local" required></label>
-          <label>来源凭证<input v-model="receiveForm.evidence_ref" placeholder="收货、发货或签收单据编号" required></label>
+          <label>数量<input :value="receiveForm.quantity" @input="receiveForm.quantity = ($event.target as HTMLInputElement).value" type="number" min="0.000001" step="any" required></label><label>发生时间<input v-model="receiveForm.occurred_at" type="datetime-local" required></label>
+          <label>本批凭证<input v-model="receiveForm.evidence_ref" placeholder="本次收发货的凭证号，分批时分别填写" required></label>
           <button :disabled="busy">预览并确认</button>
         </form></article>
         <article class="panel wide"><h2>订单进度</h2><div class="order" v-for="order in page === 'sales' ? sales : procurement" :key="order.order_id"><div><strong>{{ order.order_id }}</strong><span>{{ order.party_name }} · {{ order.status }}</span></div><div v-for="line in order.lines" :key="line.line_id"><code>{{ line.line_id }}</code> {{ line.product_name }} · {{ line.quantity }} {{ line.unit_name }} · 已处理 {{ line.fulfilled_quantity ?? line.received_quantity }}</div></div><p v-if="!(page === 'sales' ? sales : procurement).length" class="empty">还没有订单。</p></article>
