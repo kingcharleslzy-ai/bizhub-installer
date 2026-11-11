@@ -10,11 +10,19 @@ aside { position: sticky; top: 0; display: flex; flex-direction: column; min-wid
 .identity > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; color: #312b15; background: #d8bd57; font-weight: 850; }
 .identity strong, .identity small { display: block; }
 .identity strong { font-size: 15px; }.identity small { margin-top: 4px; color: #908b7f; font-size: 9px; letter-spacing: .13em; }
-nav { display: grid; min-width: 0; max-width: 100%; gap: 5px; margin-top: 20px; }
+nav { display: grid; align-content: start; min-width: 0; min-height: 0; max-width: 100%; gap: 5px; margin-top: 20px; overflow-y: auto; }
 nav button { padding: 11px 13px; border: 1px solid transparent; border-radius: 8px; color: #aaa59a; text-align: left; background: transparent; }
 nav button:hover, nav button.active { color: #f5e7ad; border-color: #5e5130; background: #2d291d; }
 nav .nav-label { margin: 14px 13px 2px; color: #6d685d; font-size: 10px; letter-spacing: .1em; }
 .account { margin-top: auto; padding: 13px 8px 0; border-top: 1px solid #343128; }.account strong, .account small { display: block; }.account small { margin-top: 4px; color: #817d73; font-size: 10px; }
+@media (min-width: 761px) and (max-height: 820px) {
+  aside { padding-block: 14px 10px; }
+  .identity { padding-bottom: 12px; }
+  nav { gap: 2px; margin-top: 10px; }
+  nav button { padding-block: 6px; line-height: 18px; }
+  nav .nav-label { margin-top: 8px; }
+  .account { padding-top: 8px; }
+}
 
 .workspace { min-width: 0; padding: 28px 32px 56px; overflow: auto; }
 .workspace > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }.workspace > header > button { flex: 0 0 auto; }
