@@ -2,11 +2,16 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { api, ApiError, type Json } from "./api";
 import SalesAgentView from "./SalesAgentView.vue";
+import SalesServiceView from "./SalesServiceView.vue";
 
 type Page = "start" | "process" | "chat" | "knowledge" | "confirmations" | "opportunities" | "overview" | "master" | "procurement" | "sales" | "inventory" | "settings";
 
 const page = ref<Page>("start");
 const salesAgent = ref<InstanceType<typeof SalesAgentView> | null>(null);
+const salesService = ref<InstanceType<typeof SalesServiceView> | null>(null);
+// Goods orders stay the default; the service view mounts (and calls its API) only once opened.
+const salesMode = ref<"goods" | "service">("goods");
+const servicesOpened = ref(false);
 const user = ref("");
 const busy = ref(false);
 const notice = ref("");
@@ -112,7 +117,11 @@ async function refresh() {
 
 async function refreshWorkspace() {
   try {
-    await Promise.all([refresh(), page.value === "process" ? salesAgent.value?.refresh() : undefined]);
+    await Promise.all([
+      refresh(),
+      page.value === "process" ? salesAgent.value?.refresh() : undefined,
+      page.value === "sales" && salesMode.value === "service" ? salesService.value?.refresh() : undefined,
+    ]);
   } catch (caught: any) {
     error.value = caught.message;
   }
@@ -215,7 +224,14 @@ async function recordMaterial() {
 
 let lastSubmission: { path: string; body: string; preview: Json } | undefined;
 
-async function runOwner(path: string, command: Json, success: string) {
+// Optional plain-language confirmation, repeat message, and post-readback check; goods orders use the defaults.
+interface OwnerOptions {
+  describe?: (preview: Json) => string;
+  noop?: string;
+  verify?: () => Promise<string>;
+}
+
+async function runOwner(path: string, command: Json, success: string, options: OwnerOptions = {}) {
   if (busy.value) return;
   busy.value = true;
   error.value = "";
@@ -226,11 +242,17 @@ async function runOwner(path: string, command: Json, success: string) {
     const preview = lastSubmission?.path === path && lastSubmission.body === body
       ? lastSubmission.preview
       : await api(`${path}/preview`, { method: "POST", body });
-    if (!window.confirm(`确认执行？\n\n${JSON.stringify(preview, null, 2)}`)) return;
+    const prompt = options.describe ? options.describe(preview) : `确认执行？\n\n${JSON.stringify(preview, null, 2)}`;
+    if (!window.confirm(prompt)) return;
     lastSubmission = { path, body, preview };
     const receipt = await api(`${path}/apply`, { method: "POST", body: JSON.stringify(preview) });
-    notice.value = receipt.disposition === "idempotent_noop" ? "该笔业务已经确认，没有重复入账。" : success;
+    notice.value = receipt.disposition === "idempotent_noop" ? options.noop ?? "该笔业务已经确认，没有重复入账。" : success;
     await refresh();
+    const mismatch = await options.verify?.();
+    if (mismatch) {
+      notice.value = "";
+      error.value = mismatch;
+    }
   } catch (caught: any) {
     if (caught instanceof ApiError && caught.status < 500) lastSubmission = undefined;
     error.value = caught.message;
@@ -360,6 +382,13 @@ async function forgetAccount() {
   if (window.confirm("确认退出并清除这个账号的保持登录？")) {
     await window.bizhubLocalDesktop.forgetAccount();
   }
+}
+
+function selectSalesMode(next: "goods" | "service") {
+  salesMode.value = next;
+  if (next === "service") servicesOpened.value = true;
+  notice.value = "";
+  error.value = "";
 }
 
 async function selectPage(next: Page) {
@@ -553,7 +582,13 @@ onMounted(async () => {
         <article class="panel"><h2>当前目录</h2><div v-for="group in ['parties','products','units','locations']" :key="group" class="catalog-group"><b>{{ group }}</b><span v-for="item in catalog[group]" :key="item.id">{{ item.canonical_name }} <small>{{ item.id }}</small></span></div></article>
       </section>
 
-      <section v-if="page === 'procurement' || page === 'sales'" class="two-column">
+      <div v-if="page === 'sales'" class="mode-switch" role="tablist">
+        <button role="tab" :aria-selected="salesMode === 'goods'" :class="{ active: salesMode === 'goods' }" @click="selectSalesMode('goods')">商品订单</button>
+        <button role="tab" :aria-selected="salesMode === 'service'" :class="{ active: salesMode === 'service' }" @click="selectSalesMode('service')">服务合同</button>
+      </div>
+      <SalesServiceView v-if="servicesOpened" v-show="page === 'sales' && salesMode === 'service'" ref="salesService" :catalog="catalog" :busy="busy" :run="runOwner" />
+
+      <section v-if="page === 'procurement' || (page === 'sales' && salesMode === 'goods')" class="two-column">
         <article class="panel"><h2>新建{{ page === 'sales' ? '销售' : '采购' }}订单</h2><form @submit.prevent="createOrder(activeTradeKind)">
           <label>订单 ID<input v-model="orderForm.order_id" required></label><label>行 ID<input v-model="orderForm.line_id" required></label>
           <label>{{ page === 'sales' ? '客户' : '供应商' }}<select v-model="orderForm.party_id" required><option value="">请选择</option><option v-for="item in activeParties" :value="item.id">{{ item.canonical_name }}</option></select></label>

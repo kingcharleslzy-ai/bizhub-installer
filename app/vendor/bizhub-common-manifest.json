@@ -1,11 +1,11 @@
 {
-  "allowlist_contract_sha256": "29f03309f6da91de664d79992e02bdac8d216e4ad736611dee7ac52b1ea9a823",
-  "allowlist_tree_digest": "713f31142e4daaea3b7b34e26eff772ae73e6c37eafe7e73e65244200ab6e589",
+  "allowlist_contract_sha256": "97676df7285be0edb4b4b17078da2f904b6f6804b35ef58fdd9473ab332ecffb",
+  "allowlist_tree_digest": "7a3f89015b35601b53d51af990d4d9879533fee8c8e4939fa9d0e42914ca448f",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "8e9fa6968a4ca64aded01552e6459034e6097dc879fd13b1e5dbedf59831e987",
-  "core_artifact_digest": "sha256:8e9fa6968a4ca64aded01552e6459034e6097dc879fd13b1e5dbedf59831e987",
+  "artifact_sha256": "c4d2f106644baa6313303fd5c9ec8601269f1964af62a03af5a150bec953293d",
+  "core_artifact_digest": "sha256:c4d2f106644baa6313303fd5c9ec8601269f1964af62a03af5a150bec953293d",
   "deterministic_rebuild_equal": true,
-  "file_count": 77,
+  "file_count": 105,
   "files": [
     {
       "path": "backend/__init__.py",
@@ -14,8 +14,8 @@
     },
     {
       "path": "backend/generated/generic_kernel_smoke_runtime_registry.v1.json",
-      "sha256": "817813312b91d60f96ea96765bb43e7aebf310b253dbe1b86863b5948f8c58ec",
-      "size": 77459
+      "sha256": "0b9564e1e18f61a14ed7030f11e7d8c4353e3beeb86ac08a063b49167aea7bfa",
+      "size": 361499
     },
     {
       "path": "backend/generic_kernel/__init__.py",
@@ -24,13 +24,13 @@
     },
     {
       "path": "backend/generic_kernel/agent_common.py",
-      "sha256": "070967f96c40e92ad3d3dd50648bc34bc8581dd40409d62d91f13c835d47c30b",
-      "size": 79367
+      "sha256": "518504d8c6294b3400846aa55e013b7b8abf2aecc441376b3e2c8920f7b55171",
+      "size": 77755
     },
     {
       "path": "backend/generic_kernel/app.py",
-      "sha256": "7f32c79d498299e90f39600f87a876628e80df7315209e56b7750239f58d7e5d",
-      "size": 50350
+      "sha256": "c75c0e2f715d71986dd54415172e5509461bf4a739dceabe2ea1ecfaff273a6d",
+      "size": 38260
     },
     {
       "path": "backend/generic_kernel/backup.py",
@@ -49,13 +49,13 @@
     },
     {
       "path": "backend/generic_kernel/migrations.py",
-      "sha256": "c6b19733a9d71b61808d53db13337002c6bac92f59d8eb225abccd76b8b94ee6",
-      "size": 101289
+      "sha256": "72714c64554c70f484a6b8897e24609fd2c37a51679613212c1e4f5cec256e92",
+      "size": 158018
     },
     {
       "path": "backend/generic_kernel/models.py",
-      "sha256": "67283f968eff6b86ac40860362f2f2b85a5f192ead50580951aa759214ebe181",
-      "size": 5511
+      "sha256": "dcb8d488d174006df7bcb1f14a9eac4c5ed5fed7ab5c96a9e8dcdc049de68a99",
+      "size": 6772
     },
     {
       "path": "backend/generic_kernel/onboarding.py",
@@ -64,28 +64,28 @@
     },
     {
       "path": "backend/generic_kernel/procurement_agent.py",
-      "sha256": "66f99a8e4beca2e5aa6049bdd6e8ba6545244d970b30a2b6852321c3543d8326",
-      "size": 31792
+      "sha256": "42349fff0444e30897bd1e9c489e0ed44a2a52ddf3a327f0346a70922c673a0f",
+      "size": 19720
     },
     {
       "path": "backend/generic_kernel/procurement_sources.py",
-      "sha256": "8d382f421e06bef3b01a22bcc2544e22ec3677bf7a8065b239dc06f323f2ec29",
-      "size": 17258
+      "sha256": "e1f17ca1a0b550aad17e1dca36e65a03436eb117e7fb84642feb20d8e53ad507",
+      "size": 13969
     },
     {
       "path": "backend/generic_kernel/profile.py",
-      "sha256": "e056a30e50db9e8d156dcd7b52d85651f45cc2fec28373a93c86cfdcdfb9b749",
-      "size": 3942
+      "sha256": "2558c6645589f3804efaeb85f80caf8c9540add7d74f2f2a508a9aa4d3e79f7e",
+      "size": 4049
     },
     {
       "path": "backend/generic_kernel/sales_agent.py",
-      "sha256": "a09f9486ea1c5cd61a9e5ee1a41200ec50d89527e2ae7b780f02c4a0769d711f",
-      "size": 33225
+      "sha256": "213e117737af6d1fae91c278b971d92a2c1b75aff357ad9c0c9862b408a804bd",
+      "size": 26278
     },
     {
       "path": "backend/generic_kernel/sales_sources.py",
-      "sha256": "90c4cdb7c0209836bc7108388165e8932740325697ab9148ab0808715ce3e598",
-      "size": 20014
+      "sha256": "40fb7a780669d7b689cce8a2ae4959704e3f511d03cb8a460685b87a44c0a112",
+      "size": 19182
     },
     {
       "path": "backend/generic_kernel/storage.py",
@@ -114,8 +114,8 @@
     },
     {
       "path": "backend/kernel/profile_registry.py",
-      "sha256": "f4e5aa348251e79ead30cfb649ebfc8f607726efdc21fbf6e8c67a89c72d3e45",
-      "size": 18923
+      "sha256": "a37d77a817e26cf016c4641358698d9e729a266f1a64bd3945bdd271f29a0c77",
+      "size": 24136
     },
     {
       "path": "backend/kernel/runtime/__init__.py",
@@ -128,9 +128,14 @@
       "size": 18617
     },
     {
+      "path": "backend/kernel/runtime/schema_lineage_tables.py",
+      "sha256": "bd0433c8fe5d7daec4be156fbca8e1165064179f72734edd49cb9271b501f85c",
+      "size": 3145
+    },
+    {
       "path": "backend/kernel/sqlite_storage.py",
-      "sha256": "10551615a9c85df57d3618aaf43a22bc82788e8efefc77cd4c68ac480bc2a3c4",
-      "size": 7312
+      "sha256": "b205633671e78f635c2faf5cbc4ea19a02a436ab61bb7e733b62a2a1fd1b1dc5",
+      "size": 7586
     },
     {
       "path": "backend/modules/__init__.py",
@@ -148,24 +153,49 @@
       "size": 3358
     },
     {
+      "path": "backend/modules/inventory/location_schema.py",
+      "sha256": "e7007b7d7e517a6b2dbea98d086aeee0019e46742388b98d8f9248981df17c5f",
+      "size": 2301
+    },
+    {
       "path": "backend/modules/inventory/manifest.py",
-      "sha256": "8a6922bb59846c631f6340baa82948b472324651f0ac75dad1b5ea4bb1abd03d",
-      "size": 2939
+      "sha256": "98de90f24e73240701f8ca7dc882ee8ff46746c21dcb2774ef25b78decd288d5",
+      "size": 2945
+    },
+    {
+      "path": "backend/modules/inventory/movement_schema.py",
+      "sha256": "d6077629e667fd0b56409f40611fb49fc6f99fc5fafe3822f106aa96416d17c1",
+      "size": 4422
+    },
+    {
+      "path": "backend/modules/inventory/movement_writes.py",
+      "sha256": "5696efdc4b1a1a9699c0709d69edc2df34f2e013e65a73eec25933f753acb99c",
+      "size": 11346
     },
     {
       "path": "backend/modules/inventory/owner.py",
-      "sha256": "bcbb97f4cfe7a8b06218a335abb8152ff4b84383d5441650cb966b1b59a8d6ec",
-      "size": 25905
+      "sha256": "f30ae39c1858b242f1b8b8504aa667f1409f81081c6b7ef2072f74fb3c0829f5",
+      "size": 29653
     },
     {
       "path": "backend/modules/inventory/public.py",
-      "sha256": "daf5aa7bcd2892da5d6facf014dd492ef840003d05f02c27dc7904417b4d6c2f",
-      "size": 2229
+      "sha256": "5730abae590e8c293f932bfd14e8c6eb2bf45e8405ad1c771c483f7a66507658",
+      "size": 4822
+    },
+    {
+      "path": "backend/modules/inventory/stock_ledger.py",
+      "sha256": "15e80dd54710d0d5c9c8df4d182657b92499eff494e771edffb9a9f6cb2834f5",
+      "size": 43829
+    },
+    {
+      "path": "backend/modules/inventory/stock_move_schema.py",
+      "sha256": "746e7a04e7866b414af762846d5f25d175881d187007d7923779163d2a53b9bd",
+      "size": 3529
     },
     {
       "path": "backend/modules/inventory/stocktake_ledger.py",
-      "sha256": "113d22b2018bdefe380776eaf6e4291c459d537af3232903eac1c247a083ee58",
-      "size": 3981
+      "sha256": "56b58313c6876f80df0ee0525f510849c461af72c1e3be1d78eb6ecb1a0d8df5",
+      "size": 3987
     },
     {
       "path": "backend/modules/master_data/__init__.py",
@@ -174,8 +204,8 @@
     },
     {
       "path": "backend/modules/master_data/commands.py",
-      "sha256": "e5454f34254ee7358ccca9ae0493ee7c1dd4f0c8f3cf5296a94b915f82889163",
-      "size": 30640
+      "sha256": "432b08078d8d5adcfc562023059c5711cc0b9428306c12cbd6acdbba70a15fdf",
+      "size": 40495
     },
     {
       "path": "backend/modules/master_data/contracts.py",
@@ -183,39 +213,59 @@
       "size": 3410
     },
     {
+      "path": "backend/modules/master_data/document_hints.py",
+      "sha256": "6649b7dd9b313c5c86e216699d8625760100bc347c7e40c39626428b50b63c68",
+      "size": 1464
+    },
+    {
       "path": "backend/modules/master_data/intents.py",
-      "sha256": "2f8ab625cc95f99f95d98d75e0e176e0a368a9582d1fbb32bb81511796791a96",
-      "size": 20510
+      "sha256": "1baf2e25a550b8666d12a54bb4843a5405d3e1411e5eaa862ab309942f7b7e15",
+      "size": 21644
+    },
+    {
+      "path": "backend/modules/master_data/item_identity.py",
+      "sha256": "6efb529ad9dc5776c9c4e96aa576d959114838b519333fa95aae10fede0e1eeb",
+      "size": 2756
     },
     {
       "path": "backend/modules/master_data/lookup.py",
-      "sha256": "58aa5eb16f5c3e2058df8afe2f48528546895644a4cd6ce113eaa1bf1cab78cc",
-      "size": 27685
+      "sha256": "11c4be314b94e830af7a9adfc30d7ad9c3f36184ec6afcd084bcf67e329aac7c",
+      "size": 38481
     },
     {
       "path": "backend/modules/master_data/manifest.py",
-      "sha256": "cad23ce6465781e166bda6815a8a27b131e08bbe7ebd400072e643a50832303b",
-      "size": 2771
+      "sha256": "be313d1e4a816ac4fdc17627a26b79752c634e80b02bdab2cd8d48e09d359234",
+      "size": 3095
     },
     {
       "path": "backend/modules/master_data/matching.py",
-      "sha256": "c80cd67ac7548c2cfa2dcb5d4841afb8151b1e27977291d9cd785b4f383d476e",
-      "size": 7740
+      "sha256": "38dfdac21c667c4f494b80bc1fdf6bd04aa886284da2ca157d4d4e10183124bd",
+      "size": 7746
+    },
+    {
+      "path": "backend/modules/master_data/name_snapshots.py",
+      "sha256": "bd0b3031ca92049568c440f3f0a3e8068732f5abd4edf2f5be5322507b94d05b",
+      "size": 5803
+    },
+    {
+      "path": "backend/modules/master_data/name_types.py",
+      "sha256": "6b7eb25bbf0e1bd984ab5d7ab7e65ae32e71eac586bc9601d6dee0aa2aa8f6bb",
+      "size": 3912
     },
     {
       "path": "backend/modules/master_data/owner.py",
-      "sha256": "adbb6bc0bf9e4ec5dd36d744f717023a3359bb9354266e9a6415835e4187ddc7",
-      "size": 16446
+      "sha256": "99ec904fc248266718139f05034abc1a137a573111bc73d6224ae5a7d07c0d9d",
+      "size": 16507
     },
     {
       "path": "backend/modules/master_data/policy.py",
-      "sha256": "9a2fc99f80727536e906f74faa25497dda49f00e7fbcc706cfadf5fd48af36dc",
-      "size": 5825
+      "sha256": "6b0aa4f742b6d0617df87008a7f4069c99e484398914ee2d0d1cc3df080c9d80",
+      "size": 6929
     },
     {
       "path": "backend/modules/master_data/public.py",
-      "sha256": "8e08b7f8e5f77691cf9a2d436f75ad6c08110a09bf018d676fd25b32317c82e1",
-      "size": 9734
+      "sha256": "87566ebe4834da736c1f949eee925292ac48c9d1c6dd90c994d0b32641d22fbc",
+      "size": 14087
     },
     {
       "path": "backend/modules/master_data/resolution.py",
@@ -224,13 +274,13 @@
     },
     {
       "path": "backend/modules/master_data/schema.py",
-      "sha256": "bd7a25459c705791dee897ea148f50d0fca419d18fbf8d9cc218309362f12dfd",
-      "size": 26094
+      "sha256": "c50aea3f6903b76d2beb2b0938dd658db9ea992c6ec71cbc4aa8e1a14a3b6bb1",
+      "size": 29317
     },
     {
       "path": "backend/modules/master_data/writes.py",
-      "sha256": "28833f5b7983ff70e1e288a5674b03f95e83864a2c6479c5149332fa72ebc917",
-      "size": 38081
+      "sha256": "aa87d43ff63eca2b03b0746a31e5b4e9d67d4bcd8e0390f9ee2237d056c5d482",
+      "size": 46575
     },
     {
       "path": "backend/modules/platform/__init__.py",
@@ -244,8 +294,8 @@
     },
     {
       "path": "backend/modules/platform/agent_runtime/contributions.py",
-      "sha256": "0ab90a2fccb28a2217df5c3708cb05fd7dd22e40efbbd02bd7cf363ae14fc3fa",
-      "size": 22624
+      "sha256": "6e76c1171b9ca71bb266e31cdb5883fff859c9189ea26d5a230f18854b2dfe5c",
+      "size": 23809
     },
     {
       "path": "backend/modules/platform/agent_runtime/decision_journal.py",
@@ -264,33 +314,33 @@
     },
     {
       "path": "backend/modules/platform/agent_runtime/query_contract.py",
-      "sha256": "508fb5143f9484b30d635d0c51b36c5b0c29c41d37ad1ee70b434decb400d6b4",
-      "size": 1085
+      "sha256": "2b9f74bf901e54f39d1ad45c07b225584aa753a9325379e0d00828ed52fb9500",
+      "size": 1757
     },
     {
       "path": "backend/modules/platform/agent_runtime/record_contract.py",
-      "sha256": "55caac38a9c434c4238ce84a155b3c89cda52821dcdd9063661d408827d68af7",
-      "size": 12873
+      "sha256": "e6a225e58e66f8a130cd9e7f093c9635bf1426e7f75684fb6640ad1dfbc9b538",
+      "size": 13995
     },
     {
       "path": "backend/modules/platform/agent_runtime/sdk_runner.py",
-      "sha256": "3ff70ca15ee3365961332d5e3972906e9bd2c71ae16b7441b19f8b7294ac480b",
-      "size": 13238
+      "sha256": "cc61d6b58b0fd0a73eccef9ba49d05dce4e196ee324dc8ca418eea06169430c5",
+      "size": 13698
     },
     {
       "path": "backend/modules/platform/agent_runtime/source_contract.py",
-      "sha256": "722b15cce9a9b473f03b84047e4f4e708509bb5dcb03220ae4379bba5a9b564c",
-      "size": 22820
+      "sha256": "9f4f334a4773f5fc1c6133a588580e1ddb3dd771e1e8c478589bf1b8f87b86e5",
+      "size": 23162
     },
     {
       "path": "backend/modules/platform/agent_runtime/source_journal.py",
-      "sha256": "1490edfc6e47454bf47cf8e36ca9db43045d5ce3d40aa3122be134528e03c860",
-      "size": 79264
+      "sha256": "c0994c5d41c3304c8b15aa4a47a334de319f267125b9095fc8ac3c527bd35bf4",
+      "size": 79878
     },
     {
       "path": "backend/modules/platform/agent_runtime/source_lifecycle.py",
-      "sha256": "ad0f357b4d0f07168f37b5f3b43322b8c22060c400d16f05eaaf4d57c6c9ac3d",
-      "size": 7136
+      "sha256": "aa79451222fa00f320f8c8b7884cdce07ec924ed103b2cb46f6800e2b27bbdf9",
+      "size": 7531
     },
     {
       "path": "backend/modules/procurement/__init__.py",
@@ -299,38 +349,58 @@
     },
     {
       "path": "backend/modules/procurement/contracts.py",
-      "sha256": "164e56c6b7a1b1aece0554a695723d4e4b26c965620814cbcb59f7d3e3db153b",
-      "size": 24767
+      "sha256": "c8dace7070920f80808fccb785a10bc78b884c712e0a1a60ebc4196a24a2974b",
+      "size": 12535
     },
     {
       "path": "backend/modules/procurement/manifest.py",
-      "sha256": "4dbb8a99639960d62678b6f111658437fd400357b0f38cf0799b794388a2dafa",
-      "size": 7407
+      "sha256": "2ec4077647d42984621e224b2a9b55a16d5c04169717a0aa8f417efc60a6a668",
+      "size": 4812
+    },
+    {
+      "path": "backend/modules/procurement/order_schema.py",
+      "sha256": "9bcd8f29e53146a4ac2267c470ec5a038098521cc842c81f5a3314392a58350f",
+      "size": 3613
     },
     {
       "path": "backend/modules/procurement/owner.py",
-      "sha256": "516c321779774f6065df2c4b4d64c453912e1fa9d03fe51f9ffca21721966f63",
-      "size": 115917
+      "sha256": "8c9b79e593a2aac7437605b5dcf736eea2e1b45afc88f32c296f265396b3f7f3",
+      "size": 59637
     },
     {
       "path": "backend/modules/procurement/public.py",
-      "sha256": "35f545a7ac566f5696f87f79c5db99739a5b468eb6f143640827092531a08442",
-      "size": 9791
+      "sha256": "3d8ba32ad343aa166ff2efe86830d8aa32492a5572058d33a04dc8ed392c8b8b",
+      "size": 4486
+    },
+    {
+      "path": "backend/modules/procurement/receipt_schema.py",
+      "sha256": "7f04564a75a278bfbb650b0bdeee0dd1ec15021ac2a1e71dddf699da46aae8db",
+      "size": 2697
+    },
+    {
+      "path": "backend/modules/procurement/receipt_writes.py",
+      "sha256": "0b58e57e685c1bb779f8168cf426c1e63ea20dddcc661eecda4e80c71eab88c1",
+      "size": 8219
+    },
+    {
+      "path": "backend/modules/procurement/relation_reads.py",
+      "sha256": "d41442e974cd239827c3354a7e53e130b365f4d689299c6c86669c76b08671e3",
+      "size": 5375
     },
     {
       "path": "backend/modules/procurement/settlement_reads.py",
-      "sha256": "a3b43e3b790875aba302341e682fc32d938eff7813123c30195b97ab9bdf9470",
-      "size": 3687
+      "sha256": "b766f55ebcccec2fdffbb2f98a2770dde1a29ccf5918afdf2bb6fc318019aef6",
+      "size": 3927
     },
     {
       "path": "backend/modules/procurement/settlement_schema.py",
-      "sha256": "954dc16bb61d849278dea6e45a1e4068c50254106374450594ce9780185b23e2",
-      "size": 9609
+      "sha256": "d19f24fd3c348abb785a5a532d696029ae69e170936b605226cab02be6c51426",
+      "size": 9517
     },
     {
       "path": "backend/modules/procurement/settlement_writes.py",
-      "sha256": "c8a302580831b28f0c16eb064424c2f53fcccfdcac2c1a3757727420d7ef336e",
-      "size": 20962
+      "sha256": "f2b7088eaea869e9af57693c4f2812e087346e00544d1ee2b5fd5144808a041c",
+      "size": 21194
     },
     {
       "path": "backend/modules/sales/__init__.py",
@@ -339,23 +409,78 @@
     },
     {
       "path": "backend/modules/sales/contracts.py",
-      "sha256": "9dede22d916d4d402e4c1735ee488a48ddf0f5023507973042e8450410c72fe3",
-      "size": 19793
+      "sha256": "d55ec48bd4d0d471f0f07b19309c44f0bc06d46b3376325473f87bec8002524d",
+      "size": 11150
+    },
+    {
+      "path": "backend/modules/sales/fulfillment_writes.py",
+      "sha256": "ee845f9f2ba5da28fab303cf27a9f8f39ef58e3e7726fb17126ff20c2114f42e",
+      "size": 5299
     },
     {
       "path": "backend/modules/sales/manifest.py",
-      "sha256": "e065c9e1f362da3572ee428a5214140a5b4289f76805292b095a346414fe34a3",
-      "size": 6997
+      "sha256": "e2408881f53030290d489be6b881902d6b92323740694446a04c6182f484415b",
+      "size": 5749
+    },
+    {
+      "path": "backend/modules/sales/order_schema.py",
+      "sha256": "5f1d893069876ed849b9e260adbd222bf8ff4402da827be7016b88352efcf129",
+      "size": 5105
+    },
+    {
+      "path": "backend/modules/sales/order_writes.py",
+      "sha256": "c773b5506c40bc80456d50d4583026237d7bd4f4cb466add9060c11ca974c1ea",
+      "size": 4428
     },
     {
       "path": "backend/modules/sales/owner.py",
-      "sha256": "5ed13907be05ad3f3daca4a495db6d8c9366cc2553f94ed1b7ea1a4a9881c9e9",
-      "size": 96040
+      "sha256": "31f4483e4b9c7be70ac2e5cc5730db6f0ba44ef2a5fc1dc7b0a36f6347bcbce3",
+      "size": 59057
     },
     {
       "path": "backend/modules/sales/public.py",
-      "sha256": "2d3adf5a64daf7c478c5917528e4fa49946f6b80d41dd1f0cca20f008382d536",
-      "size": 3524
+      "sha256": "a4d4b3e5ab22565b0ac38d465a56c188280f56f08f646a5adff4669f84c20034",
+      "size": 3946
+    },
+    {
+      "path": "backend/modules/sales/relation_reads.py",
+      "sha256": "97447f3af27472bb3fc27df100961492201549deff7cc18f93a4c8ac52c1d34f",
+      "size": 19130
+    },
+    {
+      "path": "backend/modules/sales/return_origin.py",
+      "sha256": "d176b3f1247d0d552d1a61880568cfde10e8262c1dbc0cf15f9be084974ff269",
+      "size": 11244
+    },
+    {
+      "path": "backend/modules/sales/return_schema.py",
+      "sha256": "0e9f21021880c3f7d1f1a68cd02f41d57c663ef5dfed86cdf6d0e0f8509b42c7",
+      "size": 9103
+    },
+    {
+      "path": "backend/modules/sales/return_writes.py",
+      "sha256": "d8c596c66eb39b344d4340c32a6c1dc306ca6ea3ebb21336475f3191b8a41f44",
+      "size": 20374
+    },
+    {
+      "path": "backend/modules/sales/segmented_pricing.py",
+      "sha256": "571c75a9822c0a05009cae976abb81a898eb370f2d04207690e101a7958ec3b5",
+      "size": 3717
+    },
+    {
+      "path": "backend/modules/sales/service_fulfillment.py",
+      "sha256": "93cdba1a5d30c9db62e26959c3ae6eed2ca735809ad19da9cfc9454582064dd3",
+      "size": 13137
+    },
+    {
+      "path": "backend/modules/sales/settlement_schema.py",
+      "sha256": "e24073d074ab4e8fd57bfc9fdbd15bc4420d876967ef4b859e4dc8de9a00eb7e",
+      "size": 3332
+    },
+    {
+      "path": "backend/modules/sales/settlement_writes.py",
+      "sha256": "337eb89cb2ead7cd7b13de4f550868548fc2e96f256f85797c93f441803e5f74",
+      "size": 7946
     },
     {
       "path": "backend/modules/trade_core/__init__.py",
@@ -364,23 +489,38 @@
     },
     {
       "path": "backend/modules/trade_core/manifest.py",
-      "sha256": "d67d69c0a56636af97be29e0a7b2a8ef181d13a3b335190cea4fba6d83f81843",
-      "size": 1267
+      "sha256": "825c20440f355b7d197e19f618c7240617e674fe7aaa9969aa20778eb7d47cf7",
+      "size": 1306
     },
     {
       "path": "backend/modules/trade_core/public.py",
-      "sha256": "e0b1f237a68c5ed1d5077e12b94875fff47ca7db0ea82f38ce1869049e81490b",
-      "size": 18733
+      "sha256": "aed4b5d798f9405780d1a60f8d9698cee76cbcd537e43ca53917957e481f039d",
+      "size": 25862
+    },
+    {
+      "path": "backend/modules/trade_core/reference_comparison.py",
+      "sha256": "e4db32ec409349d6c4dc5a610d5ce02a4ab0fbaecd07596ba48af0e31f5a6b3b",
+      "size": 4687
     },
     {
       "path": "backend/modules/trade_core/reversal.py",
-      "sha256": "90ba15ec50ff8a8c1e9c4028aa0f2fa67c3ccd8ca3c7e2c68bf02e5c8db823c1",
-      "size": 16305
+      "sha256": "5fbafbf54892f340827b2a9b0f00300a6ae703667a587db1bdbed232bb87ac81",
+      "size": 18078
+    },
+    {
+      "path": "backend/modules/trade_core/statement_reconciliation.py",
+      "sha256": "9ff4f4e459f6c06ac60d4241a0b7659ebba0aeda4841a24e8fad3080d697ea42",
+      "size": 15050
+    },
+    {
+      "path": "backend/modules/trade_core/tax_invoice_effectiveness.py",
+      "sha256": "98ee438bbc6243fc4d4ff8911e1804a363b1c2c8a5c1fa19548f43312f1b7ddc",
+      "size": 1137
     },
     {
       "path": "backend/profiles/generic-kernel-smoke.lock.json",
-      "sha256": "0036ddba1d54879ccc4852d9a12b2a96ab85eefd9333adb6d2feccebf7128fec",
-      "size": 2126
+      "sha256": "e7d97643dbb3fcddab5e2f0a9ea49816bb045d5742a282ba268b15a75b6fe26b",
+      "size": 5781
     },
     {
       "path": "requirements-generic.txt",
@@ -395,5 +535,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "7f198b1dc8fd25b637eaf9b3a6ce1bd93ebc2818"
+  "source_commit": "5be012cd28e253ae6e8d7b1d3244a582df74c8ee"
 }

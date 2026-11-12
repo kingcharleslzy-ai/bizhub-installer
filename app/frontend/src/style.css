@@ -191,7 +191,29 @@ dl.agent-facts dd small { display: block; margin-top: 3px; color: #8d887f; font-
 .agent-history button:hover, .agent-history button.active { border-color: #d8d0b9; background: #fff; }
 .agent-history small { color: #8d887f; font-size: 11px; }
 
-@media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); }.two-column { grid-template-columns: 1fr; }.panel.wide { grid-column: auto; }.cobuild-layout { grid-template-columns: 1fr; }.agent-review { grid-template-columns: 1fr; } }
+.mode-switch { display: inline-flex; gap: 2px; margin: -8px 0 16px; padding: 3px; border: 1px solid #dfdcd5; border-radius: 9px; background: #fff; }
+.mode-switch button { padding: 7px 16px; border-color: transparent; color: #6f6a61; background: transparent; }
+.mode-switch button.active { color: #fff; border-color: #28251f; background: #28251f; }
+.service-desk { display: grid; gap: 14px; max-width: 1180px; }
+.service-desk .eyebrow { margin: 0 0 6px; color: #8b742d; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.service-desk > .agent-issue { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; }.service-desk > .agent-issue code { flex: 1 1 100%; order: 2; margin: 0; }.service-desk > .agent-issue button { margin-left: auto; padding: 5px 10px; }
+.service-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 16px; align-items: start; }
+.service-list { display: grid; gap: 6px; padding: 12px; border: 1px solid #e4e0d8; border-radius: 10px; background: #fbfaf7; }
+.service-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid #ece9e3; font-size: 13px; }.service-list-head button { padding: 5px 10px; font-size: 12px; }
+.service-list > button { display: grid; gap: 6px; padding: 10px 11px; border-color: transparent; color: #3c3a34; text-align: left; background: transparent; font-weight: 500; }
+.service-list > button:hover, .service-list > button.active { border-color: #d8d0b9; background: #fff; }
+.service-list > button > span:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.service-list b { overflow-wrap: anywhere; font-size: 13px; }.service-list small { color: #8d887f; font-size: 11px; overflow-wrap: anywhere; }
+.service-meter { display: block; height: 4px; border-radius: 999px; background: #e9e4d8; overflow: hidden; }.service-meter i { display: block; height: 100%; background: #7c9b86; }
+.service-detail { display: grid; gap: 14px; min-width: 0; }
+dl.service-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; }
+dl.service-facts > div { min-width: 0; padding: 10px 12px; border-radius: 8px; background: #f7f5ef; }
+dl.service-facts dd { margin-top: 4px; color: #2d342f; font-size: 14px; font-weight: 700; }
+.service-table { margin-top: 14px; }.service-table td b { color: #8b5a14; }
+.service-form { margin-top: 14px; }.service-form .span { grid-column: 1 / -1; }.service-form .agent-issue { margin: 0; }
+.service-total { display: grid; align-content: center; padding: 8px 12px; border-radius: 8px; background: #f7f5ef; }.service-total span, .service-total small { color: #8a857c; font-size: 11px; }.service-total b { font-size: 16px; }
+
+@media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(2, 1fr); }.two-column { grid-template-columns: 1fr; }.panel.wide { grid-column: auto; }.cobuild-layout { grid-template-columns: 1fr; }.agent-review { grid-template-columns: 1fr; }.service-layout { grid-template-columns: 1fr; }dl.service-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
