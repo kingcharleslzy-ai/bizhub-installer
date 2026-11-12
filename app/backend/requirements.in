@@ -1,5 +1,5 @@
 argon2-cffi==25.1.0
-fastapi==0.116.1
+fastapi==0.139.0
 openai==2.44.0
 openai-agents==0.17.7
 pydantic==2.13.3
