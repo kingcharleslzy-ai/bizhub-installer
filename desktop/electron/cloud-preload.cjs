@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("bizhubDesktop", {
   updatePreferences: (patch) => ipcRenderer.invoke("desktop:cloud-update-preferences", patch),
   checkUpdate: () => ipcRenderer.invoke("desktop:cloud-check-update"),
   switchAccount: () => ipcRenderer.invoke("desktop:cloud-switch-account"),
+  showNotification: (notification) => ipcRenderer.invoke("desktop:cloud-show-notification", notification),
+  setBadgeCount: (count) => ipcRenderer.invoke("desktop:cloud-set-badge-count", count),
   onPreferencesChange: (listener) => {
     if (typeof listener !== "function") return () => {};
     const handler = (_event, preferences) => listener(preferences);

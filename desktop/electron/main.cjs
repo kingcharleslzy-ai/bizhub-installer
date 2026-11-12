@@ -7,6 +7,7 @@ const {
   net,
   nativeImage,
   nativeTheme,
+  Notification,
   protocol,
   safeStorage,
   session,
@@ -102,6 +103,8 @@ const MIME_TYPES = new Map([
 let mainWindow = null;
 let workspaceView = null;
 let backgroundTray = null;
+const activeAttentionNotifications = new Set();
+let attentionBadgeIcon = null;
 const remoteSessionPolicies = new WeakMap();
 const localSessionPolicies = new WeakMap();
 let activeEnterpriseProfiles = new Map();
@@ -421,6 +424,121 @@ function requireTrustedLocalSender(event) {
   if (!trustedLocalSender(event)) throw new Error("desktop_local_ipc_sender_rejected");
 }
 
+const MAX_ATTENTION_TITLE_LENGTH = 120;
+const MAX_ATTENTION_PATH_LENGTH = 512;
+const MAX_ATTENTION_BADGE_COUNT = 9999;
+const MAX_TRACKED_ATTENTION_NOTIFICATIONS = 100;
+
+// Resolve a page-supplied path only inside the connected cloud application origin.
+function attentionTargetUrl(value, origin) {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > MAX_ATTENTION_PATH_LENGTH
+    || !value.startsWith("/")
+    || value.startsWith("//")
+    || /[\\\u0000-\u001f\u007f]/.test(value)
+  ) throw new Error("desktop_attention_path_invalid");
+  const target = new URL(value, origin);
+  if (target.origin !== origin) throw new Error("desktop_attention_path_invalid");
+  return target.href;
+}
+
+function attentionTitle(value) {
+  const title = typeof value === "string"
+    ? value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim()
+    : "";
+  if (!title || title.length > MAX_ATTENTION_TITLE_LENGTH) throw new Error("desktop_attention_title_invalid");
+  return title;
+}
+
+function showAttentionNotification(input) {
+  if (
+    !input
+    || typeof input !== "object"
+    || Object.keys(input).sort().join(",") !== "path,title"
+  ) throw new Error("desktop_attention_notification_shape_invalid");
+  const title = attentionTitle(input.title);
+  const origin = workspaceState.applicationOrigin;
+  const targetUrl = attentionTargetUrl(input.path, origin);
+  if (!Notification.isSupported()) return { status: "unsupported" };
+  const view = workspaceView;
+  const notification = new Notification({ title, silent: false });
+  // A Windows toast that times out emits "close" but stays in Action Center, so
+  // keep it tracked until workspace teardown closes it explicitly.
+  activeAttentionNotifications.add(notification);
+  if (activeAttentionNotifications.size > MAX_TRACKED_ATTENTION_NOTIFICATIONS) {
+    activeAttentionNotifications.delete(activeAttentionNotifications.values().next().value);
+  }
+  const release = () => activeAttentionNotifications.delete(notification);
+  notification.on("failed", release);
+  notification.on("click", () => {
+    release();
+    showMainWindow();
+    if (
+      workspaceView !== view
+      || !view
+      || view.webContents.isDestroyed()
+      || workspaceState.mode !== "cloud"
+      || workspaceState.applicationOrigin !== origin
+    ) return;
+    void view.webContents.loadURL(targetUrl).catch(() => {});
+  });
+  notification.show();
+  return { status: "shown" };
+}
+
+function createAttentionBadgeIcon() {
+  const size = 16;
+  const pixels = Buffer.alloc(size * size * 4);
+  const center = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const inside = (x - center) ** 2 + (y - center) ** 2 <= (size / 2) ** 2;
+      pixels[offset] = 48;
+      pixels[offset + 1] = 48;
+      pixels[offset + 2] = 220;
+      pixels[offset + 3] = inside ? 255 : 0;
+    }
+  }
+  return nativeImage.createFromBitmap(pixels, { width: size, height: size, scaleFactor: 1 });
+}
+
+function applyAttentionBadge(count) {
+  if (process.platform === "win32") {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (count > 0) {
+        attentionBadgeIcon ||= createAttentionBadgeIcon();
+        mainWindow.setOverlayIcon(attentionBadgeIcon, `${count} 件要你处理`);
+      } else {
+        mainWindow.setOverlayIcon(null, "");
+      }
+    }
+    backgroundTray?.setToolTip(count > 0 ? `BizHub Desktop（${count} 件要你处理）` : "BizHub Desktop");
+    return;
+  }
+  app.setBadgeCount(count);
+}
+
+function setAttentionBadge(value) {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_ATTENTION_BADGE_COUNT) {
+    throw new Error("desktop_attention_badge_invalid");
+  }
+  applyAttentionBadge(value);
+  return { status: "set", count: value };
+}
+
+function clearAttention() {
+  for (const notification of activeAttentionNotifications) notification.close();
+  activeAttentionNotifications.clear();
+  try {
+    applyAttentionBadge(0);
+  } catch {
+    // Clearing the badge must never block workspace teardown.
+  }
+}
+
 function setWorkspaceBounds() {
   if (!mainWindow || !workspaceView) return;
   const [width, height] = mainWindow.getContentSize();
@@ -440,6 +558,7 @@ function setWorkspaceBounds() {
 }
 
 function destroyWorkspaceView() {
+  clearAttention();
   if (!workspaceView) return;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.contentView.removeChildView(workspaceView);
@@ -2088,6 +2207,14 @@ function installIpcHandlers() {
   ipcMain.handle("desktop:cloud-check-update", async (event) => {
     requireTrustedCloudSender(event);
     return checkDesktopUpdate({ interactive: false });
+  });
+  ipcMain.handle("desktop:cloud-show-notification", (event, input) => {
+    requireTrustedCloudSender(event);
+    return showAttentionNotification(input);
+  });
+  ipcMain.handle("desktop:cloud-set-badge-count", (event, count) => {
+    requireTrustedCloudSender(event);
+    return setAttentionBadge(count);
   });
   ipcMain.handle("desktop:cloud-switch-account", async (event) => {
     requireTrustedCloudSender(event);
