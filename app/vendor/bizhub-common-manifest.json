@@ -1,9 +1,9 @@
 {
   "allowlist_contract_sha256": "97676df7285be0edb4b4b17078da2f904b6f6804b35ef58fdd9473ab332ecffb",
-  "allowlist_tree_digest": "e704ab431043c34f173ef009a3a2072f5808524261831a819e56e94c06155491",
+  "allowlist_tree_digest": "7a3f89015b35601b53d51af990d4d9879533fee8c8e4939fa9d0e42914ca448f",
   "artifact_id": "bizhub-common",
-  "artifact_sha256": "8f9935a17706dde2d891b2d61861d17f18579a8d96aa54ea82d828a8f856081b",
-  "core_artifact_digest": "sha256:8f9935a17706dde2d891b2d61861d17f18579a8d96aa54ea82d828a8f856081b",
+  "artifact_sha256": "c4d2f106644baa6313303fd5c9ec8601269f1964af62a03af5a150bec953293d",
+  "core_artifact_digest": "sha256:c4d2f106644baa6313303fd5c9ec8601269f1964af62a03af5a150bec953293d",
   "deterministic_rebuild_equal": true,
   "file_count": 105,
   "files": [
@@ -49,8 +49,8 @@
     },
     {
       "path": "backend/generic_kernel/migrations.py",
-      "sha256": "0118073b7d92e116eb2bcbd3628181f9163097d9fa0ef27ef550264eb5494be7",
-      "size": 157935
+      "sha256": "72714c64554c70f484a6b8897e24609fd2c37a51679613212c1e4f5cec256e92",
+      "size": 158018
     },
     {
       "path": "backend/generic_kernel/models.py",
@@ -535,5 +535,5 @@
   ],
   "schema_version": "bizhub.common-artifact-manifest.v1",
   "source_authority": "private-canonical",
-  "source_commit": "bbdd8a7d88cae743e01c6b9a5d28e2450b530778"
+  "source_commit": "5be012cd28e253ae6e8d7b1d3244a582df74c8ee"
 }
