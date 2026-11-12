@@ -124,6 +124,7 @@ def inventory(path: Path, *, limit: int = 100) -> dict[str, list[dict[str, Any]]
             item["product_name"] = products[item["product_id"]]
             item["unit_name"] = units[item["unit_id"]]
         for movement in movements:
+            movement["quantity"] = str(movement["quantity"])
             movement["from_location_name"] = locations.get(movement["from_location_id"], "")
             movement["to_location_name"] = locations.get(movement["to_location_id"], "")
         for balance in balances:
