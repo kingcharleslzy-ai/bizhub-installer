@@ -427,6 +427,7 @@ function requireTrustedLocalSender(event) {
 const MAX_ATTENTION_TITLE_LENGTH = 120;
 const MAX_ATTENTION_PATH_LENGTH = 512;
 const MAX_ATTENTION_BADGE_COUNT = 9999;
+const MAX_TRACKED_ATTENTION_NOTIFICATIONS = 100;
 
 // Resolve a page-supplied path only inside the connected cloud application origin.
 function attentionTargetUrl(value, origin) {
@@ -463,9 +464,13 @@ function showAttentionNotification(input) {
   if (!Notification.isSupported()) return { status: "unsupported" };
   const view = workspaceView;
   const notification = new Notification({ title, silent: false });
+  // A Windows toast that times out emits "close" but stays in Action Center, so
+  // keep it tracked until workspace teardown closes it explicitly.
   activeAttentionNotifications.add(notification);
+  if (activeAttentionNotifications.size > MAX_TRACKED_ATTENTION_NOTIFICATIONS) {
+    activeAttentionNotifications.delete(activeAttentionNotifications.values().next().value);
+  }
   const release = () => activeAttentionNotifications.delete(notification);
-  notification.on("close", release);
   notification.on("failed", release);
   notification.on("click", () => {
     release();
