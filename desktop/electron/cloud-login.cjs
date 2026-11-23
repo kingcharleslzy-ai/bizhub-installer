@@ -177,6 +177,15 @@ function cloudLogoutScript() {
   })()`;
 }
 
+// 用记住的登录自动连上以后问一下 ERPNext：connected＝已登上；signed_out＝这个工作区接了 ERPNext 但没登上
+// （记住的登录里没有 ERPNext 的会话，或已过期）；none＝没接 ERPNext 或网络不通，不拦。
+function erpnextProbeScript() {
+  return `fetch(new URL(${JSON.stringify(ERPNEXT_PROBE_PATH)}, window.location.origin), {
+    method: "GET", redirect: "error", credentials: "include", headers: { Accept: "application/json" },
+  }).then((response) => (response.ok ? "connected" : (response.status === 401 || response.status === 403) ? "signed_out" : "none"))
+    .catch(() => "none")`;
+}
+
 // 页面自己点了退出（老后台退出）以后，再把 ERPNext 也退掉。
 function erpnextLogoutScript() {
   return `fetch(new URL(${JSON.stringify(ERPNEXT_LOGOUT_PATH)}, window.location.origin), {
@@ -188,6 +197,7 @@ module.exports = {
   CLOUD_LOGIN_PATH,
   ERPNEXT_LOGOUT_PATH,
   erpnextLogoutScript,
+  erpnextProbeScript,
   CLOUD_LOGOUT_PATH,
   cloudLoginError,
   cloudLoginScript,
