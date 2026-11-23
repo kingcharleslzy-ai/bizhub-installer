@@ -97,12 +97,23 @@ function localTokenPayload(token) {
   }
 }
 
+// 同一次登录顺带登上的 ERPNext 会话凭证（可选）：格式不对就整份不认；过期了只丢掉这一项，老系统照常自动登录。
+function validateErpnextSession(value, now) {
+  exactKeys(value, ["expiresAt", "sid"], "desktop_remembered_session_invalid");
+  const sid = String(value.sid || "");
+  const expiresAt = Number(value.expiresAt);
+  if (!/^[A-Za-z0-9]{16,256}$/.test(sid) || !Number.isFinite(expiresAt)) fail("desktop_remembered_session_invalid");
+  return expiresAt > now + 30_000 ? { expiresAt, sid } : null;
+}
+
 function validateCloudSession(value, { now = Date.now(), allowExpired = false } = {}) {
+  const hasErpnext = value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "erpnext");
   exactKeys(
     value,
-    ["accessProfileVersion", "accountName", "permissions", "roles", "token"],
+    ["accessProfileVersion", "accountName", "permissions", "roles", "token", ...(hasErpnext ? ["erpnext"] : [])],
     "desktop_remembered_session_invalid",
   );
+  const erpnext = hasErpnext ? validateErpnextSession(value.erpnext, now) : null;
   const accountName = String(value.accountName || "").trim();
   if (!accountName || accountName.length > 128 || Number(value.accessProfileVersion) !== 1) {
     fail("desktop_remembered_session_invalid");
@@ -117,6 +128,7 @@ function validateCloudSession(value, { now = Date.now(), allowExpired = false } 
     permissions: validateStringList(value.permissions, "desktop_remembered_session_invalid"),
     roles: validateStringList(value.roles, "desktop_remembered_session_invalid"),
     token,
+    ...(erpnext ? { erpnext } : {}),
   };
 }
 

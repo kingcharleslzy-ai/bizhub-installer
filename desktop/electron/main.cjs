@@ -30,6 +30,7 @@ const {
   cloudLoginError,
   cloudLoginScript,
   cloudLogoutScript,
+  erpnextLogoutScript,
   isCloudLogoutRequest,
   sessionStorageScript,
   validateCloudLoginInput,
@@ -1182,10 +1183,36 @@ async function loadConnectionProfile(filePath) {
   });
 }
 
+// ERPNext 的登录凭证是网址上的 sid（只给服务器看的那种），会过期、可在 ERPNext 里撤销。
+const ERPNEXT_SESSION_COOKIE = "sid";
+const ERPNEXT_SESSION_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function readErpnextSession(remoteSession, applicationUrl) {
+  const [cookie] = await remoteSession.cookies.get({ url: applicationUrl, name: ERPNEXT_SESSION_COOKIE }).catch(() => []);
+  if (!cookie || typeof cookie.value !== "string" || !cookie.value || cookie.value === "Guest") return null;
+  const expiresAt = typeof cookie.expirationDate === "number"
+    ? Math.floor(cookie.expirationDate * 1000)
+    : Date.now() + ERPNEXT_SESSION_FALLBACK_MS;
+  return { sid: cookie.value, expiresAt };
+}
+
+async function restoreErpnextSession(remoteSession, applicationUrl, erpnext) {
+  if (!erpnext || erpnext.expiresAt <= Date.now()) return;
+  await remoteSession.cookies.set({
+    url: new URL("/", applicationUrl).toString(),
+    name: ERPNEXT_SESSION_COOKIE,
+    value: erpnext.sid,
+    path: "/",
+    secure: new URL(applicationUrl).protocol === "https:",
+    httpOnly: true,
+    expirationDate: Math.floor(erpnext.expiresAt / 1000),
+  }).catch(() => {});
+}
+
 async function openWorkspace(
   profile,
   partitionName = workspaceSessionPartition(profile.connectionId, "standalone.profile"),
-  { password = null, rememberedSession = null, isCurrent = () => true } = {},
+  { password = null, accountId = null, rememberedSession = null, isCurrent = () => true } = {},
 ) {
   if (!isCurrent()) throw new Error("desktop_login_superseded");
   destroyWorkspaceView();
@@ -1261,18 +1288,25 @@ async function openWorkspace(
   requireCurrent();
   if (typeof password === "string") {
     const result = await workspaceView.webContents.executeJavaScript(
-      cloudLoginScript(password),
+      cloudLoginScript(password, accountId),
       true,
     );
     requireCurrent();
     const error = cloudLoginError(result);
     if (error) throw new Error(error);
     authenticatedSession = result.session;
+    // 同时登上了 ERPNext：把它给的会话凭证（会过期、可在服务器上撤销）和老令牌一起记下，下次打开放回去。
+    if (result.erpnext === true) {
+      const erpnext = await readErpnextSession(remoteSession, profile.applicationUrl);
+      if (erpnext) authenticatedSession = { ...authenticatedSession, erpnext };
+    }
     authenticationPending = false;
     await workspaceView.webContents.loadURL(profile.applicationUrl);
   } else if (rememberedSession !== null) {
+    const { erpnext, ...oldSession } = rememberedSession;
+    if (erpnext) await restoreErpnextSession(remoteSession, profile.applicationUrl, erpnext);
     const resumed = await workspaceView.webContents.executeJavaScript(
-      sessionStorageScript(rememberedSession),
+      sessionStorageScript(oldSession),
       true,
     );
     requireCurrent();
@@ -1712,7 +1746,7 @@ async function loginEnterprise(input, generation = accountLookupGeneration.begin
     const authenticatedSession = await openWorkspace(
       profile,
       workspace.partitionName,
-      { password: normalized.password, isCurrent },
+      { password: normalized.password, accountId: normalized.accountId, isCurrent },
     );
     if (!isCurrent()) return workspaceState;
     let rememberError = "";
@@ -1993,6 +2027,9 @@ async function finalizeCloudLogout({ revokeServerSession = false } = {}) {
       && !workspaceView.webContents.isDestroyed()
     ) {
       await workspaceView.webContents.executeJavaScript(cloudLogoutScript(), true).catch(() => false);
+    } else if (workspaceState.mode === "cloud" && workspaceView && !workspaceView.webContents.isDestroyed()) {
+      // 页面自己点了退出：老系统已退，再把 ERPNext 也退掉。
+      await workspaceView.webContents.executeJavaScript(erpnextLogoutScript(), true).catch(() => false);
     }
     if (workspaceState.activeAccountId) {
       await clearAccountSession({
