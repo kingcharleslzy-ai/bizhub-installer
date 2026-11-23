@@ -14,7 +14,7 @@ test("internal updates stay one manual native build with a Developer ID macOS pu
   for (const required of [
     "workflow_dispatch:",
     "runs-on: [self-hosted, installer-macos]",
-    "runs-on: [self-hosted, installer-windows]",
+    "runs-on: windows-2022",
     "make-update-manifest.mjs",
     "gh release create",
     "--prerelease",
