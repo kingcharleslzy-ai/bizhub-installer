@@ -41,24 +41,54 @@ function sessionStorageScript(session) {
   })()`;
 }
 
-function cloudLoginScript(password) {
+// 工作区接了 ERPNext 时（桌面版页面直读 ERPNext，ERPNext 的接口经门口网关转到同一网址），同一次登录顺带登上 ERPNext：
+// 先不带密码问一下 ERPNext 的桌面版启动读口，回“没登录”（401/403）才说明这个工作区接了 ERPNext，再用同一个账号和
+// 同一个密码走 ERPNext 自带的登录接口；没接 ERPNext 的工作区不会收到这次登录。ERPNext 没登上不影响老系统登录。
+// 密码只在这段脚本里用一次，两边都发完就清掉。
+const ERPNEXT_PROBE_PATH = "/api/method/bizhub_erp.api.desktop_boot";
+const ERPNEXT_LOGIN_PATH = "/api/method/login";
+const ERPNEXT_LOGOUT_PATH = "/api/method/logout";
+
+function cloudLoginScript(password, erpnextUser = null) {
   if (typeof password !== "string" || !password || password.length > 1024) {
     fail("desktop_cloud_password_invalid");
   }
+  if (erpnextUser !== null && (typeof erpnextUser !== "string" || !erpnextUser || erpnextUser.length > 256)) {
+    fail("desktop_cloud_account_invalid");
+  }
   const encodedPassword = Buffer.from(password, "utf8").toString("base64");
+  const encodedUser = erpnextUser === null ? null : Buffer.from(erpnextUser, "utf8").toString("base64");
   return `(() => {
     const decode = (value) => new TextDecoder().decode(
       Uint8Array.from(atob(value), (character) => character.charCodeAt(0)),
     );
     let password = decode(${JSON.stringify(encodedPassword)});
-    return fetch(new URL(${JSON.stringify(CLOUD_LOGIN_PATH)}, window.location.origin), {
+    const erpnextUser = ${encodedUser === null ? "null" : `decode(${JSON.stringify(encodedUser)})`};
+    const origin = window.location.origin;
+    const erpnextLogin = async () => {
+      if (!erpnextUser) return false;
+      const probe = await fetch(new URL(${JSON.stringify(ERPNEXT_PROBE_PATH)}, origin), {
+        method: "GET", redirect: "error", credentials: "include", headers: { Accept: "application/json" },
+      }).catch(() => null);
+      if (!probe) return false;
+      if (probe.ok) return true;
+      if (probe.status !== 401 && probe.status !== 403) return false;
+      const response = await fetch(new URL(${JSON.stringify(ERPNEXT_LOGIN_PATH)}, origin), {
+        method: "POST",
+        redirect: "error",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ usr: erpnextUser, pwd: password }),
+      }).catch(() => null);
+      return Boolean(response && response.ok);
+    };
+    return fetch(new URL(${JSON.stringify(CLOUD_LOGIN_PATH)}, origin), {
       method: "POST",
       redirect: "error",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     }).then(async (response) => {
-      password = "";
       let payload = null;
       try { payload = await response.json(); } catch { payload = null; }
       if (!response.ok) return { ok: false, status: response.status };
@@ -88,10 +118,10 @@ function cloudLoginScript(password) {
       }));
       localStorage.setItem("token", session.token);
       localStorage.setItem("bizhub_account_name", session.accountName);
-      return { ok: true, status: response.status, session };
-    }).catch(() => {
+      const erpnext = await erpnextLogin().catch(() => false);
+      return { ok: true, status: response.status, session, erpnext };
+    }).catch(() => ({ ok: false, status: 0 })).finally(() => {
       password = "";
-      return { ok: false, status: 0 };
     });
   })()`;
 }
@@ -132,6 +162,10 @@ function cloudLogoutScript() {
       credentials: "include",
       headers,
     }).then(() => true).catch(() => false).finally(() => {
+      // 同时退出 ERPNext（没接 ERPNext 的工作区这一下只是 404）。
+      void fetch(new URL(${JSON.stringify(ERPNEXT_LOGOUT_PATH)}, window.location.origin), {
+        method: "POST", redirect: "error", credentials: "include",
+      }).catch(() => false);
       localStorage.removeItem("bizhub_access_profile");
       localStorage.removeItem("bizhub_account_name");
       localStorage.removeItem("token");
@@ -139,8 +173,17 @@ function cloudLogoutScript() {
   })()`;
 }
 
+// 页面自己点了退出（老后台退出）以后，再把 ERPNext 也退掉。
+function erpnextLogoutScript() {
+  return `fetch(new URL(${JSON.stringify(ERPNEXT_LOGOUT_PATH)}, window.location.origin), {
+    method: "POST", redirect: "error", credentials: "include",
+  }).then(() => true).catch(() => false)`;
+}
+
 module.exports = {
   CLOUD_LOGIN_PATH,
+  ERPNEXT_LOGOUT_PATH,
+  erpnextLogoutScript,
   CLOUD_LOGOUT_PATH,
   cloudLoginError,
   cloudLoginScript,
