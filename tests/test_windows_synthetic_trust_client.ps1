@@ -4,13 +4,15 @@ $source = Get-Content "$PSScriptRoot/../scripts/windows-synthetic-trust-client.p
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory "$fixture/requests" | Out-Null
 $savedEnvironment = @{}
-foreach ($name in @('GITHUB_REPOSITORY','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','BIZHUB_WINDOWS_EXPECTED_THUMBPRINT')) {
+foreach ($name in @('GITHUB_REPOSITORY','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','BIZHUB_WINDOWS_EXPECTED_THUMBPRINT','RUNNER_ENVIRONMENT')) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 $env:GITHUB_REPOSITORY = 'kingcharleslzy-ai/bizhub-installer'
 $env:GITHUB_RUN_ID = '123'
 $env:GITHUB_RUN_ATTEMPT = '1'
 $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT = ''
+# This test drives the self-hosted request/response route; GitHub-hosted jobs trust the leaf in-job.
+$env:RUNNER_ENVIRONMENT = 'self-hosted'
 function Get-CimInstance { [pscustomobject]@{ExecutablePath='D:\actions-runner-bizhub-installer\bin\Runner.Worker.exe'; ProcessId=42; CreationDate=[DateTime]::UtcNow} }
 function Start-ScheduledTask {}
 function Start-Sleep { $script:polls++ }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Runner-local, source-bound CI records. No GitHub artifact/cache storage."""
+"""Runner-local, source-bound CI records. No GitHub cache storage; a GitHub-hosted Windows job hands its
+record to the next job as a one-day workflow artifact, which is read back and digest-verified here."""
 from __future__ import annotations
 
 import argparse
@@ -158,9 +159,11 @@ def main() -> None:
             (stage / "ci-record.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
             args.digest = digest(stage / "ci-record.json")
             verify(stage, args)
-            if os.name == "nt" and args.name in ("internal-windows", "signed-windows"):
+            if (os.name == "nt" and args.name in ("internal-windows", "signed-windows")
+                    and os.environ.get("RUNNER_ENVIRONMENT") == "self-hosted"):
                 # tempfile's private DACL does not inherit the root's reader ACL.
                 # Grant only the completed publishable record, never a workspace.
+                # GitHub-hosted Windows hands the record over as a workflow artifact instead.
                 subprocess.run(["icacls", str(stage), "/grant", "aitrader-ci:(OI)(CI)RX", "/T", "/Q"],
                                check=True, stdout=subprocess.DEVNULL)
             # A same-attempt rerun never silently replaces an approved record.
