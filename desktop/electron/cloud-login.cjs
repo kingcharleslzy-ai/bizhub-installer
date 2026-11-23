@@ -43,7 +43,7 @@ function sessionStorageScript(session) {
 
 // 工作区接了 ERPNext 时（桌面版页面直读 ERPNext，ERPNext 的接口经门口网关转到同一网址），同一次登录顺带登上 ERPNext：
 // 先不带密码问一下 ERPNext 的桌面版启动读口，回“没登录”（401/403）才说明这个工作区接了 ERPNext，再用同一个账号和
-// 同一个密码走 ERPNext 自带的登录接口；没接 ERPNext 的工作区不会收到这次登录。ERPNext 没登上不影响老系统登录。
+// 同一个密码走 ERPNext 自带的登录接口（账号见下面 erpnextLogin 的说明）；没接 ERPNext 的工作区不会收到这次登录。ERPNext 没登上不影响老系统登录。
 // 密码只在这段脚本里用一次，两边都发完就清掉。
 const ERPNEXT_PROBE_PATH = "/api/method/bizhub_erp.api.desktop_boot";
 const ERPNEXT_LOGIN_PATH = "/api/method/login";
@@ -65,8 +65,9 @@ function cloudLoginScript(password, erpnextUser = null) {
     let password = decode(${JSON.stringify(encodedPassword)});
     const erpnextUser = ${encodedUser === null ? "null" : `decode(${JSON.stringify(encodedUser)})`};
     const origin = window.location.origin;
-    const erpnextLogin = async () => {
-      if (!erpnextUser) return false;
+    // 登 ERPNext 用哪个账号：老系统登录回包里带了所有者的 ERPNext 账号（erpnext_user）就用它，没带才用登录框里的账号名。
+    const erpnextLogin = async (accountForErpnext) => {
+      if (!accountForErpnext) return false;
       const probe = await fetch(new URL(${JSON.stringify(ERPNEXT_PROBE_PATH)}, origin), {
         method: "GET", redirect: "error", credentials: "include", headers: { Accept: "application/json" },
       }).catch(() => null);
@@ -78,7 +79,7 @@ function cloudLoginScript(password, erpnextUser = null) {
         redirect: "error",
         credentials: "include",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ usr: erpnextUser, pwd: password }),
+        body: JSON.stringify({ usr: accountForErpnext, pwd: password }),
       }).catch(() => null);
       return Boolean(response && response.ok);
     };
@@ -118,7 +119,10 @@ function cloudLoginScript(password, erpnextUser = null) {
       }));
       localStorage.setItem("token", session.token);
       localStorage.setItem("bizhub_account_name", session.accountName);
-      const erpnext = await erpnextLogin().catch(() => false);
+      const erpnextAccount = typeof payload.erpnext_user === "string" && payload.erpnext_user.trim()
+        ? payload.erpnext_user.trim()
+        : erpnextUser;
+      const erpnext = await erpnextLogin(erpnextAccount).catch(() => false);
       return { ok: true, status: response.status, session, erpnext };
     }).catch(() => ({ ok: false, status: 0 })).finally(() => {
       password = "";
