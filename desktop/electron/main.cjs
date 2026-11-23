@@ -31,6 +31,7 @@ const {
   cloudLoginScript,
   cloudLogoutScript,
   erpnextLogoutScript,
+  erpnextProbeScript,
   isCloudLogoutRequest,
   sessionStorageScript,
   validateCloudLoginInput,
@@ -1311,6 +1312,11 @@ async function openWorkspace(
     );
     requireCurrent();
     if (resumed !== true) throw new Error("desktop_remembered_session_invalid");
+    // 记住的登录只能接回老系统；ERPNext 没登上（升级前记住的登录、或 ERPNext 的会话过期）时要再输一次密码，
+    // 那一次会同时登上两边并一起记下，不然接了 ERPNext 的页面会一直“读不到”。
+    const erpnextState = await workspaceView.webContents.executeJavaScript(erpnextProbeScript(), true);
+    requireCurrent();
+    if (erpnextState === "signed_out") throw new Error("desktop_remembered_erpnext_required");
     authenticationPending = false;
     await workspaceView.webContents.loadURL(profile.applicationUrl);
   }
@@ -1906,6 +1912,7 @@ async function resumeSavedAccount(accountId, generation = accountLookupGeneratio
       code.startsWith("desktop_local_remembered_login_failed:401")
       || code === "desktop_local_account_mismatch"
       || code === "desktop_remembered_session_invalid"
+      || code === "desktop_remembered_erpnext_required"
       || code === "desktop_saved_cloud_workspace_not_found"
       || code === "desktop_saved_cloud_workspace_invalid"
     );

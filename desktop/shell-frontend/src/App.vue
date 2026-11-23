@@ -76,6 +76,7 @@ const errorLabel = computed(() => {
     desktop_admin_password_invalid: "本地密码至少需要 12 个字符。",
     desktop_remembered_session_expired: "保持登录已到期，请重新输入密码。",
     desktop_remembered_session_invalid: "保持登录已失效，请重新输入密码。",
+    desktop_remembered_erpnext_required: "系统已升级，请再输一次密码，接通新页面。",
   };
   if (known[errorCode.value]) return known[errorCode.value];
   if (errorCode.value.startsWith("desktop_local_login_failed:401")) return "本地账号或密码不正确。";
