@@ -2,6 +2,33 @@
 param([Parameter(Mandatory=$true)][ValidateSet('acquire','release')][string]$Action)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($env:RUNNER_ENVIRONMENT -ceq 'github-hosted') {
+    # GitHub-hosted Windows is a fresh VM per job and the job itself is an administrator, so the
+    # SYSTEM task the retired self-hosted builder used is not needed: add / remove the job's own
+    # synthetic publisher leaf in LocalMachine\TrustedPeople here, with the same identity and readback.
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new('TrustedPeople', 'LocalMachine')
+    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    try {
+        if ($Action -eq 'acquire') {
+            $publisher = [Security.Cryptography.X509Certificates.X509Certificate2]::new($env:BIZHUB_WINDOWS_CERTIFICATE_FILE, $env:BIZHUB_WINDOWS_CERTIFICATE_PASSWORD)
+            try { $bytes = $publisher.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert) }
+            finally { $publisher.Dispose() }
+            $leaf = [Security.Cryptography.X509Certificates.X509Certificate2]::new($bytes)
+            if ($leaf.HasPrivateKey -or $leaf.Subject -cne 'CN=BizHub Desktop D3 Synthetic CI' -or $leaf.Issuer -cne $leaf.Subject -or
+                $leaf.Thumbprint -cne $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT) { throw 'synthetic_trust_acquire_response_invalid' }
+            $store.Add($leaf)
+            if (-not @($store.Certificates | Where-Object Thumbprint -CEQ $leaf.Thumbprint).Count) { throw 'synthetic_trust_acquire_response_invalid' }
+            Write-Output 'synthetic_trust_acquired'
+        }
+        else {
+            foreach ($leaf in @($store.Certificates | Where-Object Thumbprint -CEQ $env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT)) { $store.Remove($leaf) }
+            if (Test-Path "Cert:\LocalMachine\TrustedPeople\$env:BIZHUB_WINDOWS_EXPECTED_THUMBPRINT") { throw 'synthetic_trust_release_readback_failed' }
+            Write-Output 'synthetic_trust_released'
+        }
+    }
+    finally { $store.Close() }
+    return
+}
 $root = 'C:\ProgramData\BizHubInstallerSyntheticTrust'
 $worker = Get-CimInstance Win32_Process -Filter "ProcessId = $PID"
 while ($worker -and $worker.ExecutablePath -ine 'D:\actions-runner-bizhub-installer\bin\Runner.Worker.exe') {

@@ -240,7 +240,9 @@ jobs:
   windows-x64:
     name: desktop-r1-synthetic-windows-x64
     needs: scope
-    runs-on: [self-hosted, installer-windows]
+    # GitHub-hosted Windows (the former self-hosted Windows builder is retired). Its
+    # local old-installer cache does not persist here; a miss rebuilds the old installer.
+    runs-on: windows-2022
     timeout-minutes: 60
     env:
       GIT_CONFIG_COUNT: "1"
@@ -263,6 +265,9 @@ jobs:
         if: needs.scope.outputs.full == 'true'
         with:
           node-version: 22.22.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
       - name: Verify existing Python 3.12 toolchain
         run: python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
       - name: Verify runner target
@@ -451,9 +456,18 @@ jobs:
           $left = Get-CimInstance Win32_Process | Where-Object { $_.Name -in "electron.exe", "BizHub Desktop.exe", "bizhub-runtime.exe" -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:GITHUB_WORKSPACE, [StringComparison]::OrdinalIgnoreCase) }
           if ($left) { throw "desktop_residual_process_detected" }
       - name: Preserve SHA-bound windows evidence locally
+        id: store
         if: needs.scope.outputs.full == 'true'
         shell: pwsh
         run: python ../scripts/ci_artifacts.py store --name synthetic-windows "out/desktop-r1-windows-*-identity.json" "out/desktop-r1-windows-upgrade-rollback.json"
+      - name: Keep windows evidence for one day
+        if: needs.scope.outputs.full == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: synthetic-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.store.outputs['record-path'] }}
+          retention-days: 1
+          if-no-files-found: error
       - name: Release and verify synthetic leaf trust
         if: always() && needs.scope.outputs.full == 'true'
         shell: pwsh

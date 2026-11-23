@@ -286,10 +286,16 @@ try {
   await waitFor(async () => (await evaluate(shellCdp, "document.body.innerText")).includes("进入你的 BizHub"),
     "desktop_local_unified_login_screen_missing");
   await submitUnifiedLogin();
+  // The packaged local backend starts cold after the first login; a fresh GitHub-hosted Windows VM
+  // (on-access scanning of the just-installed runtime) needs longer than a warm self-hosted builder.
+  let lastLocalState = null;
   const firstState = await waitFor(async () => {
     const state = await evaluate(shellCdp, "window.bizhubDesktop.getState()");
+    lastLocalState = state;
     return state.mode === "local" && state.status === "connected" ? state : null;
-  }, "desktop_local_unified_login_failed");
+  }, "desktop_local_unified_login_failed", 120_000).catch((error) => {
+    throw new Error(`${error.message}:last_state=${JSON.stringify({ mode: lastLocalState?.mode, status: lastLocalState?.status, error: lastLocalState?.error ?? lastLocalState?.lastError ?? null })}`);
+  });
   if (firstState.accountLookupStatus !== "idle") {
     throw new Error("desktop_local_account_contacted_cloud_directory");
   }
